@@ -1,5 +1,16 @@
 # AGENTS.md — Narrative v5 (The Narrative)
 
+> ⚠️ **SUPERSEDED DIRECTION (2026-06-15) — read `MISSION.md` + `PITCH.md` first.**
+> The current direction is **consumer-mission-first, enterprise-funded**, and the
+> consequence engine is the product. This **reverses** earlier instructions in this
+> file to "gut the consequence_engine," go "customer-only," or avoid "enterprise
+> bloat." Do **NOT** delete/disable the engine (`consequence_engine/`, mapping/
+> graph/importance/evolution/outcome workers, `EventConsequenceMap` /
+> `EventConnection` / `PredictionOutcome`) — re-enable it. Free for citizens
+> (India-first); funds/insurers/government pay for the same foresight and fund the
+> free tier. Treat the sections below as historical context only where they
+> conflict with this banner.
+
 ## Project Overview
 - **What it is**: Standalone customer-centric "Bloomberg-like terminal" for individuals. Real-time news, data, analytics, tools, charts, and impact/consequence lenses on world events, markets, and global stories — simplified, accessible, and delightful for solo users/retail rather than enterprise (no $2k+/mo bloat). Inspired by Bloomberg but customer end only. Crimson editorial/paper-ink aesthetic (crimson accents #C80028 on paper-like backgrounds, clean typography, globe/map + dense lists/details from mockups).
 - **Current State (as of remodel start)**: Overly complex backend (FastAPI + 11 workers + heavy consequence engine) largely disconnected from mostly-mock UI. Legacy v2 bloat. Partial real-data wiring from prior work. Now fully remodeling core idea + visuals + simplification per user direction. Not beta-ready.
