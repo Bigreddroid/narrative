@@ -1,0 +1,17 @@
+[Unit]
+Description=Narrative Pipeline Scheduler
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/mnt/c/Users/Varun/OneDrive/Desktop/Narrative v5
+Environment=PYTHONPATH=/mnt/c/Users/Varun/OneDrive/Desktop/Narrative v5
+ExecStart=/opt/narrative-venv312/bin/python -m backend.scheduler
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

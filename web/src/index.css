@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Theme variables ── */
+:root {
+  /* Comma-separated for rgba(var(--X-rgb), alpha) — classic format, universal support */
+  --paper-rgb:   245,241,235;  /* #F5F1EB — cream */
+  --ink-rgb:     26,26,26;     /* #1A1A1A — near-black */
+  --crimson-rgb: 200,0,40;     /* #C80028 */
+  /* Space-separated kept for direct rgb(var()) use in CSS (scrollbars, etc.) */
+  --paper:   245 241 235;
+  --ink:     26 26 26;
+}
+
+html[data-theme="dark"] {
+  --paper-rgb: 17,17,17;       /* #111111 — warm dark */
+  --ink-rgb:   232,228,220;    /* #E8E4DC — warm cream */
+  --paper:     17 17 17;
+  --ink:       232 228 220;
+}
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    background-color: rgba(var(--paper-rgb), 1);
+    color: rgba(var(--ink-rgb), 1);
+    transition: background-color 0.15s ease, color 0.15s ease;
+    font-family: "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: #C80028;
+    color: #F5F1EB;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track  { background: rgb(var(--paper)); }
+  ::-webkit-scrollbar-thumb  { background: rgb(var(--ink) / 0.15); border-radius: 1px; }
+  ::-webkit-scrollbar-thumb:hover { background: #C80028; }
+
+  /* Form elements — themed */
+  input, select, textarea {
+    background-color: rgb(var(--paper));
+    color: rgb(var(--ink));
+    border: 1px solid rgb(var(--ink) / 0.15);
+    outline: none;
+    transition: border-color 0.15s;
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: #C80028;
+  }
+  input::placeholder, textarea::placeholder {
+    color: rgb(var(--ink) / 0.3);
+  }
+}
+
+@layer utilities {
+  /* Dot grid — dark pages */
+  .bg-grid {
+    background-image: radial-gradient(circle, #252525 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .font-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Status dots */
+  .status-dot-developing { background-color: #B07020; }
+  .status-dot-escalating { background-color: #C80028; }
+  .status-dot-stable     { background-color: rgb(var(--ink) / 0.2); }
+  .status-dot-resolved   { background-color: rgb(var(--ink) / 0.1); }
+}
+
+/* ── Theme hard overrides ─────────────────────────────────────────────────────
+   Chrome doesn't re-compute rgba(var(--X), Y) reliably when X changes on an
+   ancestor. Every ink/paper colour class is hardcoded here so the CSS variable
+   chain is bypassed entirely. Outside any @layer = highest cascade priority.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ── Light mode (default) ── */
+html, body, #root                    { background-color: #F5F1EB; color: #1A1A1A; }
+.bg-paper                            { background-color: #F5F1EB; }
+.hover\:bg-paper:hover               { background-color: #F5F1EB; }
+.text-ink                            { color: #1A1A1A; }
+.text-ink\/8                         { color: rgba(26,26,26,.08); }
+.text-ink\/10                        { color: rgba(26,26,26,.10); }
+.text-ink\/20                        { color: rgba(26,26,26,.20); }
+.text-ink\/25                        { color: rgba(26,26,26,.25); }
+.text-ink\/30                        { color: rgba(26,26,26,.30); }
+.text-ink\/35                        { color: rgba(26,26,26,.35); }
+.text-ink\/40                        { color: rgba(26,26,26,.40); }
+.text-ink\/45                        { color: rgba(26,26,26,.45); }
+.text-ink\/50                        { color: rgba(26,26,26,.50); }
+.text-ink\/55                        { color: rgba(26,26,26,.55); }
+.text-ink\/60                        { color: rgba(26,26,26,.60); }
+.border-ink\/8                       { border-color: rgba(26,26,26,.08); }
+.border-ink\/10                      { border-color: rgba(26,26,26,.10); }
+.border-ink\/12                      { border-color: rgba(26,26,26,.12); }
+.border-ink\/15                      { border-color: rgba(26,26,26,.15); }
+.border-ink\/20                      { border-color: rgba(26,26,26,.20); }
+.border-ink\/25                      { border-color: rgba(26,26,26,.25); }
+.bg-ink\/\[0\.02\]                   { background-color: rgba(26,26,26,.02); }
+.bg-ink\/\[0\.03\]                   { background-color: rgba(26,26,26,.03); }
+.bg-ink\/\[0\.04\]                   { background-color: rgba(26,26,26,.04); }
+.bg-ink\/10                          { background-color: rgba(26,26,26,.10); }
+.bg-ink\/\[0\.06\]                   { background-color: rgba(26,26,26,.06); }
+.placeholder\:text-ink\/25::placeholder { color: rgba(26,26,26,.25); }
+.placeholder\:text-ink\/20::placeholder { color: rgba(26,26,26,.20); }
+
+/* ── Dark mode ── */
+html[data-theme="dark"],
+html[data-theme="dark"] body,
+html[data-theme="dark"] #root                    { background-color: #111111; color: #E8E4DC; }
+html[data-theme="dark"] .bg-paper                { background-color: #111111; }
+html[data-theme="dark"] .hover\:bg-paper:hover   { background-color: #111111; }
+html[data-theme="dark"] .text-ink                { color: #E8E4DC; }
+html[data-theme="dark"] .text-ink\/8             { color: rgba(232,228,220,.08); }
+html[data-theme="dark"] .text-ink\/10            { color: rgba(232,228,220,.10); }
+html[data-theme="dark"] .text-ink\/20            { color: rgba(232,228,220,.20); }
+html[data-theme="dark"] .text-ink\/25            { color: rgba(232,228,220,.25); }
+html[data-theme="dark"] .text-ink\/30            { color: rgba(232,228,220,.30); }
+html[data-theme="dark"] .text-ink\/35            { color: rgba(232,228,220,.35); }
+html[data-theme="dark"] .text-ink\/40            { color: rgba(232,228,220,.40); }
+html[data-theme="dark"] .text-ink\/45            { color: rgba(232,228,220,.45); }
+html[data-theme="dark"] .text-ink\/50            { color: rgba(232,228,220,.50); }
+html[data-theme="dark"] .text-ink\/55            { color: rgba(232,228,220,.55); }
+html[data-theme="dark"] .text-ink\/60            { color: rgba(232,228,220,.60); }
+html[data-theme="dark"] .border-ink\/8           { border-color: rgba(232,228,220,.08); }
+html[data-theme="dark"] .border-ink\/10          { border-color: rgba(232,228,220,.10); }
+html[data-theme="dark"] .border-ink\/12          { border-color: rgba(232,228,220,.12); }
+html[data-theme="dark"] .border-ink\/15          { border-color: rgba(232,228,220,.15); }
+html[data-theme="dark"] .border-ink\/20          { border-color: rgba(232,228,220,.20); }
+html[data-theme="dark"] .border-ink\/25          { border-color: rgba(232,228,220,.25); }
+html[data-theme="dark"] .bg-ink\/\[0\.02\]       { background-color: rgba(232,228,220,.02); }
+html[data-theme="dark"] .bg-ink\/\[0\.03\]       { background-color: rgba(232,228,220,.03); }
+html[data-theme="dark"] .bg-ink\/\[0\.04\]       { background-color: rgba(232,228,220,.04); }
+html[data-theme="dark"] .bg-ink\/10              { background-color: rgba(232,228,220,.10); }
+html[data-theme="dark"] .bg-ink\/\[0\.06\]       { background-color: rgba(232,228,220,.06); }
+html[data-theme="dark"] .placeholder\:text-ink\/25::placeholder { color: rgba(232,228,220,.25); }
+html[data-theme="dark"] .placeholder\:text-ink\/20::placeholder { color: rgba(232,228,220,.20); }
+
+/* ── Pricing CTA glow ── */
+.pricing-cta {
+  transition: box-shadow 0.18s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.pricing-cta:hover {
+  box-shadow: 0 0 18px rgba(200,0,40,0.35), 0 0 6px rgba(200,0,40,0.2);
+  border-color: #C80028 !important;
+  color: #C80028 !important;
+}
+.pricing-cta[data-highlight="true"]:hover {
+  box-shadow: 0 0 24px rgba(200,0,40,0.55), 0 0 8px rgba(200,0,40,0.3);
+  background-color: #E0002E !important;
+  color: #F0EDE8 !important;
+}
+
+/* ── Smooth transition ── */
+*, *::before, *::after {
+  transition-property: background-color, color, border-color;
+  transition-duration: 0.15s;
+  transition-timing-function: ease;
+}

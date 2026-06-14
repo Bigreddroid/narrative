@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>The Narrative — Build Status</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Inter, system-ui, sans-serif; background: #F5F1EB; color: #1A1A1A; padding: 48px; max-width: 800px; margin: 0 auto; }
+  @media print { body { padding: 24px; } }
+  .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1px solid rgba(26,26,26,0.12); }
+  .logo h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+  .logo span { color: #C80028; }
+  .meta { font-size: 11px; color: rgba(26,26,26,0.4); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; }
+  h2 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: rgba(26,26,26,0.4); margin-bottom: 12px; margin-top: 32px; }
+  .working { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .working-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .dot-green  { width: 6px; height: 6px; border-radius: 50%; background: #2A6A40; flex-shrink: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { border-bottom: 1px solid rgba(26,26,26,0.12); }
+  thead th { padding: 8px 12px; text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(26,26,26,0.4); }
+  tbody tr { border-bottom: 1px solid rgba(26,26,26,0.06); }
+  tbody tr:hover { background: rgba(26,26,26,0.02); }
+  td { padding: 10px 12px; vertical-align: top; line-height: 1.4; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .num { font-variant-numeric: tabular-nums; color: rgba(26,26,26,0.3); font-weight: 500; }
+  .divider { border: none; border-top: 2px solid #1A1A1A; margin: 32px 0; }
+  .beta-box { background: rgba(200,0,40,0.04); border: 1px solid rgba(200,0,40,0.2); padding: 16px 20px; margin-top: 24px; }
+  .beta-box h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #C80028; margin-bottom: 10px; }
+  .beta-box ol { padding-left: 20px; font-size: 13px; line-height: 1.8; color: rgba(26,26,26,0.7); }
+  footer { margin-top: 48px; font-size: 10px; color: rgba(26,26,26,0.3); text-transform: uppercase; letter-spacing: 0.1em; border-top: 1px solid rgba(26,26,26,0.08); padding-top: 16px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<div class="logo">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" stroke="#C80028" stroke-width="1.5" fill="none"/>
+    <polygon points="12,6 17,9 17,15 12,18 7,15 7,9" stroke="#C80028" stroke-width="1" fill="#C80028" fill-opacity="0.12"/>
+  </svg>
+  <div>
+    <h1>THE <span>NARRATIVE</span></h1>
+    <div class="meta">Build Status Report &nbsp;·&nbsp; Updated 2026-06-09 (Remodel in Progress)</div>
+  </div>
+</div>
+
+<h2>Remodel Vision (New Core Idea)</h2>
+<p><strong>Dual Customer + Enterprise Bloomberg Terminal</strong></p>
+<p>Inspired by Bloomberg professional terminal (real-time news, data, analytics, tools, impact lenses on world events/markets) but built dual: accessible customer side + full enterprise depth. <strong>Dark terminal primary</strong> (rich black #0D1117, dense data viz) for pro/enterprise; <strong>light editorial paper variant</strong> (#F5F1EB paper + dark ink) for customer accessibility. Crimson #C80028 brand accent (logo wordmark, impact CTAs, "How this affects you", Media Bias pills) in both modes. Globe/map viz uses cyan glows (#00D4FF) on dark for hotspots/connections (or red in some mocks); same crimson on light. Key patterns from mocks: interactive world/globe with glowing dots, prominent "How this affects you" + bias, personalized feeds, dense cards, regional panels.</p>
+<p><strong>Web / Desktop</strong>: Same dual theme system (colors.js tokens portable). Dark for dense terminal views, light paper for editorial pages. Mobile-first but web/desktop terminal feel is stretch (globe + lists + impact panels matching the desktop mocks).</p>
+<p><strong>Simplify Significantly</strong>: Lean ingestion + light AI summaries/impact. No heavy 11-worker over-engineering.</p>
+
+<h2>✓ Working (Post-Remodel Start)</h2>
+<div class="working">
+  <div class="working-item"><span class="dot-green"></span>Core vision + visuals re-locked from full Mockups/ recheck: dual customer+enterprise Bloomberg terminal. Dark terminal primary (black + crimson brand + cyan viz glows for globe/hotspots) + light paper editorial variant (cream #F5F1EB + same crimson). Accurate patterns: "How this affects you", Media Bias, glowing world maps (red or cyan), dense cards, location personalization.</div>
+  <div class="working-item"><span class="dot-green"></span>AGENTS.md + LOCAL_DEV.md + build-status.html updated for dual, crimson editorial from actual images (not just paper assumption)</div>
+  <div class="working-item"><span class="dot-green"></span>Mobile: proper dual light/dark theme (useColorScheme + getThemeColors), App nav + StatusBar dynamic, all major screens (World, Following, Event, Search, Profile) updated to theme vars + crimson accent + viz cyan on dark</div>
+  <div class="working-item"><span class="dot-green"></span>Partial real data wiring (list/detail/following/search to real /feed + /graph + /follows)</div>
+  <div class="working-item"><span class="dot-green"></span>Web /world: "World News" header large Georgia 3xl serif bold with ≡ + Jun › + Live dot (per audit). Map dots/arcs crimson for both themes (no cyan). Globe + dense "How this affects you" cards below in terminal style. Mobile EventScreen/Home/MiniWorldMap fully redesigned to match images 7/9/10/11/12/13 (hero premium pill, 2-col grid, greeting + location, colored bias toggles, crimson affect buttons, specific dark map colors/glows, flat affects box, bottom action bar). (All 21 mockups covered in mobile + web changes.) + extra dot glow rings for hotspot effect. Bottom "How this affects you" strip is dense terminal cards with Bias pill, category left border, specific per-category impact text, crimson accents. Added "World News" + live date header. Real edges from seed's EventConnections. Dark terminal default.</div>
+  <div class="working-item"><span class="dot-green"></span>Backend simplification: scheduler now runs only core lean workers (scrape/embed/cluster/feed/alert); heavy ones stretch. consensus_mapper marked lean. More engine/workers updated.</div>
+  <div class="working-item"><span class="dot-green"></span>Seeded data script added (backend/seed.py) + updated LOCAL_DEV. Run `python -m backend.seed` after DB up.</div>
+  <div class="working-item"><span class="dot-green"></span>v2 archived in docs (Narrative v2/ flagged legacy; do not use). dev_server deprecated.</div>
+  <div class="working-item"><span class="dot-green"></span>Deploy: docker-compose + Dockerfile ready; eas.json profiles present. See LOCAL_DEV for run/deploy.</div>
+  <div class="working-item"><span class="dot-green"></span>Stretch items (admin/search/tiers): noted as lean future; core dual terminal prioritized.</div>
+</div>
+
+<hr class="divider" />
+
+<h2>Remodel Priorities (All Items)</h2>
+<table>
+  <thead>
+    <tr><th>#</th><th>Item</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="num">1</td>
+      <td>Redefine core & visuals</td>
+      <td>Rewrite build-status.html as new spec. Adopt crimson editorial from mockups (globe, lists, details). Update all docs.</td>
+    </tr>
+    <tr>
+      <td class="num">2</td>
+      <td>Simplify backend</td>
+      <td>Gut/simplify 11 workers + consequence_engine. Keep FastAPI/DB/scrapers. Lean pipeline for news/data + impact tools.</td>
+    </tr>
+    <tr>
+      <td class="num">3</td>
+      <td>Remodel mobile UX</td>
+      <td>Terminal feel (dense, tools, search, watchlists, alerts). Crimson/paper style. Fix layout/responsiveness. Full real data (no mocks).</td>
+    </tr>
+    <tr>
+      <td class="num">4</td>
+      <td>Clean up legacy & bloat</td>
+      <td>Archive/delete Narrative v2/. Remove dev mocks. Prune over-complex models/code.</td>
+    </tr>
+    <tr>
+      <td class="num">5</td>
+      <td>Real data + deploy</td>
+      <td>End-to-end real flow. Mobile EAS build. Backend Docker/Railway. Seeded data for test.</td>
+    </tr>
+    <tr>
+      <td class="num">6</td>
+      <td>Product & stretch</td>
+      <td>Simple customer plans (free/paid pro). Admin/search polish. No enterprise bloat.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="beta-box">
+  <h3>MVP / Beta Goal</h3>
+  <ol>
+    <li>Core terminal: news/data feed + impact lens, world/globe view, watchlists, search, simple analytics — all real data, dual light/dark visuals (dark terminal primary + light paper).</li>
+    <li>Mobile (RN/Expo) fully themed + responsive. Web/desktop terminal stretch using same tokens.</li>
+    <li>Public URL + easy run (LOCAL_DEV.md).</li>
+    <li>No mocks, no v2 bloat, simplified lean backend.</li>
+  </ol>
+</div>
+
+<h2>Theme System (Mobile + Web/Desktop)</h2>
+<p style="font-size:13px; line-height:1.5">Shared tokens (see mobile/src/lib/colors.js — also exports <code>tokens</code> + <code>getCssCustomProperties</code> for web/desktop). Matches desktop/tablet mock panels + mobile. No webapp built.</p>
+<div style="display:flex; gap:24px; flex-wrap:wrap; margin:16px 0;">
+  <div>
+    <strong>Light (Paper Editorial)</strong><br>
+    <span style="display:inline-block; width:18px; height:18px; background:#F5F1EB; border:1px solid #ccc; vertical-align:middle;"></span> bgBase #F5F1EB<br>
+    <span style="display:inline-block; width:18px; height:18px; background:#FFFFFF; border:1px solid #ccc; vertical-align:middle;"></span> bgSurface #FFFFFF<br>
+    <span style="display:inline-block; width:18px; height:18px; background:#1A1A1A; border:1px solid #ccc; vertical-align:middle;"></span> textPrimary #1A1A1A<br>
+    <span style="display:inline-block; width:18px; height:18px; background:#C80028; border:1px solid #ccc; vertical-align:middle;"></span> accent #C80028 (crimson)
+  </div>
+  <div>
+    <strong>Dark (Terminal)</strong><br>
+    <span style="display:inline-block; width:18px; height:18px; background:#0D1117; border:1px solid #ccc; vertical-align:middle;"></span> bgBase #0D1117<br>
+    <span style="display:inline-block; width:18px; height:18px; background:#161B22; border:1px solid #ccc; vertical-align:middle;"></span> bgSurface #161B22<br>
+    <span style="display:inline-block; width:18px; height:18px; background:#E8E8E8; border:1px solid #ccc; vertical-align:middle;"></span> textPrimary #E8E8E8<br>
+    <span style="display:inline-block; width:18px; height:18px; background:#C80028; border:1px solid #ccc; vertical-align:middle;"></span> accent #C80028 (crimson)<br>
+    <span style="display:inline-block; width:18px; height:18px; background:#00D4FF; border:1px solid #ccc; vertical-align:middle;"></span> vizAccent #00D4FF (cyan for maps/globe)
+  </div>
+</div>
+
+<footer>
+  <span>The Narrative — Dual Customer + Enterprise Bloomberg Terminal</span>
+  <span>News + Data + Analytics + Impact &nbsp;·&nbsp; Dark Terminal + Light Paper &nbsp;·&nbsp; Crimson #C80028 &nbsp;·&nbsp; Standalone</span>
+</footer>
+
+</body>
+</html>

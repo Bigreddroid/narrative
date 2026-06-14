@@ -1,0 +1,46 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node / web / mobile
+node_modules/
+dist/
+build/
+.expo/
+.expo-shared/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# Legacy / archived (do not ship)
+Narrative v2/
+narrative_v2/
+New folder (4)/
+
+# Build + screenshot artifacts (build-status.html kept — it is the living spec)
+*.png
+*.jpeg
+*.jpg
+*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Logs / runtime
+*.log
+*.db
+*.sqlite3

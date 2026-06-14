@@ -1,0 +1,70 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[[services]]
+name = "api"
+[services.deploy]
+startCommand = "alembic -c backend/alembic.ini upgrade head && gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+
+[[services]]
+name = "scheduler"
+[services.deploy]
+startCommand = "python -m backend.scheduler"
+
+[[services]]
+name = "scrape-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.scrape_worker"
+
+[[services]]
+name = "embed-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.embed_worker"
+
+[[services]]
+name = "cluster-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.cluster_worker"
+
+[[services]]
+name = "importance-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.importance_worker"
+
+[[services]]
+name = "mapping-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.mapping_worker"
+
+[[services]]
+name = "graph-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.graph_worker"
+
+[[services]]
+name = "evolution-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.evolution_worker"
+
+[[services]]
+name = "alert-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.alert_worker"
+
+[[services]]
+name = "feed-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.feed_worker"
+
+[[services]]
+name = "outcome-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.outcome_worker"
+
+[[services]]
+name = "archive-worker"
+[services.deploy]
+startCommand = "python -m backend.workers.archive_worker"
