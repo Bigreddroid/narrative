@@ -23,6 +23,11 @@ const { chromium } = require('playwright');
   await page.screenshot({ path: 'D:/Narrative v5/ss_real_world.png' });
   console.log('world shot done');
 
+  await page.goto(BASE + '/world?tab=feed', { waitUntil: 'networkidle', timeout: 30000 });
+  await page.waitForTimeout(4000);
+  await page.screenshot({ path: 'D:/Narrative v5/ss_real_feed.png' });
+  console.log('feed shot done');
+
   let eid = null;
   try {
     const f = await (await fetch(BASE + '/api/v1/feed/', { headers: { Authorization: 'Bearer ' + access_token } })).json();

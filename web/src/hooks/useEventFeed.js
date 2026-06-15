@@ -94,8 +94,9 @@ export function useEventFeed({ category = null, status = null, limit = 50 } = {}
     q.set("limit", limit);
 
     setLoading(true);
-    // Use the real /feed endpoint (like mobile) which joins consequence maps for impact/prediction
-    api.get(`/feed?${q}`)
+    // Trailing slash matters: /feed (no slash) 307-redirects to /feed/, which behind
+    // the dev proxy resolves to an absolute backend URL and drops auth. Hit /feed/ directly.
+    api.get(`/feed/?${q}`)
       .then((data) => {
         const raw = data.feed || [];
         setEvents(raw.map(normalizeEvent));

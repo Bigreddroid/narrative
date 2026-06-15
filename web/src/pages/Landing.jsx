@@ -26,6 +26,13 @@ const CHAIN_EXAMPLES = [
   ],
 ];
 
+// Real, typo-free examples shown if the live teaser endpoint is unreachable.
+const TEASER_FALLBACK = [
+  { title: "Israel-Iran Exchange Strikes Then Halt; Fragile Ceasefire Holds", category: "conflict", importance: 91, impact: "Energy prices & regional security risk" },
+  { title: "Red Sea Shipping Corridor Under Sustained Attack", category: "conflict", importance: 87, impact: "Your fuel & shipping costs up" },
+  { title: "Global Carbon Dioxide Removal Falls Short of 1.5°C Pathway", category: "climate", importance: 91, impact: "Crop losses & food price spikes" },
+];
+
 const TIERS_PREVIEW = [
   {
     name: "Free",
@@ -165,6 +172,14 @@ export default function Landing() {
   const { user }    = useUser();
   const isLoggedIn  = !!user;
 
+  const [teaser, setTeaser] = useState(TEASER_FALLBACK);
+  useEffect(() => {
+    fetch("/api/v1/feed/public")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.feed?.length) setTeaser(d.feed.slice(0, 3)); })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-screen bg-paper text-ink font-sans selection:bg-crimson selection:text-paper">
 
@@ -230,23 +245,25 @@ export default function Landing() {
 
           {/* Quick product teaser — echoes the mobile reference cards + "how this affects you" */}
           <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-3">
-            {[
-              { title: "Indian Luty Affairs", source: "The Hindu", impact: "Supply chain + energy prices", pct: "10" },
-              { title: "Red Sea Reroute", source: "Reuters", impact: "Your fuel & shipping costs up", pct: "18" },
-              { title: "Taiwan Chip Tension", source: "FT", impact: "Electronics & market volatility", pct: "24" },
-            ].map((c, i) => (
-              <div key={i} className="rounded-xl border border-white/10 bg-[#161B22] p-3 text-left">
+            {teaser.map((c, i) => (
+              <div
+                key={c.id || i}
+                onClick={() => navigate(isLoggedIn && c.id ? `/event/${c.id}` : "/auth")}
+                className="rounded-xl border border-white/10 bg-[#161B22] p-3 text-left cursor-pointer hover:border-[#C80028]/40 transition-colors"
+              >
                 <div className="text-[10px] text-white/40 mb-1 flex items-center justify-between">
-                  <span>{c.source}</span>
-                  <span className="text-[#C80028] font-bold">● {c.pct}%</span>
+                  <span className="uppercase tracking-wider">{c.category || "Global"}</span>
+                  {c.importance != null && (
+                    <span className="text-[#C80028] font-bold">● {Math.round(c.importance)}</span>
+                  )}
                 </div>
-                <div className="font-semibold text-[15px] leading-tight mb-1 text-white">{c.title}</div>
-                <div className="text-[12px] text-white/60 mb-2 line-clamp-2">{c.impact}</div>
+                <div className="font-semibold text-[15px] leading-tight mb-1 text-white line-clamp-2">{c.title}</div>
+                <div className="text-[12px] text-white/60 mb-2 line-clamp-2">{c.impact || "Consequence chain mapped"}</div>
                 <div className="text-[10px] text-[#C80028] font-bold tracking-wider">HOW THIS AFFECTS YOU →</div>
               </div>
             ))}
           </div>
-          <div className="text-center text-[10px] text-white/40 mt-2 tracking-widest">LIVE FROM THE FEED • SWIPE OR TAP TO OPEN APP</div>
+          <div className="text-center text-[10px] text-white/40 mt-2 tracking-widest">LIVE FROM THE FEED • TAP A STORY TO OPEN IT</div>
         </div>
       </main>
 

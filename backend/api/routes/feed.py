@@ -88,3 +88,38 @@ async def get_feed(
         "is_personalized": cache is not None,
         "built_at": cache.built_at.isoformat() if cache and cache.built_at else None,
     }
+
+
+@router.get("/public")
+async def get_public_feed(db: DbDep) -> dict:
+    """Anonymous teaser for the landing page — top mapped events, no auth."""
+    events = (await db.execute(
+        select(NarrativeEvent)
+        .where(NarrativeEvent.is_mapped == True)
+        .order_by(NarrativeEvent.global_importance_score.desc())
+        .limit(6)
+    )).scalars().all()
+
+    items = []
+    for event in events:
+        latest_map = (await db.execute(
+            select(EventConsequenceMap)
+            .where(EventConsequenceMap.narrative_event_id == event.id)
+            .where(EventConsequenceMap.is_suppressed == False)
+            .order_by(EventConsequenceMap.version.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+
+        impact = ""
+        if latest_map and isinstance(latest_map.direct_impact, dict):
+            impact = (latest_map.direct_impact.get("description") or "")[:90]
+
+        items.append({
+            "id": str(event.id),
+            "title": event.canonical_title,
+            "category": event.category,
+            "importance": event.global_importance_score,
+            "impact": impact,
+        })
+
+    return {"feed": items}
