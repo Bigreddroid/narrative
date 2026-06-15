@@ -268,10 +268,11 @@ function getMockEvent(eventId) {
 
 const TABS = ["Intelligence", "Predictions", "Effects"];
 
-export default function EventGraph({ eventId, onClose }) {
+export default function EventGraph({ eventId, onClose, onSelectRelated }) {
   const [event,     setEvent]     = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [activeTab, setActiveTab] = useState("Intelligence");
+  const [related,   setRelated]   = useState([]);
   const articlesRef = useRef(null);
   const { can } = useUser();
 
@@ -287,6 +288,15 @@ export default function EventGraph({ eventId, onClose }) {
       }))
       .catch(() => setEvent(getMockEvent(eventId)))
       .finally(() => setLoading(false));
+  }, [eventId]);
+
+  // Related events (graph connections)
+  useEffect(() => {
+    if (!eventId) return;
+    setRelated([]);
+    api.get(`/graph/event/${eventId}`)
+      .then(d => setRelated(d.connected_events || []))
+      .catch(() => setRelated([]));
   }, [eventId]);
 
   if (!can("eventGraph")) {
@@ -407,6 +417,24 @@ export default function EventGraph({ eventId, onClose }) {
                   </div>
                 ) : (
                   <p className="text-xs text-ink/30 text-center py-8 font-mono uppercase tracking-wider">No chain data.</p>
+                )}
+                {related.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-ink/10">
+                    <p className="text-[9px] font-mono uppercase tracking-[0.3em] text-ink/35 mb-2">Related events</p>
+                    <div className="space-y-1.5">
+                      {related.map(r => (
+                        <button
+                          key={r.id}
+                          onClick={() => onSelectRelated?.(r.id)}
+                          className="w-full text-left flex items-start gap-2 p-2 border border-ink/10 hover:border-crimson/40 hover:bg-ink/[0.03] transition-colors cursor-pointer"
+                        >
+                          <span className="w-1 h-1 rounded-full flex-shrink-0 mt-1.5" style={{ backgroundColor: getCategoryColor(r.category) }} />
+                          <span className="text-xs text-ink/70 leading-snug line-clamp-2 flex-1">{r.title}</span>
+                          <span className="text-ink/25 flex-shrink-0">→</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
                 {map?.sources_analyzed?.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-ink/10">

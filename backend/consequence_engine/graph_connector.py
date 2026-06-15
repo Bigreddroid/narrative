@@ -34,6 +34,9 @@ def _overlap_score(list_a: list[str] | None, list_b: list[str] | None) -> tuple[
 
 
 def compute_connection_weight(event_a: NarrativeEvent, event_b: NarrativeEvent) -> dict[str, Any] | None:
+    # Geography (country names) is the most consistent signal; sector labels are
+    # free-text and vary across events, so they're weighted lower. Same-category
+    # adds a small bonus so two related events still link without exact tag matches.
     sector_score, shared_sectors = _overlap_score(
         event_a.affected_sectors, event_b.affected_sectors
     )
@@ -43,17 +46,19 @@ def compute_connection_weight(event_a: NarrativeEvent, event_b: NarrativeEvent) 
     keyword_score, _ = _overlap_score(
         event_a.follow_keywords, event_b.follow_keywords
     )
+    same_category = bool(event_a.category and event_a.category == event_b.category)
 
-    weight = (sector_score * 0.5) + (geo_score * 0.3) + (keyword_score * 0.2)
+    weight = (geo_score * 0.55) + (sector_score * 0.25) + (keyword_score * 0.10) + (0.10 if same_category else 0.0)
 
     if weight < settings.graph_connection_threshold:
         return None
 
-    connection_type = "shared_sector"
-    if geo_score > sector_score:
+    if shared_geo and geo_score >= sector_score:
         connection_type = "shared_geography"
-    if sector_score > 0 and geo_score > 0:
+    elif shared_sectors:
         connection_type = "shared_sector"
+    else:
+        connection_type = "related_category"
 
     shared_context_parts = []
     if shared_sectors:

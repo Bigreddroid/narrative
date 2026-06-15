@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     importance_threshold_deep: int = 70
     importance_threshold_light: int = 40
     cluster_similarity_threshold: float = 0.82
-    graph_connection_threshold: float = 0.35
+    graph_connection_threshold: float = 0.12
     max_chain_steps: int = 6
     scrape_interval_hours: int = 2
     embed_interval_minutes: int = 15

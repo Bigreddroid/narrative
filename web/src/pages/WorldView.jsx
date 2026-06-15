@@ -335,7 +335,7 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
               transition={{ duration: 0.15 }}
               style={{ position: "absolute", inset: 0 }}
             >
-              <EventGraph eventId={selectedEventId} onClose={onEventClose} />
+              <EventGraph eventId={selectedEventId} onClose={onEventClose} onSelectRelated={onEventSelect} />
             </motion.div>
           ) : (
             <motion.div
@@ -508,7 +508,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
                 className="hidden lg:block absolute top-4 right-4 bottom-4 overflow-hidden z-30 shadow-2xl"
                 style={{ width: 420 }}
               >
-                <EventGraph eventId={selectedEventId} onClose={onEventClose} />
+                <EventGraph eventId={selectedEventId} onClose={onEventClose} onSelectRelated={onEventSelect} />
               </motion.div>
             )}
           </AnimatePresence>
