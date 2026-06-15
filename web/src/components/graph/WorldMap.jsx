@@ -78,7 +78,7 @@ export default function WorldMap({
     if (!ready || !svgRef.current || !geoRef.current || dims.w === 0) return;
 
     const { w, h } = dims;
-    const radius   = Math.min(w, h) * 0.44;
+    const radius   = Math.min(w, h) * 0.48;
     const DOT_COLOR = isDark ? CYAN    : CRIMSON;
     const mc        = getMapColors(isDark);
 

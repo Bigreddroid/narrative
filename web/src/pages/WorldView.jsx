@@ -473,9 +473,9 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
         </div>
       </div>
 
-      {/* Map area + stories below (to match desktop mock: globe + "How this affects you" cards below) */}
+      {/* Map area (70%) + stories below (30%) */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 relative overflow-hidden">
+        <div className="flex-[7] min-h-0 relative overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center h-full" style={{ backgroundColor: mapBg }}>
               <div className="text-center">
@@ -516,11 +516,11 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
 
         {/* Bottom "How this affects you" strip — desktop mock style: dense terminal cards with crimson impact */}
         {!loading && nodes.length > 0 && (
-          <div className="flex-shrink-0 border-t p-4 overflow-x-auto" style={{ backgroundColor: stripBg, borderColor: cardBorder }}>
+          <div className="flex-[3] min-h-0 border-t p-4 overflow-y-auto" style={{ backgroundColor: stripBg, borderColor: cardBorder }}>
             <div className="text-[10px] font-mono uppercase tracking-[2px] mb-2" style={{ color: isDark ? 'rgba(232,228,220,0.4)' : 'rgba(26,26,26,0.4)' }}>
               How this affects you
             </div>
-            <div className="flex gap-3 min-w-max">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
               {nodes.slice(0, 6).map((node, idx) => {
                 const catColor = getCategoryColor(node.category);
                 const impactLine = {
@@ -536,7 +536,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
                   <div
                     key={node.id || idx}
                     onClick={() => handleNodeClick(node)}
-                    className="w-64 flex-shrink-0 rounded-lg border p-3.5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    className="rounded-lg border p-3.5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md"
                     style={{ backgroundColor: cardBg, borderColor: cardBorder }}
                   >
                     <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: catColor }}>
