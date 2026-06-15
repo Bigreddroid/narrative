@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
   console.log('token len', (access_token || '').length);
 
   const browser = await chromium.launch({ headless: true });
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   await ctx.addInitScript((tok) => {
     localStorage.setItem('narrative_token', tok);
     localStorage.setItem('narrative_user', JSON.stringify({ id: 'demo', email: 'demo@narrative.local', tier: 'pro', name: 'Demo', city: 'Mumbai', country: 'India' }));

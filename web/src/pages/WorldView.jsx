@@ -245,7 +245,8 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
   const STATUSES = ["All", "Escalating", "Developing", "Stable"];
 
   return (
-    <div className="flex-1 min-h-0 flex overflow-hidden">
+    <div className="flex-1 min-h-0 flex justify-center overflow-hidden">
+      <div className="flex w-full max-w-[1100px] min-w-0">
       {/* Center column — capped at readable width */}
       <div className="flex-1 overflow-y-auto min-w-0">
         <div className="max-w-2xl mx-auto pb-20 md:pb-0">
@@ -349,6 +350,7 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
       </div>
     </div>
   );
