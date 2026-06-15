@@ -366,25 +366,6 @@ export default function EventGraph({ eventId, onClose }) {
         </div>
       </div>
 
-      {/* Source articles carousel */}
-      {articles.length > 0 && (
-        <div className="flex-shrink-0 border-b border-ink/10">
-          <div className="px-4 pt-3 pb-1 flex items-center justify-between">
-            <span className="text-[9px] font-mono uppercase tracking-[0.3em] text-ink/35">
-              Source Articles
-            </span>
-            <span className="text-[9px] font-mono text-ink/25">{articles.length}</span>
-          </div>
-          <div
-            ref={articlesRef}
-            className="flex gap-2 px-4 pb-3 overflow-x-auto"
-            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-          >
-            {articles.map((a, i) => <ArticleCard key={i} article={a} index={i} />)}
-          </div>
-        </div>
-      )}
-
       {/* Tab bar */}
       <div className="flex border-b border-ink/10 flex-shrink-0">
         {TABS.map(tab => (
@@ -433,6 +414,17 @@ export default function EventGraph({ eventId, onClose }) {
                     {map.sources_analyzed.map(s => (
                       <span key={s} className="inline-block text-[9px] font-mono text-ink/35 border border-ink/10 px-1.5 py-px mr-1 mb-1">{s}</span>
                     ))}
+                  </div>
+                )}
+                {articles.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-ink/10">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[9px] font-mono uppercase tracking-[0.3em] text-ink/35">Source Articles</span>
+                      <span className="text-[9px] font-mono text-ink/25">{articles.length}</span>
+                    </div>
+                    <div ref={articlesRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+                      {articles.map((a, i) => <ArticleCard key={i} article={a} index={i} />)}
+                    </div>
                   </div>
                 )}
               </div>

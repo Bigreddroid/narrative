@@ -23,6 +23,14 @@ const { chromium } = require('playwright');
   await page.screenshot({ path: 'D:/Narrative v5/ss_real_world.png' });
   console.log('world shot done');
 
+  // Open the event panel by clicking a globe hotspot
+  try {
+    await page.locator('.dot-hit').first().click({ force: true, timeout: 5000 });
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: 'D:/Narrative v5/ss_real_panel.png' });
+    console.log('panel shot done');
+  } catch (e) { console.log('panel click failed:', e.message.slice(0, 70)); }
+
   await page.goto(BASE + '/world?tab=feed', { waitUntil: 'networkidle', timeout: 30000 });
   await page.waitForTimeout(4000);
   await page.screenshot({ path: 'D:/Narrative v5/ss_real_feed.png' });
