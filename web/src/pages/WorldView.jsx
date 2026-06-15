@@ -473,9 +473,9 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
         </div>
       </div>
 
-      {/* Map area (70%) + stories below (30%) */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-[8] min-h-0 relative overflow-hidden">
+      {/* Globe + consequence rail — side-by-side on desktop, stacked on mobile */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex-1 min-h-0 relative overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center h-full" style={{ backgroundColor: mapBg }}>
               <div className="text-center">
@@ -514,13 +514,13 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
           </AnimatePresence>
         </div>
 
-        {/* Bottom "How this affects you" strip — desktop mock style: dense terminal cards with crimson impact */}
+        {/* "How this affects you" — right rail on desktop (fills the space beside the globe), stacked below on mobile */}
         {!loading && nodes.length > 0 && (
-          <div className="flex-[2] min-h-0 border-t px-4 md:px-6 py-4 overflow-y-auto" style={{ backgroundColor: stripBg, borderColor: cardBorder }}>
-            <div className="text-[10px] font-mono uppercase tracking-[2px] mb-2" style={{ color: isDark ? 'rgba(232,228,220,0.4)' : 'rgba(26,26,26,0.4)' }}>
+          <div className="w-full lg:w-96 lg:flex-shrink-0 min-h-0 border-t lg:border-t-0 lg:border-l px-4 md:px-6 py-4 overflow-y-auto" style={{ backgroundColor: stripBg, borderColor: cardBorder }}>
+            <div className="text-[10px] font-mono uppercase tracking-[2px] mb-3" style={{ color: isDark ? 'rgba(232,228,220,0.4)' : 'rgba(26,26,26,0.4)' }}>
               How this affects you
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-3">
               {nodes.slice(0, 6).map((node, idx) => {
                 const catColor = getCategoryColor(node.category);
                 const impactLine = {
