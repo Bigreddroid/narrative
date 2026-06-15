@@ -47,8 +47,11 @@ async def main():
     from backend.workers.scrape_worker import run_scrape_worker
     from backend.workers.embed_worker import run_embed_worker
     from backend.workers.cluster_worker import run_cluster_worker
+    from backend.workers.importance_worker import run_importance_worker
+    from backend.workers.mapping_worker import run_mapping_worker
     from backend.workers.feed_worker import run_feed_worker
     from backend.workers.alert_worker import run_alert_worker
+    from backend.workers.outcome_worker import run_outcome_worker
 
     tasks = [
         # Lean core only for terminal MVP
@@ -67,9 +70,19 @@ async def main():
         asyncio.create_task(
             _run_with_interval("alert_worker", run_alert_worker, s.alert_interval_minutes * 60)
         ),
-        # Heavy workers below are stretch for enterprise (commented in lean mode)
-        # asyncio.create_task(_run_with_interval("importance_worker", ...)),
-        # etc.
+        # Prediction -> outcome loop (the track record). Importance gates which
+        # clusters get mapped; mapping makes the predictions; outcome grades the
+        # elapsed ones against later evidence (Brier-scored).
+        asyncio.create_task(
+            _run_with_interval("importance_worker", run_importance_worker, s.importance_interval_minutes * 60)
+        ),
+        asyncio.create_task(
+            _run_with_interval("mapping_worker", run_mapping_worker, s.mapping_interval_minutes * 60)
+        ),
+        asyncio.create_task(
+            _run_with_interval("outcome_worker", run_outcome_worker, s.outcome_eval_interval_days * 86400)
+        ),
+        # Optional/stretch: graph_worker, evolution_worker, archive_worker.
     ]
 
     logger.info("Pipeline scheduler started with %d workers", len(tasks))
