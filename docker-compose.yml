@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: pgvector/pgvector:pg15
@@ -7,85 +5,77 @@ services:
       POSTGRES_USER: narrative
       POSTGRES_PASSWORD: narrative
       POSTGRES_DB: narrative
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Auto-loads the bundled real data on FIRST boot (empty volume only).
+      - ./data/narrative_seed.sql.gz:/docker-entrypoint-initdb.d/narrative_seed.sql.gz:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U narrative"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 30
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
-    env_file: .env
+      - "8000:8000"            # exposed for debugging / API docs at /docs
+    env_file: .env.docker
     environment:
       DATABASE_URL: postgresql+asyncpg://narrative:narrative@postgres:5432/narrative
       REDIS_URL: redis://redis:6379/0
-      APP_ENV: development
+      APP_ENV: development     # enables /auth/dev-login for the one-click demo
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - .:/app
+    # Seed already includes schema at head, so alembic is a safe no-op; it also
+    # covers the case of a fresh (non-seeded) DB.
     command: >
-      sh -c "
-        cd /app &&
-        alembic -c backend/alembic.ini upgrade head &&
-        gunicorn backend.main:app
-          --worker-class uvicorn.workers.UvicornWorker
-          --workers 2
-          --bind 0.0.0.0:8000
-          --reload
-      "
-    # For production: remove volumes + --reload, set APP_ENV=production, use Railway/Fly/etc.
+      sh -c "alembic -c backend/alembic.ini upgrade head;
+             gunicorn backend.main:app
+               --worker-class uvicorn.workers.UvicornWorker
+               --workers 2 --bind 0.0.0.0:8000 --timeout 120 --access-logfile -"
 
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.web
+    ports:
+      - "8080:80"              # <-- open http://localhost:8080
+    depends_on:
+      - api
+
+  # Optional live pipeline (scrape -> embed -> map -> predict). Needs real API
+  # keys in .env.docker. Start with: docker compose --profile pipeline up
   scheduler:
+    profiles: ["pipeline"]
     build:
       context: .
       dockerfile: Dockerfile
-    env_file: .env
+    env_file: .env.docker
     environment:
       DATABASE_URL: postgresql+asyncpg://narrative:narrative@postgres:5432/narrative
       REDIS_URL: redis://redis:6379/0
-      APP_ENV: development
+      APP_ENV: production
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - .:/app
     command: python -m backend.scheduler
-
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@narrative.local
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
 
 volumes:
   postgres_data:
