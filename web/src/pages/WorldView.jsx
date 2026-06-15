@@ -475,7 +475,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
 
       {/* Map area (70%) + stories below (30%) */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-[7] min-h-0 relative overflow-hidden">
+        <div className="flex-[8] min-h-0 relative overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center h-full" style={{ backgroundColor: mapBg }}>
               <div className="text-center">
@@ -516,7 +516,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
 
         {/* Bottom "How this affects you" strip — desktop mock style: dense terminal cards with crimson impact */}
         {!loading && nodes.length > 0 && (
-          <div className="flex-[3] min-h-0 border-t px-4 md:px-6 py-4 overflow-y-auto" style={{ backgroundColor: stripBg, borderColor: cardBorder }}>
+          <div className="flex-[2] min-h-0 border-t px-4 md:px-6 py-4 overflow-y-auto" style={{ backgroundColor: stripBg, borderColor: cardBorder }}>
             <div className="text-[10px] font-mono uppercase tracking-[2px] mb-2" style={{ color: isDark ? 'rgba(232,228,220,0.4)' : 'rgba(26,26,26,0.4)' }}>
               How this affects you
             </div>

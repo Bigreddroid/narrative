@@ -37,7 +37,14 @@ export default function WorldMap({
   const timerRef  = useRef(null);
 
   const [ready,   setReady]   = useState(false);
+  const [showHint, setShowHint] = useState(true);
   const [hovered, setHovered] = useState(null);
+
+  // Auto-hide the "drag to rotate" hint shortly after load
+  useEffect(() => {
+    const t = setTimeout(() => setShowHint(false), 3500);
+    return () => clearTimeout(t);
+  }, []);
   const [tipPos,  setTipPos]  = useState({ x: 0, y: 0 });
   const [dims,    setDims]    = useState({ w: 900, h: 560 });
 
@@ -78,7 +85,7 @@ export default function WorldMap({
     if (!ready || !svgRef.current || !geoRef.current || dims.w === 0) return;
 
     const { w, h } = dims;
-    const radius   = Math.min(w, h) * 0.48;
+    const radius   = Math.min(w, h) * 0.49;
     const DOT_COLOR = isDark ? CYAN    : CRIMSON;
     const mc        = getMapColors(isDark);
 
@@ -269,6 +276,7 @@ export default function WorldMap({
       d3.drag()
         .on("start", (event) => {
           isDragRef.current = true;
+          setShowHint(false);
           lastPos = [event.x, event.y];
         })
         .on("drag", (event) => {
@@ -335,11 +343,11 @@ export default function WorldMap({
     <div ref={wrapRef} className="relative w-full h-full overflow-hidden" style={{ backgroundColor: mc.bg }}>
       <svg ref={svgRef} style={{ display: "block", width: "100%", height: "100%" }} />
 
-      {/* Drag hint */}
-      {ready && (
+      {/* Drag hint — fades out after a few seconds / on first drag */}
+      {ready && showHint && (
         <div
-          className="absolute top-3 left-1/2 -translate-x-1/2 text-[9px] font-mono uppercase tracking-[0.2em] pointer-events-none select-none"
-          style={{ color: isDark ? "rgba(0,212,255,0.3)" : "rgba(200,0,40,0.3)" }}
+          className="absolute top-3 left-1/2 -translate-x-1/2 text-[9px] font-mono uppercase tracking-[0.2em] pointer-events-none select-none transition-opacity duration-700"
+          style={{ color: isDark ? "rgba(0,212,255,0.25)" : "rgba(200,0,40,0.25)" }}
         >
           Drag to rotate
         </div>
