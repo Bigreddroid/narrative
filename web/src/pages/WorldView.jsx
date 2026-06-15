@@ -247,9 +247,9 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
   return (
     <div className="flex-1 min-h-0 flex overflow-hidden">
       <div className="flex w-full max-w-[1400px] mx-auto min-w-0">
-      {/* Center column — left-aligned to the masthead grid, capped for readability */}
+      {/* Center column — fills up to the rail (no awkward middle gap) */}
       <div className="flex-1 overflow-y-auto min-w-0">
-        <div className="max-w-2xl pb-20 md:pb-0">
+        <div className="w-full pb-20 md:pb-0">
 
         {/* Status filter strip — hidden during search */}
         {!isSearching && (
