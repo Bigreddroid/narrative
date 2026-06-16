@@ -300,7 +300,7 @@ async def get_user_stats(db: DbDep, admin: AdminDep) -> dict:
             SELECT
                 COUNT(*) AS total,
                 COUNT(*) FILTER (WHERE tier = 'free') AS free_count,
-                COUNT(*) FILTER (WHERE tier = 'paid') AS paid_count,
+                COUNT(*) FILTER (WHERE tier NOT IN ('free','admin')) AS paid_count,
                 COUNT(*) FILTER (WHERE tier = 'admin') AS admin_count,
                 COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours') AS new_today,
                 COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '7 days') AS new_week,
