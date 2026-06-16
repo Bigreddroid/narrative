@@ -25,7 +25,7 @@ export function useSearch(query) {
     setError(null);
 
     const t = setTimeout(() => {
-      api.get(`/search?q=${encodeURIComponent(query.trim())}&limit=30`)
+      api.get(`/search/?q=${encodeURIComponent(query.trim())}&limit=30`)
         .then(d => setResults((d.events || []).map(normalizeEvent)))
         .catch(err => {
           setError(err);
