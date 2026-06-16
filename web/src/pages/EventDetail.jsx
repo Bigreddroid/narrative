@@ -290,7 +290,7 @@ export default function EventDetail() {
   const { isDark, toggle } = useTheme();
   const { isFollowing, follow, unfollow } = useFollowing();
   const { can }      = useUser();
-  const { event: rawEvent, loading, error } = useEventGraph(eventId);
+  const { event: rawEvent, graph, loading, error } = useEventGraph(eventId);
   const [activeTab, setActiveTab] = useState("Intelligence");
 
   const following = isFollowing(eventId);
@@ -560,6 +560,26 @@ export default function EventDetail() {
               )}
             </motion.div>
           </AnimatePresence>
+
+          {/* Related events (uses graph data already fetched by useEventGraph) */}
+          {graph?.connected_events?.length > 0 && (
+            <div className="mt-8 pt-6 border-t border-ink/10">
+              <p className="text-[9px] font-mono uppercase tracking-[0.3em] text-ink/35 mb-3">Related events</p>
+              <div className="space-y-2">
+                {graph.connected_events.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => navigate(`/event/${r.id}`)}
+                    className="w-full text-left flex items-start gap-2 p-3 border border-ink/10 hover:border-crimson/40 hover:bg-ink/[0.02] transition-colors cursor-pointer"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5" style={{ backgroundColor: getCategoryColor(r.category) }} />
+                    <span className="text-[13px] text-ink/70 leading-snug flex-1">{r.title}</span>
+                    <span className="text-ink/25 flex-shrink-0">→</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
         </div>
       </div>
