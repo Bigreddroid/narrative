@@ -1,9 +1,12 @@
 # Core
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
+fastapi==0.115.14
+# starlette pinned explicitly to hold the security floor (>=0.40 fixes the
+# multipart DoS, CVE-2024-47874); fastapi pulls it transitively otherwise.
+starlette==0.46.2
+uvicorn[standard]==0.32.1
 gunicorn==22.0.0
 python-dotenv==1.0.1
-pydantic==2.7.1
+pydantic==2.13.4
 pydantic-settings==2.2.1
 
 # Database
@@ -51,7 +54,7 @@ posthog==3.5.0
 # Utilities
 tenacity==8.3.0
 python-jose[cryptography]==3.3.0
-python-multipart==0.0.9
+python-multipart==0.0.32  # >=0.0.18 fixes ReDoS, CVE-2024-53981
 jinja2==3.1.4
 orjson==3.10.3
 structlog==24.1.0

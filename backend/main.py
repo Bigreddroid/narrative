@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 import sentry_sdk
 from fastapi import FastAPI
@@ -22,12 +23,21 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Replaces the deprecated @app.on_event("startup") hook (removed in modern
+    # Starlette/FastAPI). Runs once on startup; teardown goes after the yield.
+    logging.getLogger(__name__).info("The Narrative API starting — %s", settings.app_env)
+    yield
+
+
 app = FastAPI(
     title="The Narrative API",
     description="World consequence intelligence infrastructure",
     version="1.0.0",
     docs_url="/docs" if not settings.is_production else None,
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 # Rate limiting (FASTAPI-LIMITS-001): per-user/per-IP throttle to mitigate DoS
@@ -65,8 +75,3 @@ app.include_router(stripe_routes.router, prefix="/api/v1")
 @limiter.exempt  # health checks must always respond and not consume the budget
 async def health() -> dict:
     return {"status": "ok", "env": settings.app_env}
-
-
-@app.on_event("startup")
-async def on_startup():
-    logging.getLogger(__name__).info("The Narrative API starting — %s", settings.app_env)
