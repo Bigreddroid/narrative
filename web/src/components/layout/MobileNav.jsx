@@ -101,6 +101,8 @@ export default function MobileNav() {
             <button
               key={tab.id}
               onClick={() => navigate(tab.path)}
+              aria-label={tab.label}
+              aria-current={active ? "page" : undefined}
               className="flex-1 flex flex-col items-center justify-center py-3 gap-1 relative transition-colors"
               style={{ color: active ? "#C80028" : "rgba(240,237,232,0.35)" }}
             >

@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEventFeed } from "../hooks/useEventFeed.js";
 import { useFollowing } from "../hooks/useFollowing.js";
+import { useMediaQuery } from "../hooks/useMediaQuery.js";
 import EventGraph from "./graph/EventGraph.jsx";
 import { getCategoryColor } from "../lib/colors.js";
 import { biasLabel } from "../lib/bias.js";
@@ -131,11 +132,14 @@ function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowi
   const accent = column.kind === "category" ? getCategoryColor(column.value)
     : column.kind === "status" ? C.crimson
     : C.fg50;
+  // Narrower columns on phones so a column + its neighbour's edge stay visible
+  // (the board still scrolls horizontally — classic TweetDeck UX).
+  const isMobile = useMediaQuery("(max-width: 767px)");
 
   return (
     <div
       className="flex-shrink-0 flex flex-col h-full"
-      style={{ width: 320, backgroundColor: C.column, borderRight: `1px solid ${C.border}` }}
+      style={{ width: isMobile ? 264 : 320, backgroundColor: C.column, borderRight: `1px solid ${C.border}` }}
     >
       {/* Column header */}
       <div className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
@@ -192,11 +196,13 @@ function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowi
 // ─── Add-column control ───────────────────────────────────────────────────────
 function AddColumn({ onAdd }) {
   const [open, setOpen] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  const menuWidth = isMobile ? 196 : 240;
 
   const add = (col) => { onAdd({ ...col, id: nextId() }); setOpen(false); };
 
   return (
-    <div className="flex-shrink-0 relative h-full flex items-start" style={{ width: open ? 240 : 56, backgroundColor: C.board }}>
+    <div className="flex-shrink-0 relative h-full flex items-start" style={{ width: open ? menuWidth : 56, backgroundColor: C.board }}>
       {!open ? (
         <button
           onClick={() => setOpen(true)}
@@ -212,7 +218,7 @@ function AddColumn({ onAdd }) {
           <span className="text-[9px] font-mono uppercase tracking-widest" style={{ writingMode: "vertical-rl" }}>Add</span>
         </button>
       ) : (
-        <div className="w-60 h-full overflow-y-auto deck-scroll" style={{ borderRight: `1px solid ${C.border}` }}>
+        <div className="h-full overflow-y-auto deck-scroll" style={{ width: menuWidth, borderRight: `1px solid ${C.border}` }}>
           <div className="flex items-center justify-between px-3 py-2.5" style={{ backgroundColor: C.header, borderBottom: `1px solid ${C.border2}` }}>
             <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: C.fg80 }}>Add Column</span>
             <button onClick={() => setOpen(false)} style={{ color: C.fg35 }}>

@@ -63,7 +63,7 @@ function Legend() {
 function RiskGauge({ score }) {
   return (
     <div className="flex items-end gap-3">
-      <span className="font-display leading-none tabular-nums" style={{ fontSize: "4rem", color: exposureColor(score) }}>
+      <span className="font-display leading-none tabular-nums text-[2.75rem] sm:text-[3.25rem] md:text-[4rem]" style={{ color: exposureColor(score) }}>
         {score}
       </span>
       <div className="pb-2">
@@ -123,7 +123,7 @@ function ExposureRow({ entity, onDriver, corrob }) {
               title={d.title}
             >
               <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColor(d.category) }} />
-              <span className="truncate max-w-[150px]" style={{ color: FG50 }}>{d.title}</span>
+              <span className="truncate max-w-[110px] sm:max-w-[150px]" style={{ color: FG50 }}>{d.title}</span>
               <span className="tabular-nums" style={{ color: FG30 }}>{d.pct}%</span>
               {c?.count > 0 && (
                 <span
@@ -143,7 +143,7 @@ function ExposureRow({ entity, onDriver, corrob }) {
       {entity.mitigators?.length > 0 && (
         <div className="flex items-center gap-1.5 mt-1.5 text-[10px] font-mono" style={{ color: EASE }}>
           <span className="uppercase tracking-wider text-[9px]">Reduced by</span>
-          <span className="truncate max-w-[180px]" style={{ opacity: 0.8 }}>{entity.mitigators[0].title}</span>
+          <span className="truncate max-w-[130px] sm:max-w-[180px]" style={{ opacity: 0.8 }}>{entity.mitigators[0].title}</span>
         </div>
       )}
     </div>
@@ -257,7 +257,7 @@ export default function ExposurePanel() {
                 {personal.drivers.length ? personal.drivers.map((d) => (
                   <button key={d.id} onClick={() => onDriver(d.id)} className="flex items-center gap-1 text-[10px] font-mono" style={{ color: FG50 }} title={d.title}>
                     <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColor(d.category) }} />
-                    <span className="truncate max-w-[180px]">{d.title}</span>
+                    <span className="truncate max-w-[130px] sm:max-w-[180px]">{d.title}</span>
                   </button>
                 )) : (
                   <span className="text-[10px] font-mono" style={{ color: FG20 }}>No exposure on your profile</span>

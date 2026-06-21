@@ -19,6 +19,7 @@ import { getCategoryColor } from "../lib/colors.js";
 import { biasLabel, BIAS_COLORS } from "../lib/bias.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useUser } from "../hooks/useUser.js";
+import { useMediaQuery } from "../hooks/useMediaQuery.js";
 
 function Highlight({ text, query }) {
   if (!query || !text) return text;
@@ -487,7 +488,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
         {/* Maritime layer toggle */}
         <button
           onClick={() => setMaritime((m) => !m)}
-          className="flex-shrink-0 ml-3 mr-1 flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors border"
+          className="flex-shrink-0 ml-3 mr-1 flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors border"
           style={{
             color: maritime ? "#E8E4DC" : tabInactiveColor,
             borderColor: maritime ? "rgba(63,167,160,0.6)" : (isDark ? "rgba(232,228,220,0.12)" : "rgba(26,26,26,0.12)"),
@@ -513,7 +514,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
         {/* Air-traffic layer toggle */}
         <button
           onClick={() => setAir((a) => !a)}
-          className="flex-shrink-0 ml-1 mr-1 flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors border"
+          className="flex-shrink-0 ml-1 mr-1 flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors border"
           style={{
             color: air ? "#E8E4DC" : tabInactiveColor,
             borderColor: air ? "rgba(91,163,208,0.6)" : (isDark ? "rgba(232,228,220,0.12)" : "rgba(26,26,26,0.12)"),
@@ -539,7 +540,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
         {/* Exposure heat layer toggle */}
         <button
           onClick={() => setExposureLayer((x) => !x)}
-          className="flex-shrink-0 ml-1 mr-3 flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors border"
+          className="flex-shrink-0 ml-1 mr-3 flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors border"
           style={{
             color: exposureLayer ? "#E8E4DC" : tabInactiveColor,
             borderColor: exposureLayer ? "rgba(217,102,58,0.6)" : (isDark ? "rgba(232,228,220,0.12)" : "rgba(26,26,26,0.12)"),
@@ -624,11 +625,14 @@ export default function WorldView() {
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [category,        setCategory]        = useState(null);
   const [search,          setSearch]          = useState("");
+  // Below lg the inline detail overlay is hidden (hidden lg:block), so route to
+  // the full detail page instead. Reactive via matchMedia, not a one-shot read.
+  const isBelowLg = useMediaQuery("(max-width: 1023px)");
 
   const handleSelect  = useCallback((id) => {
-    if (window.innerWidth < 1024) { navigate(`/event/${id}`); return; }
+    if (isBelowLg) { navigate(`/event/${id}`); return; }
     setSelectedEventId(prev => prev === id ? null : id);
-  }, [navigate]);
+  }, [navigate, isBelowLg]);
   const handleClose   = useCallback(() => setSelectedEventId(null), []);
   const handleTabChange = useCallback((tab) => {
     if (tab === "following") { navigate("/following"); return; }
