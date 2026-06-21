@@ -1,0 +1,14 @@
+{
+  "name": "The Narrative — World Consequence Intelligence",
+  "short_name": "Narrative",
+  "description": "Map what global events mean for you — your costs, your sector, your city.",
+  "start_url": "/world",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0D0D0D",
+  "theme_color": "#0D0D0D",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,27 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Consolidated to 2 app services (api + scheduler). The scheduler runs ALL
+# pipeline workers in ONE process (see backend/scheduler.py), so the previous
+# 11 separate per-worker services were redundant and multiplied hosting cost
+# (~$150 → ~$30/mo) for zero benefit.
+#
+# Add Railway-managed Postgres + Redis from the dashboard ("New → Database").
+# They expose DATABASE_URL / REDIS_URL, which you reference from each service's
+# variables. Postgres needs the pgvector extension — the Alembic migrations run
+# `CREATE EXTENSION vector` on first upgrade (api start command below).
+# ─────────────────────────────────────────────────────────────────────────────
+
+[[services]]
+name = "api"
+[services.deploy]
+startCommand = "alembic -c backend/alembic.ini upgrade head && gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+
+[[services]]
+name = "scheduler"
+[services.deploy]
+startCommand = "python -m backend.scheduler"

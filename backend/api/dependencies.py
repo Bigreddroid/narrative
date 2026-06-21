@@ -1,0 +1,58 @@
+import uuid
+from typing import Annotated
+
+from fastapi import Depends, HTTPException, Header, status
+from jose import JWTError, jwt
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.config import get_settings
+from backend.database import get_db
+from backend.models.user import User
+
+settings = get_settings()
+
+
+async def get_current_user(
+    authorization: Annotated[str | None, Header()] = None,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
+
+    token = authorization.removeprefix("Bearer ").strip()
+
+    try:
+        # Supabase JWTs are signed with the service role secret (JWT_SECRET).
+        # We decode without audience/issuer enforcement for simplicity;
+        # in production, set options={"verify_aud": False} and pass the Supabase JWT secret.
+        payload = jwt.decode(
+            token,
+            settings.supabase_service_key or settings.secret_key,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+        user_id = uuid.UUID(payload["sub"])
+    except (JWTError, KeyError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return user
+
+
+async def require_admin(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if current_user.tier != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+    return current_user
+
+
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserDep = Annotated[User, Depends(get_current_user)]
+AdminDep = Annotated[User, Depends(require_admin)]

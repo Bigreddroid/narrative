@@ -1,0 +1,47 @@
+# ─── Secrets / environment ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.production.example
+web/.env
+web/.env.*
+!web/.env.example
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ─── Node / frontend ─────────────────────────────────────────────────────────
+node_modules/
+web/node_modules/
+mobile/node_modules/
+web/dist/
+mobile/dist/
+*.log
+npm-debug.log*
+
+# ─── Data / dumps ────────────────────────────────────────────────────────────
+*.sqlite
+*.db
+*.dump
+*.sql.gz
+
+# ─── OS / editor ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
