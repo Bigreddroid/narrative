@@ -1,0 +1,19 @@
+# Treat binary assets as binary so Git never applies EOL conversion (which would
+# corrupt them on checkout under core.autocrlf on Windows).
+*.pdf  binary
+*.dump binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+
+# Normalize source line endings to LF in the repo (checked out per-platform).
+*.py   text eol=lf
+*.js   text eol=lf
+*.jsx  text eol=lf
+*.mjs  text eol=lf
+*.ts   text eol=lf
+*.sh   text eol=lf
