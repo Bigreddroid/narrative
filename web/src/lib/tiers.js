@@ -5,6 +5,11 @@ export const TIERS = {
   pro:          { rank: 1, label: "Pro",           color: "#2D7DD2" },
   intelligence: { rank: 2, label: "Intelligence",  color: "#C80028" },
   enterprise:   { rank: 3, label: "Enterprise",    color: "#B07020" },
+  // Stripe's single "Full Access" plan sets tier='paid'. The backend grants it
+  // full (non-free) access, so it's enterprise-equivalent here. Without this,
+  // TIERS['paid'] is undefined and canAccess falls back to free — locking
+  // paying customers out of every gated feature in the UI.
+  paid:         { rank: 3, label: "Full Access",   color: "#B07020" },
   admin:        { rank: 4, label: "Admin",         color: "#C80028" },
 };
 

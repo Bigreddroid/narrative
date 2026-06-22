@@ -6,6 +6,8 @@ set -u
 cd "$(dirname "$0")/.."
 
 MODULES=(
+  backend.config_test
+  backend.api.auth_test
   backend.consequence_engine.propagation_test
   backend.consequence_engine.calibration_test
   backend.consequence_engine.cluster_logic_test
@@ -23,6 +25,8 @@ for t in "${MODULES[@]}"; do
     echo "ok   $t"
   else
     echo "FAIL $t"
+    # Re-run on failure so CI logs show which assertion broke.
+    python -m "$t" || true
     fail=1
   fi
 done

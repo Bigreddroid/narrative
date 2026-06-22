@@ -5,12 +5,14 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import os
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Preformatted,
     HRFlowable, PageBreak, KeepTogether,
 )
 
-OUT = "/mnt/c/Users/Varun/OneDrive/Desktop/Narrative v5/Deploy.pdf"
+# Repo-root-relative so this works regardless of where the repo lives.
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Deploy.pdf")
 
 INK   = colors.HexColor("#1A1A1A")
 CRIM  = colors.HexColor("#C80028")

@@ -1,25 +1,38 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Landing from "./pages/Landing.jsx";
-import Onboarding from "./pages/Onboarding.jsx";
-import WorldView from "./pages/WorldView.jsx";
-import EventDetail from "./pages/EventDetail.jsx";
-import Following from "./pages/Following.jsx";
-import Settings from "./pages/Settings.jsx";
 import Auth from "./pages/Auth.jsx";
 import PrivateRoute from "./components/auth/PrivateRoute.jsx";
 import MobileNav from "./components/layout/MobileNav.jsx";
-import AdminLayout from "./admin/AdminLayout.jsx";
-import Dashboard from "./admin/Dashboard.jsx";
-import PipelineMonitor from "./admin/PipelineMonitor.jsx";
-import WorkerControls from "./admin/WorkerControls.jsx";
-import CostDashboard from "./admin/CostDashboard.jsx";
-import SourceManager from "./admin/SourceManager.jsx";
-import EventReview from "./admin/EventReview.jsx";
-import UserStats from "./admin/UserStats.jsx";
-import HallucinationFlags from "./admin/HallucinationFlags.jsx";
 import { useUser } from "./hooks/useUser.js";
 
+// Lazy-load everything behind the public entry (Landing/Auth). This moves the
+// heavy map/d3 deps (WorldView, EventDetail) and the rarely-used admin console
+// into separate chunks fetched on demand instead of the initial bundle.
+const Onboarding = lazy(() => import("./pages/Onboarding.jsx"));
+const WorldView = lazy(() => import("./pages/WorldView.jsx"));
+const EventDetail = lazy(() => import("./pages/EventDetail.jsx"));
+const Following = lazy(() => import("./pages/Following.jsx"));
+const Settings = lazy(() => import("./pages/Settings.jsx"));
+const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
+const Dashboard = lazy(() => import("./admin/Dashboard.jsx"));
+const PipelineMonitor = lazy(() => import("./admin/PipelineMonitor.jsx"));
+const WorkerControls = lazy(() => import("./admin/WorkerControls.jsx"));
+const CostDashboard = lazy(() => import("./admin/CostDashboard.jsx"));
+const SourceManager = lazy(() => import("./admin/SourceManager.jsx"));
+const EventReview = lazy(() => import("./admin/EventReview.jsx"));
+const UserStats = lazy(() => import("./admin/UserStats.jsx"));
+const HallucinationFlags = lazy(() => import("./admin/HallucinationFlags.jsx"));
+
 const DEV_BYPASS = import.meta.env.DEV;
+
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center h-screen w-full bg-paper">
+      <div className="w-5 h-5 border-2 border-ink/15 border-t-crimson rounded-full animate-spin" />
+    </div>
+  );
+}
 
 function AdminRoute({ children }) {
   const { user } = useUser();
@@ -46,6 +59,7 @@ function AppShell({ children }) {
 export default function App() {
   return (
     <AppShell>
+      <Suspense fallback={<RouteFallback />}>
       <Routes>
         {/* Public */}
         <Route path="/"     element={<Landing />} />
@@ -72,6 +86,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </AppShell>
   );
 }

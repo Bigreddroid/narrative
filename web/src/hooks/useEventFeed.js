@@ -23,7 +23,11 @@ export function useEventFeed({ category = null, status = null, limit = 50 } = {}
     q.set("limit", limit);
 
     setLoading(true);
-    api.get(`/events?${q}`)
+    // Trailing slash is required: `/events` 307-redirects to `/events/`, and
+    // FastAPI emits an absolute Location (the API origin). Cross-origin
+    // redirects (dev proxy :5173→:8000, prod Vercel→Railway) strip the
+    // Authorization header per the fetch spec, yielding a 401.
+    api.get(`/events/?${q}`)
       .then((data) => {
         const raw = Array.isArray(data) ? data : data.events || [];
         setEvents(raw.map(normalizeEvent));

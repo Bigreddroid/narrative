@@ -48,11 +48,12 @@ calls the API at the relative path `/api/v1`, and Vercel rewrites that to Railwa
 
 1. **Import the same GitHub repo.** Vercel reads `vercel.json` (build `cd web && npm
    install && npm run build`, output `web/dist`, SPA fallback).
-2. **Edit `vercel.json`** → replace `REPLACE-WITH-RAILWAY-API.up.railway.app` in the
-   `/api/(.*)` rewrite `destination` with your real Railway API host. Commit.
-3. **Env / secrets:** add the Mapbox token. `vercel.json` maps `VITE_MAPBOX_TOKEN` to a
-   Vercel secret `@mapbox_public_token` — create it:
-   `vercel env add VITE_MAPBOX_TOKEN` (or in the dashboard). Leave `VITE_DEMO_MODE`
+2. **Edit `vercel.json`** → replace `__RAILWAY_API_HOST__` in the `/api/(.*)` rewrite
+   `destination` with your real Railway API host (no scheme), e.g.
+   `narrative-api-production.up.railway.app`. Commit.
+3. **Env / secrets:** add the Mapbox token as a normal Vercel env var —
+   `vercel env add VITE_MAPBOX_TOKEN` (or in the dashboard). (`vercel.json` no longer
+   references a `@mapbox_public_token` secret.) Leave `VITE_DEMO_MODE`
    unset/false for a real beta.
 4. **Deploy.** You get `https://<project>.vercel.app` (add a custom domain if desired).
 
