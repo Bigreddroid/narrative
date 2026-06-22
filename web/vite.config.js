@@ -4,6 +4,18 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split large, independently-cacheable vendors out of the app chunk.
+          react: ["react", "react-dom", "react-router-dom"],
+          motion: ["framer-motion"],
+          d3: ["d3", "topojson-client"],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {
