@@ -25,7 +25,10 @@ export function useSearch(query) {
     setError(null);
 
     const t = setTimeout(() => {
-      api.get(`/search?q=${encodeURIComponent(query.trim())}&limit=30`)
+      // Trailing slash required: `/search` 307-redirects to `/search/` with an
+      // absolute Location, and the cross-origin redirect strips the auth header
+      // (same failure as the events feed). Call `/search/` directly.
+      api.get(`/search/?q=${encodeURIComponent(query.trim())}&limit=30`)
         .then(d => setResults((d.events || []).map(normalizeEvent)))
         .catch(err => {
           setError(err);
