@@ -55,6 +55,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Security headers on every response (cheap, standard hardening). HSTS/CSP are
+# left to the TLS-terminating edge (Railway/Vercel); these are the API-relevant
+# ones. Also drops the default "server: uvicorn" version banner.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "X-XSS-Protection": "0",  # modern guidance: disable the legacy, buggy auditor
+}
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    for k, v in _SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    response.headers["Server"] = "narrative"
+    return response
+
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(events.router, prefix="/api/v1")
 app.include_router(graph.router, prefix="/api/v1")
