@@ -1,26 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  TEMPORAL LAYER — history, timelines & patterns over the exposure signals.
-//  Pure (no React/DOM), unit-testable. Turns snapshot scores into trajectories:
-//  momentum/trend, deterministic synthetic history (offline demo), historical
-//  analogs (pattern match), and causal lead-lag. This is the compounding IP —
+//  Pure (no React/DOM), unit-testable. Turns real snapshot/revision scores into
+//  trajectories: momentum/trend, historical analogs (pattern match against a
+//  curated reference set), and causal lead-lag. This is the compounding IP —
 //  the more history accrues, the sharper these become.
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Deterministic PRNG so the offline demo's synthetic history is stable per seed.
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function hashSeed(str) {
-  let h = 2166136261;
-  for (let i = 0; i < String(str).length; i++) { h ^= String(str).charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
 
 // Exponential moving average over a series (oldest → newest).
 export function ema(series, alpha = 0.4) {
@@ -38,20 +22,6 @@ export function momentum(series, alpha = 0.4) {
 
 export function trendLabel(m, eps = 2) {
   return m > eps ? "rising" : m < -eps ? "falling" : "stable";
-}
-
-// Deterministic synthetic history ending exactly at `current` (modeled, for offline demo).
-export function synthHistory(current, points = 12, seed = 1) {
-  const rnd = mulberry32(seed || 1);
-  const out = [];
-  let v = Math.max(0, Math.min(100, current + (rnd() - 0.5) * 40));
-  for (let i = 0; i < points - 1; i++) {
-    out.push(Math.round(v));
-    v += (current - v) * 0.25 + (rnd() - 0.5) * 12;
-    v = Math.max(0, Math.min(100, v));
-  }
-  out.push(Math.round(current));
-  return out;
 }
 
 const setOf = (x) => new Set((x || []).map((s) => String(s).toLowerCase()));

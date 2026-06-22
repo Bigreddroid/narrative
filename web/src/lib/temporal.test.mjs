@@ -1,5 +1,5 @@
 // Property test for temporal (pure). Run:  node web/src/lib/temporal.test.mjs
-import { ema, momentum, trendLabel, synthHistory, findAnalogs, leadLag, hashSeed } from "./temporal.js";
+import { ema, momentum, trendLabel, findAnalogs, leadLag } from "./temporal.js";
 
 let passed = 0, failed = 0;
 const ok = (n, c) => { if (c) { passed++; console.log(`  ✓ ${n}`); } else { failed++; console.error(`  ✗ ${n}`); } };
@@ -12,18 +12,6 @@ ok("flat series ⇒ ~zero momentum", Math.abs(momentum([40, 40, 40, 40])) < 1e-6
 ok("trendLabel rising", trendLabel(10) === "rising");
 ok("trendLabel falling", trendLabel(-10) === "falling");
 ok("trendLabel stable", trendLabel(0) === "stable");
-
-// synthHistory: deterministic, ends at current, bounded
-const h1 = synthHistory(72, 12, 1234);
-const h2 = synthHistory(72, 12, 1234);
-ok("synthHistory deterministic per seed", JSON.stringify(h1) === JSON.stringify(h2));
-ok("synthHistory ends at current", h1[h1.length - 1] === 72);
-ok("synthHistory length", h1.length === 12);
-ok("synthHistory bounded [0,100]", h1.every((v) => v >= 0 && v <= 100));
-ok("different seeds differ", JSON.stringify(synthHistory(72, 12, 1)) !== JSON.stringify(synthHistory(72, 12, 2)));
-
-// hashSeed stable
-ok("hashSeed stable + numeric", hashSeed("shipping") === hashSeed("shipping") && Number.isInteger(hashSeed("x")));
 
 // findAnalogs: most similar past event ranks first; outcome carried through
 const target = { id: "T", category: "conflict", geography: ["Red Sea", "Yemen"], affected_sectors: ["Shipping & Logistics"] };
