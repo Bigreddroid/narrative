@@ -6,8 +6,9 @@ in the web UI (account/billing/plugins); everything else is CLI. Companion to `d
 frontend → Vercel.
 
 > **Three traps this runbook is built to avoid** (verified against the code):
-> 1. The app needs `DATABASE_URL` with the **`+asyncpg`** driver — Railway emits plain
->    `postgresql://`, which crashes the app on boot (`backend/config.py` does not rewrite it).
+> 1. The app's engine needs the **`+asyncpg`** driver. Railway emits plain `postgresql://`,
+>    but `backend/config.py` now normalizes any `postgresql://`/`postgres://` to
+>    `postgresql+asyncpg://` automatically, so either form boots cleanly.
 > 2. Postgres must have **pgvector** (`CREATE EXTENSION vector` runs in migrations + the dump).
 > 3. `vercel.json` no longer carries the Mapbox token — set it as a **Vercel env var**.
 

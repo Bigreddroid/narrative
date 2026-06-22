@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,20 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://narrative:narrative@localhost:5432/narrative"
     redis_url: str = "redis://localhost:6379/0"
+
+    @field_validator("database_url")
+    @classmethod
+    def _force_asyncpg_driver(cls, v: str) -> str:
+        # The app's engine (backend/database.py) uses create_async_engine and
+        # requires the asyncpg driver. Managed hosts (e.g. Railway) inject a
+        # plain "postgresql://" URL, which makes migrations pass but crashes the
+        # app on boot. Normalize any plain scheme to "postgresql+asyncpg://".
+        if v.startswith("postgresql+asyncpg://"):
+            return v
+        for prefix in ("postgresql://", "postgres://"):
+            if v.startswith(prefix):
+                return "postgresql+asyncpg://" + v[len(prefix):]
+        return v
 
     # Auth
     supabase_url: str = ""
