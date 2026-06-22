@@ -1,5 +1,5 @@
 #!/bin/bash
-cd "/mnt/c/Users/Varun/OneDrive/Desktop/Narrative v5"
+cd "$(dirname "$(readlink -f "$0")")"
 source /opt/narrative-venv312/bin/activate
-export PYTHONPATH="/mnt/c/Users/Varun/OneDrive/Desktop/Narrative v5"
+export PYTHONPATH="$PWD"
 python -m backend.scheduler 2>&1
