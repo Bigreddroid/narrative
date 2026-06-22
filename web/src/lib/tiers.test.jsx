@@ -28,6 +28,17 @@ describe("canAccess — tier gating", () => {
     }
   });
 
+  it("Stripe 'paid' tier unlocks all paid features (monetization parity)", () => {
+    // Regression guard: the Stripe webhook sets tier='paid'. If TIERS lacks it,
+    // canAccess falls back to free and paying customers get a locked UI.
+    expect(TIERS.paid).toBeDefined();
+    for (const feature of Object.keys(ACCESS)) {
+      expect(canAccess("paid", feature)).toBe(true);
+    }
+    // ...but 'paid' is not admin.
+    expect(TIERS.paid.rank).toBeLessThan(TIERS.admin.rank);
+  });
+
   it("admin outranks enterprise (highest rank)", () => {
     expect(TIERS.admin.rank).toBeGreaterThan(TIERS.enterprise.rank);
     expect(canAccess("admin", "whiteLabel")).toBe(true);
