@@ -9,6 +9,7 @@ MODULES=(
   backend.config_test
   backend.api.auth_test
   backend.api.security_headers_test
+  backend.services.analyst_test
   backend.consequence_engine.propagation_test
   backend.consequence_engine.calibration_test
   backend.consequence_engine.cluster_logic_test
