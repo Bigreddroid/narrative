@@ -12,9 +12,18 @@ export default function Analyst() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [hotspots, setHotspots] = useState([]);
   const endRef = useRef(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
+
+  // Geographic risk index for the empty-state context. Drop sub-region noise
+  // (names with a comma, e.g. "Coffee, GA") so the list reads as hotspots.
+  useEffect(() => {
+    api.get("/exposure/countries?top=40")
+      .then((d) => setHotspots((d.countries || []).filter((c) => !c.country.includes(",")).slice(0, 8)))
+      .catch(() => {});
+  }, []);
 
   async function ask(e) {
     e?.preventDefault();
@@ -46,9 +55,24 @@ export default function Analyst() {
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-6 max-w-[820px] w-full mx-auto">
         {turns.length === 0 && !loading && (
-          <div className="text-xs text-ink/40 leading-relaxed">
-            Try: <span className="text-crimson">"What's the biggest risk to shipping right now?"</span> ·{" "}
-            <span className="text-crimson">"Summarize the Israel-Iran situation and its consequences."</span>
+          <div className="space-y-5">
+            <div className="text-xs text-ink/40 leading-relaxed">
+              Try: <span className="text-crimson">"What's the biggest risk to shipping right now?"</span> ·{" "}
+              <span className="text-crimson">"Summarize the Israel-Iran situation and its consequences."</span>
+            </div>
+            {hotspots.length > 0 && (
+              <div className="border border-ink/10 bg-ink/[0.02]">
+                <div className="px-3 py-2 border-b border-ink/10 text-[10px] uppercase tracking-widest text-ink/40">
+                  Top Risk Hotspots
+                </div>
+                {hotspots.map((h, i) => (
+                  <div key={h.country} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                    <span className="text-ink/60"><span className="text-ink/30 mr-2">{i + 1}</span>{h.country}</span>
+                    <span className="text-ink/35">{h.events} events · <span className="text-crimson">{Math.round(h.risk)}</span></span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

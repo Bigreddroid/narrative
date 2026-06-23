@@ -187,6 +187,17 @@ async def get_exposure_history(db: DbDep, user: UserDep, kind: str = "sector", e
     return {"kind": kind, "entity": entity, "series": series}
 
 
+@router.get("/countries")
+async def get_country_risk(db: DbDep, user: UserDep, top: int = 30) -> dict:
+    """Per-country risk index: sum(importance × time-decay) over events touching
+    each country (a 'country instability' view). Derived from the live event
+    graph — no external data. Free tier sees the top 5."""
+    from backend.services.analyst import country_risk
+    cap = 5 if user.tier == "free" else max(1, min(top, 100))
+    countries = await country_risk(db, top=cap)
+    return {"countries": countries, "limited": user.tier == "free"}
+
+
 @router.get("/me")
 async def get_my_exposure(db: DbDep, user: UserDep) -> dict:
     """Personalised exposure for the current user's profile (sectors + home region)."""
