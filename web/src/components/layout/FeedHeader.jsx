@@ -90,6 +90,9 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
           <button onClick={toggle} className="hover:text-crimson transition-colors cursor-pointer" title={isDark ? "Switch to day mode" : "Switch to night mode"}>
             {isDark ? <SunIcon /> : <MoonIcon />}
           </button>
+          <button onClick={() => navigate("/analyst")} className="hover:text-crimson transition-colors cursor-pointer">
+            Analyst
+          </button>
           <button onClick={() => navigate("/settings")} className="hover:text-crimson transition-colors cursor-pointer">
             Settings
           </button>

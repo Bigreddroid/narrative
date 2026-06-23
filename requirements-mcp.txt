@@ -1,0 +1,5 @@
+# MCP server deps — install in a SEPARATE venv from the API.
+# The mcp SDK pins a newer Starlette than FastAPI 0.115 allows, so it must NOT
+# share the API venv. The MCP server is a thin HTTP client (see backend/mcp_server.py).
+mcp>=1.2.0
+httpx>=0.27.0

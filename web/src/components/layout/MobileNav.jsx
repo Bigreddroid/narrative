@@ -50,6 +50,16 @@ const TABS = [
     ),
   },
   {
+    id: "analyst",
+    path: "/analyst",
+    label: "Analyst",
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h11A1.5 1.5 0 0 1 17 5.5v6A1.5 1.5 0 0 1 15.5 13H8l-4 3v-3H4.5A1.5 1.5 0 0 1 3 11.5z" />
+      </svg>
+    ),
+  },
+  {
     id: "tracked",
     path: "/following",
     label: "Tracked",
@@ -78,7 +88,8 @@ export default function MobileNav() {
   const { followed } = useFollowing();
 
   const activeId =
-    location.pathname === "/following" ? "tracked"
+    location.pathname === "/analyst" ? "analyst"
+    : location.pathname === "/following" ? "tracked"
     : location.pathname === "/settings" ? "profile"
     : location.search.includes("tab=deck") ? "deck"
     : location.search.includes("tab=exposure") ? "exposure"
