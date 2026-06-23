@@ -35,7 +35,9 @@ with TestClient(app) as client:
     ok("X-Frame-Options: DENY", h.get("x-frame-options") == "DENY")
     ok("Referrer-Policy: no-referrer", h.get("referrer-policy") == "no-referrer")
     ok("X-XSS-Protection: 0", h.get("x-xss-protection") == "0")
-    ok("Server banner overridden (not uvicorn)", h.get("server") == "narrative")
+    # Note: the uvicorn "server" banner is suppressed at the server layer
+    # (--no-server-header in the run scripts), not in middleware — a middleware
+    # override only appends a duplicate header, so we don't assert on it here.
 
 print(f"\nsecurity_headers: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
