@@ -17,6 +17,9 @@ from backend.feeds import chokepoints
 from backend.feeds import spaceweather
 from backend.feeds import cyber
 from backend.feeds import sanctions
+from backend.feeds import reddit_osint
+from backend.feeds import iptv_org
+from backend.services import osint_agent
 
 passed = failed = 0
 
@@ -263,6 +266,59 @@ stress = market.sector_stress([
 ])
 ok("sector_stress in [0,1]", all(0 <= v <= 1 for v in stress.values()))
 ok("bigger moves ⇒ more stress", stress["Energy"] > stress["FX"])
+
+# ── OSINT: Reddit parser (pure) ─────────────────────────────────────────────
+reddit_json = {"data": {"children": [
+    {"data": {"id": "abc1", "title": "M7 earthquake strikes Iran", "subreddit": "worldnews",
+              "selftext": "Tsunami warning issued.", "permalink": "/r/worldnews/comments/abc1/x",
+              "score": 4200, "num_comments": 800, "created_utc": 1718000000, "stickied": False, "over_18": False}},
+    {"data": {"id": "sticky", "title": "Weekly thread", "subreddit": "worldnews", "stickied": True}},  # skip
+    {"data": {"id": "nsfw1", "title": "graphic", "subreddit": "worldnews", "over_18": True}},  # skip
+    {"data": {"title": "no id", "subreddit": "worldnews"}},  # skip (no id)
+]}}
+rp = reddit_osint.parse_reddit(reddit_json, "worldnews")
+ok("reddit parser skips stickied/nsfw/idless", len(rp) == 1)
+ok("reddit external_id namespaced", rp[0]["external_id"] == "reddit-abc1")
+ok("reddit selftext truncated field present", rp[0]["selftext"] == "Tsunami warning issued." and rp[0]["score"] == 4200)
+ok("reddit url falls back to permalink", rp[0]["url"].endswith("/r/worldnews/comments/abc1/x"))
+ok("reddit empty listing ⇒ []", reddit_osint.parse_reddit({}, "x") == [])
+
+# ── OSINT: triage agent heuristic + geocode (pure, no live LLM) ──────────────
+quake_sig = osint_agent._heuristic_triage(rp[0])
+ok("heuristic categorizes quake ⇒ disaster", quake_sig and quake_sig["category"] == "disaster")
+ok("heuristic geocodes Iran via centroid", quake_sig and quake_sig["lat"] is not None)
+ok("heuristic sets source + confidence", quake_sig["source"] == "osint_reddit" and quake_sig["confidence"] == 0.3)
+ok("heuristic Signal synthesizes (category in SECTOR_MAP)",
+   len(S.synthesize(quake_sig)["direct_impact"]) >= 1)
+
+noise = osint_agent._heuristic_triage({"external_id": "reddit-z", "title": "my opinion on politics",
+                                       "selftext": "", "score": 5, "created_utc": 1718000000})
+ok("heuristic drops keyword-less noise", noise is None)
+
+war_sig = osint_agent._heuristic_triage({"external_id": "reddit-w", "title": "Missile strike on Kyiv, Ukraine",
+                                         "selftext": "", "score": 9000, "created_utc": 1718000000})
+ok("heuristic conflict ⇒ category conflict", war_sig["category"] == "conflict")
+ok("heuristic constrains category to SECTOR_MAP", war_sig["category"] in osint_agent.ALLOWED_CATEGORIES)
+
+ok("geocode known country ⇒ centroid", osint_agent.geocode("Ukraine")[0] is not None)
+ok("geocode empty ⇒ (None, None)", osint_agent.geocode("") == (None, None))
+
+# ── Live news: iptv-org M3U parser (pure) ────────────────────────────────────
+m3u = (
+    "#EXTM3U\n"
+    '#EXTINF:-1 tvg-id="AlJazeera.qa" tvg-logo="https://x/aj.png" tvg-country="QA" '
+    'tvg-language="English" group-title="News",Al Jazeera English\n'
+    "https://example.com/aje/index.m3u8\n"
+    '#EXTINF:-1 tvg-id="NoHls.us" group-title="News",Not HLS Channel\n'
+    "https://example.com/not-a-stream.mp4\n"
+)
+ch = iptv_org.parse_m3u(m3u)
+ok("iptv parser keeps only HLS (.m3u8) entries", len(ch) == 1)
+ok("iptv parser extracts name + id + src", ch[0]["name"] == "Al Jazeera English"
+   and ch[0]["id"] == "AlJazeera.qa" and ch[0]["src"].endswith(".m3u8"))
+ok("iptv parser carries logo + country + marks unofficial",
+   ch[0]["logo"].endswith("aj.png") and ch[0]["region"] == "QA" and ch[0]["official"] is False)
+ok("iptv parser empty text ⇒ []", iptv_org.parse_m3u("") == [])
 
 print(f"\nfeeds: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -6,6 +6,7 @@ import WorldMap from "../components/graph/WorldMap.jsx";
 import EventGraph from "../components/graph/EventGraph.jsx";
 import DeckView from "../components/DeckView.jsx";
 import ExposurePanel from "../components/ExposurePanel.jsx";
+import LiveNewsTab from "../components/livenews/LiveNewsTab.jsx";
 import { useWorldGraph } from "../hooks/useWorldGraph.js";
 import { useEventFeed } from "../hooks/useEventFeed.js";
 import { useVesselFeed } from "../hooks/useVesselFeed.js";
@@ -68,6 +69,15 @@ function EventCard({ event, isSelected, onClick, onNavigate, following, onFollow
             </span>
           )}
           {developing && !escalating && <span className="text-[10px] md:text-[11px] text-ink/40">Developing</span>}
+          {event.is_osint && (
+            <span
+              className="text-[9px] md:text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm"
+              style={{ color: "#B07820", border: "1px solid rgba(176,120,32,0.4)" }}
+              title="Open-source intelligence — unverified, AI-triaged"
+            >
+              OSINT{typeof event.confidence === "number" ? ` · ${Math.round(event.confidence * 100)}%` : ""}
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-2">
             {score > 0 && <span className="text-[11px] text-ink/30 tabular-nums">{score}</span>}
             <button
@@ -620,7 +630,7 @@ export default function WorldView() {
   const [searchParams]       = useSearchParams();
   const [activeTab,       setActiveTab]       = useState(() => {
     const t = searchParams.get("tab");
-    return t === "world" || t === "deck" || t === "exposure" ? t : "feed";
+    return t === "world" || t === "deck" || t === "exposure" || t === "live-news" ? t : "feed";
   });
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [category,        setCategory]        = useState(null);
@@ -669,6 +679,8 @@ export default function WorldView() {
           />
         ) : activeTab === "exposure" ? (
           <ExposurePanel />
+        ) : activeTab === "live-news" ? (
+          <LiveNewsTab />
         ) : (
           <WorldViewTab
             selectedEventId={selectedEventId}

@@ -32,6 +32,7 @@ async def list_events(
     user: UserDep,
     category: str | None = Query(None),
     status: str | None = Query(None),
+    source_type: str | None = Query(None, description="'osint' = open-source/unverified only"),
     limit: int = Query(20, le=100),
     offset: int = Query(0),
 ) -> dict:
@@ -50,6 +51,8 @@ async def list_events(
         query = query.where(NarrativeEvent.category != "cyber")
     if status:
         query = query.where(NarrativeEvent.current_status == status)
+    if source_type == "osint":
+        query = query.where(NarrativeEvent.source.like("osint_%"))
 
     # Freshness-blended ranking: importance + up to +15 recency boost that decays
     # over ~a day, so just-ingested live feeds (quakes, floods, storms) interleave
@@ -76,6 +79,8 @@ async def list_events(
                 "geographic_relevance": e.geographic_relevance,
                 "geo_centroid_lat": e.geo_centroid_lat,
                 "geo_centroid_lng": e.geo_centroid_lng,
+                "source": e.source,
+                "is_osint": (e.source or "").startswith("osint_"),
                 "first_detected_at": e.first_detected_at.isoformat() if e.first_detected_at else None,
                 "last_updated_at": e.last_updated_at.isoformat() if e.last_updated_at else None,
             }
@@ -116,6 +121,8 @@ async def get_event(
         "geographic_relevance": event.geographic_relevance,
         "geo_centroid_lat": event.geo_centroid_lat,
         "geo_centroid_lng": event.geo_centroid_lng,
+        "source": event.source,
+        "is_osint": (event.source or "").startswith("osint_"),
         "follow_keywords": event.follow_keywords,
         "first_detected_at": event.first_detected_at.isoformat() if event.first_detected_at else None,
         "last_updated_at": event.last_updated_at.isoformat() if event.last_updated_at else None,

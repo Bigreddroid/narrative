@@ -114,6 +114,19 @@ class Settings(BaseSettings):
     exposure_snapshot_interval_hours: int = 1
     hazard_ingest_interval_minutes: int = 30   # free real-time feed ingest
     market_ingest_interval_minutes: int = 30
+    osint_ingest_interval_minutes: int = 30    # free keyless OSINT (Reddit) ingest
+
+    # OSINT (open-source intelligence) — keyless Reddit by default
+    osint_subreddits: str = "worldnews,geopolitics,CredibleDefense"
+    reddit_user_agent: str = ""    # descriptive UA for Reddit public .json (recommended)
+    reddit_client_id: str = ""     # optional OAuth upgrade path if rate-limited
+    reddit_client_secret: str = ""
+
+    # Live news (embedded player). Default = curated OFFICIAL channels only.
+    # iptv-org is a huge keyless HLS catalog but aggregates unofficial restreams
+    # (copyright/geo/uptime risk) — opt-in only, never the shipped default.
+    live_news_use_iptv_org: bool = False
+    live_news_iptv_org_url: str = "https://iptv-org.github.io/iptv/categories/news.m3u"
 
     # Free feed keys (optional — most sources need none)
     firms_map_key: str = ""        # NASA FIRMS wildfires

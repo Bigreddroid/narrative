@@ -17,6 +17,7 @@ export const TIERS = {
 export const ACCESS = {
   // Free
   fullFeed:            0,
+  liveNews:            0,  // free taster (2 channels); backend widens set by tier
   // Pro
   eventGraph:          1,
   worldRegions:        1,
