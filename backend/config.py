@@ -10,6 +10,19 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     voyage_api_key: str = ""
 
+    # Provider posture — free/local by default. Paid providers are opt-in and
+    # only consulted when paid_apis_enabled is True (see backend/services/llm.py
+    # and embedder.py). With the defaults below the whole pipeline runs at $0.
+    paid_apis_enabled: bool = False        # master kill-switch for ALL paid calls
+    llm_provider: str = "ollama"           # ollama | anthropic | off
+    embeddings_provider: str = "local"     # local | voyage
+
+    # Local (free) models
+    ollama_base_url: str = "http://localhost:11434"
+    local_llm_model: str = "llama3.2:latest"               # works out-of-box; qwen2.5:7b = sharper JSON
+    local_embedding_model: str = "BAAI/bge-large-en-v1.5"  # 1024-dim ⇒ no schema change
+    ollama_timeout_seconds: float = 120.0
+
     # Database
     database_url: str = "postgresql+asyncpg://narrative:narrative@localhost:5432/narrative"
     redis_url: str = "redis://localhost:6379/0"
@@ -48,9 +61,6 @@ class Settings(BaseSettings):
 
     # Notifications
     firebase_service_account_json: str = ""
-
-    # Maps
-    mapbox_public_token: str = ""
 
     # Maritime / AIS (optional — server-side vessel source for the maritime overlay)
     aishub_username: str = ""
@@ -104,6 +114,19 @@ class Settings(BaseSettings):
     exposure_snapshot_interval_hours: int = 1
     hazard_ingest_interval_minutes: int = 30   # free real-time feed ingest
     market_ingest_interval_minutes: int = 30
+    osint_ingest_interval_minutes: int = 30    # free keyless OSINT (Reddit) ingest
+
+    # OSINT (open-source intelligence) — keyless Reddit by default
+    osint_subreddits: str = "worldnews,geopolitics,CredibleDefense"
+    reddit_user_agent: str = ""    # descriptive UA for Reddit public .json (recommended)
+    reddit_client_id: str = ""     # optional OAuth upgrade path if rate-limited
+    reddit_client_secret: str = ""
+
+    # Live news (embedded player). Default = curated OFFICIAL channels only.
+    # iptv-org is a huge keyless HLS catalog but aggregates unofficial restreams
+    # (copyright/geo/uptime risk) — opt-in only, never the shipped default.
+    live_news_use_iptv_org: bool = False
+    live_news_iptv_org_url: str = "https://iptv-org.github.io/iptv/categories/news.m3u"
 
     # Free feed keys (optional — most sources need none)
     firms_map_key: str = ""        # NASA FIRMS wildfires
@@ -112,9 +135,14 @@ class Settings(BaseSettings):
     archive_interval_hours: int = 24
 
     # Cost control
-    claude_daily_cost_alert_usd: float = 20.0
-    claude_monthly_budget_usd: float = 200.0
+    claude_daily_cost_alert_usd: float = 20.0    # soft alert (email only)
+    claude_monthly_budget_usd: float = 200.0     # soft alert / admin reference
     admin_alert_email: str = ""
+    # Enforced hard caps (NOT just alerts). When the active paid LLM provider is
+    # selected, a call is blocked once today's / this-month's spend reaches these.
+    # 0.0 ⇒ no paid spend permitted, so callers degrade to the free path.
+    claude_hard_cap_daily_usd: float = 0.0
+    claude_hard_cap_monthly_usd: float = 0.0
 
     # Data lifecycle
     hot_data_days: int = 30

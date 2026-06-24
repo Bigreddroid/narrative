@@ -116,7 +116,7 @@ python -m backend.scheduler
 ```bash
 cd web
 npm install
-cp .env.example .env  # Add VITE_MAPBOX_TOKEN
+cp .env.example .env  # no token needed — the world map is d3/topojson (free)
 npm run dev
 # → http://localhost:5173
 ```

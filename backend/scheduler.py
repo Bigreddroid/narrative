@@ -56,6 +56,7 @@ async def main():
     from backend.workers.exposure_snapshot_worker import run_exposure_snapshot_worker
     from backend.workers.hazard_ingest_worker import run_hazard_ingest_worker
     from backend.workers.market_ingest_worker import run_market_ingest_worker
+    from backend.workers.osint_ingest_worker import run_osint_ingest_worker
 
     tasks = [
         asyncio.create_task(
@@ -99,6 +100,9 @@ async def main():
         ),
         asyncio.create_task(
             _run_with_interval("market_ingest_worker", run_market_ingest_worker, s.market_ingest_interval_minutes * 60)
+        ),
+        asyncio.create_task(
+            _run_with_interval("osint_ingest_worker", run_osint_ingest_worker, s.osint_ingest_interval_minutes * 60)
         ),
     ]
 

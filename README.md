@@ -60,8 +60,8 @@ node web/src/lib/propagation.test.mjs
 
 Backend → **Railway** (consolidated to `api` + `scheduler` services + managed
 Postgres/Redis; see `railway.toml` and `.env.production.example`). Frontend →
-**Vercel** (`vercel.json`; set the API rewrite target + `VITE_MAPBOX_TOKEN`).
-Full steps in `docs/DEPLOY.md`.
+**Vercel** (`vercel.json`; set the API rewrite target). Full steps in
+`docs/DEPLOY.md`. Runs free/local by default — see `docs/COST.md`.
 
 ## Security notes
 

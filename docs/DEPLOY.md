@@ -8,9 +8,13 @@ calls the API at the relative path `/api/v1`, and Vercel rewrites that to Railwa
 ---
 
 ## 0. Gather secrets first
-- **Anthropic** API key (`ANTHROPIC_API_KEY`) — for the LLM mapping worker.
-- **Voyage** API key (`VOYAGE_API_KEY`) — embeddings.
-- **Mapbox** public token (`VITE_MAPBOX_TOKEN`) — world map.
+The pipeline runs free/local by default (Ollama + fastembed) — no AI keys required.
+See `docs/COST.md`. The keys below are **optional** unless you opt into paid providers.
+- **Anthropic** API key (`ANTHROPIC_API_KEY`) — optional; only used when
+  `PAID_APIS_ENABLED=true` and `LLM_PROVIDER=anthropic`.
+- **Voyage** API key (`VOYAGE_API_KEY`) — optional; only used when
+  `PAID_APIS_ENABLED=true` and `EMBEDDINGS_PROVIDER=voyage`.
+- The world map needs no token (d3/topojson).
 - **Stripe** (test mode is fine to start): `STRIPE_SECRET_KEY`, a recurring **Price ID**
   (`STRIPE_PRICE_ID`), and later `STRIPE_WEBHOOK_SECRET`.
 - A long random `SECRET_KEY` (JWT signing): `python -c "import secrets;print(secrets.token_urlsafe(48))"`.
@@ -51,10 +55,8 @@ calls the API at the relative path `/api/v1`, and Vercel rewrites that to Railwa
 2. **Edit `vercel.json`** → replace `__RAILWAY_API_HOST__` in the `/api/(.*)` rewrite
    `destination` with your real Railway API host (no scheme), e.g.
    `narrative-api-production.up.railway.app`. Commit.
-3. **Env / secrets:** add the Mapbox token as a normal Vercel env var —
-   `vercel env add VITE_MAPBOX_TOKEN` (or in the dashboard). (`vercel.json` no longer
-   references a `@mapbox_public_token` secret.) Leave `VITE_DEMO_MODE`
-   unset/false for a real beta.
+3. **Env / secrets:** the frontend needs no map token (the world map is d3/topojson).
+   Leave `VITE_DEMO_MODE` unset/false for a real beta.
 4. **Deploy.** You get `https://<project>.vercel.app` (add a custom domain if desired).
 
 ---
