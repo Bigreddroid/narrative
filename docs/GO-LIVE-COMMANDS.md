@@ -10,7 +10,7 @@ frontend → Vercel.
 >    but `backend/config.py` now normalizes any `postgresql://`/`postgres://` to
 >    `postgresql+asyncpg://` automatically, so either form boots cleanly.
 > 2. Postgres must have **pgvector** (`CREATE EXTENSION vector` runs in migrations + the dump).
-> 3. `vercel.json` no longer carries the Mapbox token — set it as a **Vercel env var**.
+> 3. The world map is d3/topojson — no map token/env var needed.
 
 ## Prerequisites (one-time)
 ```bash
@@ -88,7 +88,7 @@ railway logs --service scheduler        # workers tick: scrape → embed → clu
 ## Step 8 — Frontend on Vercel
 ```bash
 vercel link                              # repo root; creates the project
-vercel env add VITE_MAPBOX_TOKEN production     # paste your Mapbox public token (pk.…)
+# No map token needed (world map is d3/topojson).
 # Do NOT set VITE_DEMO_MODE (unset = real data only).
 ```
 Edit `vercel.json` → replace `__RAILWAY_API_HOST__` in the `/api/(.*)` rewrite with the Railway
@@ -120,6 +120,5 @@ bash scripts/smoke_test.sh
   while the app fails is the tell (Alembic self-converts; the app doesn't).
 - **`vector` type errors** → Postgres lacks pgvector (Step 2).
 - **CORS errors in the browser** → `ALLOWED_ORIGINS` doesn't match the Vercel domain (Step 9).
-- **Mapbox blank** → `VITE_MAPBOX_TOKEN` not set in Vercel *before* the build (it's build-time).
 - Re-running Steps 4/7 (`railway up`) redeploys; data persists in the Postgres plugin across
   redeploys. Re-run Step 5 only to refresh the dataset (`--clean` makes it idempotent).

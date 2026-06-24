@@ -164,7 +164,7 @@ story += [para("6 &nbsp; Deploy the frontend (Vercel)", H1)]
 story += bullets([
     "Import the GitHub repo in Vercel. Build is defined in <span face='Courier'>vercel.json</span> "
     "(<span face='Courier'>cd web &amp;&amp; npm install &amp;&amp; npm run build</span>).",
-    "Set env var <span face='Courier'>VITE_MAPBOX_TOKEN</span> (Mapbox public token, free tier). "
+    "No map token needed (the world map is d3/topojson). "
     "<b>Do not</b> set <span face='Courier'>VITE_DEMO_MODE</span> — leaving it unset keeps the app on real data.",
     "Replace the <span face='Courier'>vercel.json</span> rewrite placeholder "
     "<span face='Courier'>REPLACE-WITH-RAILWAY-API…</span> with the real Railway API URL, commit, redeploy.",

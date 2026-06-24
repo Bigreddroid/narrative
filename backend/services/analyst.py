@@ -8,6 +8,7 @@ model is told to say so. Pure helpers (_format_context, aggregate_country_risk)
 are unit-tested without an LLM call.
 """
 
+import asyncio
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from sqlalchemy import or_, select
 
 from backend.config import get_settings
 from backend.models.narrative_event import NarrativeEvent
+from backend.services import cost_guard, llm
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -135,23 +137,63 @@ async def country_risk(db, top: int = 20) -> list[dict]:
         [{"geography": g, "importance": imp, "last_updated_at": ts} for g, imp, ts in rows], top=top)
 
 
+def _templated_answer(events: list[dict], exposure: dict | None) -> str:
+    """Grounded answer assembled WITHOUT an LLM — used when live synthesis is off
+    (no LLM available or the paid cap is hit). Honest, never fabricated."""
+    if not events:
+        return ("Live AI synthesis is currently off and there are no mapped events to "
+                "summarise yet. Try again once the pipeline has mapped some events.")
+    parts = ["Live AI synthesis is off — here is the most relevant real data on file:"]
+    if exposure and exposure.get("pressure") is not None:
+        top_sec = ", ".join(s["key"] for s in (exposure.get("sectors") or [])[:3])
+        top_reg = ", ".join(r["key"] for r in (exposure.get("regions") or [])[:3])
+        parts.append(
+            f"Overall pressure is {exposure['pressure']}"
+            + (f"; top sectors: {top_sec}" if top_sec else "")
+            + (f"; top regions: {top_reg}" if top_reg else "") + "."
+        )
+    parts.append("Top events:")
+    for i, e in enumerate(events[:5], 1):
+        geo = ", ".join(e.get("geography") or [])
+        parts.append(
+            f"[{i}] {e['title']} — {e.get('category')}/{e.get('status')}, "
+            f"importance {e.get('importance')}" + (f" ({geo})" if geo else "")
+        )
+    return "\n".join(parts)
+
+
 async def answer_question(db, question: str) -> dict:
-    """Retrieve real context, ask Claude grounded in it, return {answer, sources, pressure}."""
-    import anthropic
+    """Retrieve real context, answer grounded in it, return {answer, sources, pressure}.
+
+    Free/local LLM by default. When no LLM is available (or a paid provider has hit
+    its hard cap), degrade to a templated, grounded answer instead of erroring."""
     events = await retrieve_events(db, question)
     exposure = await exposure_summary(db)
-    context = _format_context(events, exposure)
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    resp = client.messages.create(
-        model=settings.consequence_engine_model,
-        max_tokens=1024,
-        system=ANALYST_SYSTEM,
-        messages=[{"role": "user", "content": f"{context}\n\nQUESTION: {question}"}],
-    )
-    answer = resp.content[0].text.strip()
+    if not await cost_guard.llm_allowed(db):
+        return {
+            "answer": _templated_answer(events, exposure),
+            "sources": events,
+            "pressure": exposure.get("pressure") if exposure else None,
+            "degraded": True,
+        }
+
+    context = _format_context(events, exposure)
+    try:
+        result = await asyncio.to_thread(
+            llm.complete,
+            system=ANALYST_SYSTEM,
+            user=f"{context}\n\nQUESTION: {question}",
+            max_tokens=1024,
+        )
+        answer, degraded = result.text, False
+    except Exception as exc:  # noqa: BLE001 — never 500 the user; fall back to context
+        logger.warning("Analyst LLM call failed (%s) — returning templated answer", exc)
+        answer, degraded = _templated_answer(events, exposure), True
+
     return {
         "answer": answer,
         "sources": events,  # [n] citations in the answer map to this 1-indexed list
         "pressure": exposure.get("pressure") if exposure else None,
+        "degraded": degraded,
     }

@@ -1,7 +1,9 @@
 """
-Claude consequence mapping engine.
-ONE call per cluster. Never per article.
-Costs ~$0.003-0.015 per call depending on depth.
+Consequence mapping engine.
+ONE LLM call per cluster. Never per article.
+Routed through backend.services.llm — free/local (Ollama) by default, or the
+opt-in paid provider (~$0.003-0.015 per call). Callers gate paid calls via
+cost_guard and degrade to storing the raw cluster when no LLM is available.
 """
 
 import json
@@ -9,9 +11,8 @@ import logging
 import time
 from typing import Any
 
-import anthropic
-
 from backend.config import get_settings
+from backend.services import llm
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -153,11 +154,6 @@ def _build_articles_block(articles: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _estimate_cost(input_tokens: int, output_tokens: int) -> float:
-    # claude-sonnet-4-20250514 pricing: $3/MTok in, $15/MTok out
-    return (input_tokens * 3 + output_tokens * 15) / 1_000_000
-
-
 def map_cluster(
     articles: list[dict],
     depth: str,
@@ -192,29 +188,28 @@ def map_cluster(
             articles_block=articles_block,
         )
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
     start = time.perf_counter()
-    response = client.messages.create(
-        model=settings.consequence_engine_model,
-        max_tokens=4096,
+    result = llm.complete(
         system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_msg}],
+        user=user_msg,
+        max_tokens=4096,
+        json_mode=True,
     )
     duration = time.perf_counter() - start
 
-    raw_text = response.content[0].text.strip()
-    input_tokens = response.usage.input_tokens
-    output_tokens = response.usage.output_tokens
-    cost_usd = _estimate_cost(input_tokens, output_tokens)
+    raw_text = result.text
+    input_tokens = result.input_tokens
+    output_tokens = result.output_tokens
+    cost_usd = result.cost_usd
 
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as exc:
-        logger.error("Claude returned invalid JSON: %s\nRaw: %.200s", exc, raw_text)
-        raise ValueError(f"Claude returned non-JSON response: {exc}") from exc
+        logger.error("LLM returned invalid JSON: %s\nRaw: %.200s", exc, raw_text)
+        raise ValueError(f"LLM returned non-JSON response: {exc}") from exc
 
     parsed["_meta"] = {
+        "provider": result.provider,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "cost_usd": cost_usd,
@@ -224,7 +219,8 @@ def map_cluster(
     }
 
     logger.info(
-        "Claude mapping complete: depth=%s articles=%d tokens=%d cost=$%.4f",
+        "Mapping complete (%s): depth=%s articles=%d tokens=%d cost=$%.4f",
+        result.provider,
         depth,
         len(articles),
         input_tokens + output_tokens,

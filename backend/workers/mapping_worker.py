@@ -1,9 +1,13 @@
 """
 STEP 5 — CONSEQUENCE MAPPING (every 15 minutes)
-THIS IS THE ONLY STEP THAT CALLS CLAUDE.
+THIS IS THE ONLY STEP THAT CALLS AN LLM.
 One call per cluster. Never per article.
 Deep (>=70): full chain + evidence + prediction.
 Light (40-69): summary + basic impact only.
+
+Routed through backend.services.llm (free/local by default). If no LLM is
+available — or a paid provider has hit its hard cap — the run is skipped and the
+candidate events are left unmapped for a later run (graceful, no spend, no crash).
 """
 
 import asyncio
@@ -27,6 +31,7 @@ from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.narrative_event import NarrativeEvent
 from backend.models.pipeline_metrics import PipelineMetric
 from backend.models.source import Source
+from backend.services import cost_guard
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -83,7 +88,7 @@ async def map_event(event: NarrativeEvent, db: AsyncSession, forced_depth: str |
         if asyncio.iscoroutine(result):
             result = await result
     except Exception as exc:
-        logger.error("Claude mapping failed for event %s: %s", event.id, exc)
+        logger.error("LLM mapping failed for event %s: %s", event.id, exc)
         return None
 
     meta = result.pop("_meta", {})
@@ -152,6 +157,21 @@ async def run_mapping_worker() -> dict:
     claude_tokens = 0
     claude_cost   = 0.0
     errors        = 0
+
+    # Graceful degrade: if no LLM is reachable (local provider down / 'off') or a
+    # paid provider has hit its enforced hard cap, skip the run. Candidate events
+    # stay is_mapped=False and get picked up once an LLM is available again.
+    async with AsyncSessionLocal() as db:
+        if not await cost_guard.llm_allowed(db):
+            logger.warning("Mapping skipped: no LLM available or paid budget exhausted.")
+            db.add(PipelineMetric(
+                id=uuid.uuid4(), worker_name="mapping_worker", events_mapped=0,
+                claude_calls=0, claude_tokens_used=0, claude_cost_usd=0.0,
+                errors=0, duration_seconds=round(time.perf_counter() - start, 2),
+            ))
+            await db.commit()
+            return {"events_mapped": 0, "claude_calls": 0, "claude_cost_usd": 0.0,
+                    "errors": 0, "skipped": "no_llm"}
 
     # Fetch candidate events + scores, then plan budget-aware routing for the batch.
     async with AsyncSessionLocal() as db:

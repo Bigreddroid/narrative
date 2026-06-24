@@ -24,11 +24,11 @@ import time
 import uuid
 from datetime import datetime, timezone, timedelta
 
-import anthropic
 from sqlalchemy import select
 
 from backend.config import get_settings
 from backend.consequence_engine import calibration
+from backend.services import cost_guard, llm
 from backend.database import AsyncSessionLocal
 from backend.models.article import Article
 from backend.models.event_consequence_map import EventConsequenceMap
@@ -63,19 +63,13 @@ Use "too_early" only if the later evidence genuinely cannot resolve the claim.""
 
 def _judge(prediction_reasoning: str, impact: str, evidence_block: str) -> dict:
     """Ask the model to grade one prediction against post-prediction evidence."""
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     user = (
         f"PREDICTION (made earlier):\n{prediction_reasoning}\n\n"
         f"PREDICTED IMPACT:\n{impact}\n\n"
         f"LATER EVIDENCE (emerged after the prediction):\n{evidence_block}"
     )
-    resp = client.messages.create(
-        model=settings.consequence_engine_model,
-        max_tokens=512,
-        system=JUDGE_SYSTEM,
-        messages=[{"role": "user", "content": user}],
-    )
-    text = resp.content[0].text.strip()
+    result = llm.complete(system=JUDGE_SYSTEM, user=user, max_tokens=512, json_mode=True)
+    text = result.text
     if text.startswith("```"):  # defensive: strip accidental markdown fences
         text = text.strip("`")
         text = text[text.find("{"):]
@@ -112,6 +106,12 @@ async def run_outcome_worker() -> dict:
     evaluated = pending = errors = 0
 
     async with AsyncSessionLocal() as db:
+        # Graceful degrade: no LLM available / paid cap hit ⇒ skip this run.
+        # Calibration simply waits; nothing is fabricated.
+        if not await cost_guard.llm_allowed(db):
+            logger.warning("Outcome eval skipped: no LLM available or paid budget exhausted.")
+            return {"evaluated": 0, "pending": 0, "errors": 0, "skipped": "no_llm"}
+
         cutoff = datetime.now(timezone.utc) - timedelta(days=EVALUATION_LOOKBACK_DAYS)
 
         rows = (await db.execute(
