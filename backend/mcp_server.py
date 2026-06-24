@@ -55,6 +55,13 @@ async def search_events(query: str, limit: int = 20) -> dict:
 
 
 @mcp.tool()
+async def country_risk(top: int = 30) -> dict:
+    """Per-country (geographic) risk index — ranked hotspots by importance × recency
+    over the live event graph. A 'country instability' style view."""
+    return await _get("/exposure/countries", {"top": top})
+
+
+@mcp.tool()
 async def get_world_graph() -> dict:
     """The full live event graph: nodes (events) + edges (causal/consequence links)."""
     return await _get("/graph/world")
