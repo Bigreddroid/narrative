@@ -22,6 +22,8 @@ const CHOKEPOINT_BOXES = [
 ];
 const GLOBAL_BOX = [[[-90, -180], [90, 180]]];
 const AIS_BOXES = import.meta.env.VITE_AIS_GLOBAL === "true" ? GLOBAL_BOX : CHOKEPOINT_BOXES;
+// TODO (going live): show ALL active vessels — set VITE_AIS_GLOBAL=true AND
+// bump the render cap below (see "going live" note at the prune step).
 
 // Maritime vessel feed with graceful source preference:
 //   1. backend /api/v1/vessels  (server-side AIS — AISHub/etc, no CORS, creds hidden)
@@ -132,6 +134,9 @@ export function useVesselFeed(enabled = true) {
           if (known?.type) v.type = known.type;
           v._ts = performance.now();
           liveMapRef.current.set(v.mmsi, v);
+          // TODO (going live): with VITE_AIS_GLOBAL=true this 600 cap must be
+          // bumped (≈1500–2000 for SVG; beyond that switch vessels to canvas)
+          // so the full active fleet is shown, not just the newest 600.
           if (liveMapRef.current.size > 600) {
             const cutoff = performance.now() - 120000;
             for (const [k, val] of liveMapRef.current) if (val._ts < cutoff) liveMapRef.current.delete(k);
