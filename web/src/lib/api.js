@@ -20,8 +20,10 @@ async function request(path, options = {}) {
 
   // Fail fast if the backend is unreachable so offline mock fallbacks kick in
   // quickly (a dead proxy target can otherwise hang the request for ~minutes).
+  // Default 3.5s fail-fast for normal REST, but callers can override (e.g. the
+  // LLM analyst chat needs much longer — a cold local model can take 10–30s).
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 3500);
+  const timer = setTimeout(() => ctrl.abort(), options.timeoutMs ?? 3500);
 
   let res;
   try {
@@ -45,8 +47,8 @@ async function request(path, options = {}) {
 
 export const api = {
   get: (path) => request(path),
-  post: (path, body) =>
-    request(path, { method: "POST", body: JSON.stringify(body) }),
+  post: (path, body, opts = {}) =>
+    request(path, { method: "POST", body: JSON.stringify(body), ...opts }),
   patch: (path, body) =>
     request(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: (path) => request(path, { method: "DELETE" }),

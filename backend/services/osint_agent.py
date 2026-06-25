@@ -105,11 +105,11 @@ def geocode(name: str) -> tuple[float | None, float | None]:
 
 
 def _signal(post: dict, category: str, title: str, summary: str,
-            importance: int, confidence: float, location: str) -> dict:
+            importance: int, confidence: float, location: str, source: str = SOURCE) -> dict:
     lat, lng = geocode(location) if location else (None, None)
     return {
         "external_id": post["external_id"],
-        "source": SOURCE,
+        "source": source,
         "title": title.strip()[:300] or post["title"],
         "summary": summary.strip()[:600] or post["title"],
         "category": category,
@@ -124,7 +124,7 @@ def _signal(post: dict, category: str, title: str, summary: str,
     }
 
 
-def _heuristic_triage(post: dict) -> dict | None:
+def _heuristic_triage(post: dict, source: str = SOURCE) -> dict | None:
     """No-LLM fallback: keyword category match → Signal, else drop. Low confidence."""
     text = f"{post.get('title', '')} {post.get('selftext', '')}".lower()
     category = next((cat for kws, cat in _KEYWORDS if any(k in text for k in kws)), None)
@@ -133,14 +133,14 @@ def _heuristic_triage(post: dict) -> dict | None:
     location = next((c for c in _COUNTRY_CENTROIDS if c in text), "")
     importance = min(70, 45 + post.get("score", 0) // 200)
     return _signal(post, category, post["title"], post.get("title", ""),
-                   importance, 0.3, location)
+                   importance, 0.3, location, source=source)
 
 
-def _llm_triage(post: dict) -> dict | None:
+def _llm_triage(post: dict, source: str = SOURCE) -> dict | None:
     """LLM-driven triage via the free local model. Returns a Signal or None."""
     from backend.services import llm
 
-    user = (f"SUBREDDIT: r/{post.get('subreddit', '')}\n"
+    user = (f"SOURCE: {post.get('subreddit', '')}\n"
             f"TITLE: {post.get('title', '')}\n"
             f"BODY: {post.get('selftext', '')[:1000]}")
     res = llm.complete(_SYSTEM, user, max_tokens=400, json_mode=True)
@@ -169,20 +169,22 @@ def _llm_triage(post: dict) -> dict | None:
         int(data.get("importance") or 50),
         confidence,
         str(data.get("location_name") or "").strip(),
+        source=source,
     )
 
 
-def triage(post: dict, allow_llm: bool = True) -> dict | None:
+def triage(post: dict, allow_llm: bool = True, source: str = SOURCE) -> dict | None:
     """Raw post → Signal dict, or None to drop. Synchronous (worker offloads via to_thread).
 
     Uses the LLM when allowed/available; on any LLM failure, or when disallowed, falls
-    back to the keyword heuristic so OSINT ingest never hard-fails.
+    back to the keyword heuristic so OSINT ingest never hard-fails. `source` tags the
+    emitted Signal (e.g. 'osint_gdelt', 'osint_reddit') so the UI can badge it.
     """
     from backend.services import llm
 
     if allow_llm and llm.available():
         try:
-            return _llm_triage(post)
+            return _llm_triage(post, source=source)
         except Exception as exc:  # noqa: BLE001 — degrade to heuristic, never crash ingest
             logger.warning("OSINT LLM triage failed (%s); using heuristic", exc)
-    return _heuristic_triage(post)
+    return _heuristic_triage(post, source=source)

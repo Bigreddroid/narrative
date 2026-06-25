@@ -20,12 +20,11 @@ router = APIRouter(prefix="/live-news", tags=["live-news"])
 
 # Official, broadcaster-published 24/7 streams. `type`: "hls" (HlsPlayer) or
 # "youtube" (official live iframe via channel id). All free-to-embed.
+# Ordered most-reliable first: the frontend selects channels[0] by default, so the
+# default must be a stream that actually embeds. DW (Akamai) and France 24 send
+# permissive CORS and play in-browser; Sky News is an official YouTube embed; the
+# Al Jazeera getaj.net streams are kept but can be geo/CORS-restricted in-browser.
 LIVE_NEWS_CHANNELS: list[dict] = [
-    {
-        "id": "aljazeera-en", "name": "Al Jazeera English", "lang": "en",
-        "region": "QA", "type": "hls", "official": True,
-        "src": "https://live-hls-web-aje.getaj.net/AJE/01.m3u8",
-    },
     {
         "id": "dw-en", "name": "DW English", "lang": "en",
         "region": "DE", "type": "hls", "official": True,
@@ -42,13 +41,18 @@ LIVE_NEWS_CHANNELS: list[dict] = [
         "src": "https://www.youtube.com/embed/live_stream?channel=UCoMdktPbSTixAyNGwb-UYkQ",
     },
     {
+        "id": "aljazeera-en", "name": "Al Jazeera English", "lang": "en",
+        "region": "QA", "type": "hls", "official": True,
+        "src": "https://live-hls-web-aje.getaj.net/AJE/index.m3u8",
+    },
+    {
         "id": "aljazeera-ar", "name": "Al Jazeera Arabic", "lang": "ar",
         "region": "QA", "type": "hls", "official": True,
-        "src": "https://live-hls-web-aja.getaj.net/AJA/01.m3u8",
+        "src": "https://live-hls-web-aja.getaj.net/AJA/index.m3u8",
     },
 ]
 
-_FREE_CHANNEL_IDS = {"aljazeera-en", "dw-en"}  # free-tier taster
+_FREE_CHANNEL_IDS = {"dw-en", "france24-en"}  # free-tier taster (both embed reliably)
 
 
 @router.get("/streams")
