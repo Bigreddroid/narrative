@@ -33,7 +33,7 @@ export default function Analyst() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api.post("/chat", { question: q });
+      const res = await api.post("/chat", { question: q }, { timeoutMs: 60000 });
       setTurns((t) => [...t, { q, ...res }]);
     } catch (err) {
       if (err.status === 402) setError("The AI analyst is a paid feature. Upgrade to Full Access in Settings.");
