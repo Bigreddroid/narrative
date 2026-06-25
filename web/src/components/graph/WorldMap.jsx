@@ -286,72 +286,90 @@ export default function WorldMap({
       arcsG.selectAll("path.arc").attr("d", (d) => path({ type: "LineString", coordinates: d.coords }));
     }
 
+    // Reconcile the DOM set + per-vessel styling at ~3 Hz (data identity,
+    // selection and exposure tint change far slower than the 60fps loop); then
+    // reposition every frame in a cheap single pass so motion stays fluid even
+    // with hundreds of live AIS vessels.
+    let vesselStyleT = 0;
     function renderVessels() {
-      const data = getVesselsRef.current() || [];
-      const sel = vesselsG.selectAll("path.vessel").data(data, (d) => d.mmsi);
-      sel.exit().remove();
-      const enter = sel.enter().append("path")
-        .attr("class", "vessel")
-        .attr("d", VESSEL_ARROW)
-        .attr("stroke", "rgba(0,0,0,0.35)").attr("stroke-width", 0.4)
-        .style("cursor", "pointer")
-        .on("pointerdown", (e) => e.stopPropagation())
-        .on("mouseenter", function (e, d) { hoverRef.current = true; setHoverVessel(d); setTip({ x: e.clientX, y: e.clientY }); })
-        .on("mousemove", (e) => setTip({ x: e.clientX, y: e.clientY }))
-        .on("mouseleave", function () { hoverRef.current = false; setHoverVessel(null); })
-        .on("click", (e, d) => { e.stopPropagation(); setSelVessel(d); setSelAircraft(null); });
-      const vScores = eventScoresRef.current, vAssoc = assocRef.current.nearestByItem;
-      enter.merge(sel)
-        .attr("fill", (d) => {
-          const near = vAssoc.get(d.mmsi);
-          if (exposureLayerRef.current && near && vScores && vScores[near.eventId] != null) return exposureColor(vScores[near.eventId]);
-          return (VESSEL_TYPES[d.type] || VESSEL_TYPES.other).color;
-        })
-        .attr("fill-opacity", (d) => {
-          if (!selectedNodeId) return 1;
-          const near = vAssoc.get(d.mmsi);
-          return near && near.eventId === String(selectedNodeId) ? 1 : 0.18;
-        })
-        .attr("display", (d) => (visible(d.lng, d.lat) ? null : "none"))
-        .attr("transform", (d) => {
-          const p = projection([d.lng, d.lat]);
-          if (!p) return "translate(-9999,-9999)";
-          return `translate(${p[0]},${p[1]}) rotate(${d.heading || 0})`;
-        });
+      let sel = vesselsG.selectAll("path.vessel");
+      const now = performance.now();
+      if (now - vesselStyleT > 300) {
+        vesselStyleT = now;
+        const data = getVesselsRef.current() || [];
+        sel = sel.data(data, (d) => d.mmsi);
+        sel.exit().remove();
+        const enter = sel.enter().append("path")
+          .attr("class", "vessel")
+          .attr("d", VESSEL_ARROW)
+          .attr("stroke", "rgba(0,0,0,0.35)").attr("stroke-width", 0.4)
+          .style("cursor", "pointer")
+          .on("pointerdown", (e) => e.stopPropagation())
+          .on("mouseenter", function (e, d) { hoverRef.current = true; setHoverVessel(d); setTip({ x: e.clientX, y: e.clientY }); })
+          .on("mousemove", (e) => setTip({ x: e.clientX, y: e.clientY }))
+          .on("mouseleave", function () { hoverRef.current = false; setHoverVessel(null); })
+          .on("click", (e, d) => { e.stopPropagation(); setSelVessel(d); setSelAircraft(null); });
+        const vScores = eventScoresRef.current, vAssoc = assocRef.current.nearestByItem;
+        sel = enter.merge(sel)
+          .attr("fill", (d) => {
+            const near = vAssoc.get(d.mmsi);
+            if (exposureLayerRef.current && near && vScores && vScores[near.eventId] != null) return exposureColor(vScores[near.eventId]);
+            return (VESSEL_TYPES[d.type] || VESSEL_TYPES.other).color;
+          })
+          .attr("fill-opacity", (d) => {
+            if (!selectedNodeId) return 1;
+            const near = vAssoc.get(d.mmsi);
+            return near && near.eventId === String(selectedNodeId) ? 1 : 0.18;
+          });
+      }
+      sel.each(function (d) {
+        if (!visible(d.lng, d.lat)) { this.style.display = "none"; return; }
+        const p = projection([d.lng, d.lat]);
+        if (!p) { this.style.display = "none"; return; }
+        this.style.display = "";
+        this.setAttribute("transform", `translate(${p[0]},${p[1]}) rotate(${d.heading || 0})`);
+      });
     }
 
+    let aircraftStyleT = 0;
     function renderAircraft() {
-      const data = getAircraftRef.current() || [];
-      const sel = aircraftG.selectAll("path.aircraft").data(data, (d) => d.icao);
-      sel.exit().remove();
-      const enter = sel.enter().append("path")
-        .attr("class", "aircraft")
-        .attr("d", AIRCRAFT_GLYPH)
-        .attr("stroke", "rgba(0,0,0,0.3)").attr("stroke-width", 0.4)
-        .style("cursor", "pointer")
-        .on("pointerdown", (e) => e.stopPropagation())
-        .on("mouseenter", function (e, d) { hoverRef.current = true; setHoverAircraft(d); setTip({ x: e.clientX, y: e.clientY }); })
-        .on("mousemove", (e) => setTip({ x: e.clientX, y: e.clientY }))
-        .on("mouseleave", function () { hoverRef.current = false; setHoverAircraft(null); })
-        .on("click", (e, d) => { e.stopPropagation(); setSelAircraft(d); setSelVessel(null); });
-      const aScores = eventScoresRef.current, aAssoc = assocRef.current.nearestByItem;
-      enter.merge(sel)
-        .attr("fill", (d) => {
-          const near = aAssoc.get(d.icao);
-          if (exposureLayerRef.current && near && aScores && aScores[near.eventId] != null) return exposureColor(aScores[near.eventId]);
-          return (AIRCRAFT_TYPES[d.type] || AIRCRAFT_TYPES.other).color;
-        })
-        .attr("fill-opacity", (d) => {
-          if (!selectedNodeId) return 1;
-          const near = aAssoc.get(d.icao);
-          return near && near.eventId === String(selectedNodeId) ? 1 : 0.18;
-        })
-        .attr("display", (d) => (visible(d.lng, d.lat) ? null : "none"))
-        .attr("transform", (d) => {
-          const p = projection([d.lng, d.lat]);
-          if (!p) return "translate(-9999,-9999)";
-          return `translate(${p[0]},${p[1]}) rotate(${d.heading || 0})`;
-        });
+      let sel = aircraftG.selectAll("path.aircraft");
+      const now = performance.now();
+      if (now - aircraftStyleT > 300) {
+        aircraftStyleT = now;
+        const data = getAircraftRef.current() || [];
+        sel = sel.data(data, (d) => d.icao);
+        sel.exit().remove();
+        const enter = sel.enter().append("path")
+          .attr("class", "aircraft")
+          .attr("d", AIRCRAFT_GLYPH)
+          .attr("stroke", "rgba(0,0,0,0.3)").attr("stroke-width", 0.4)
+          .style("cursor", "pointer")
+          .on("pointerdown", (e) => e.stopPropagation())
+          .on("mouseenter", function (e, d) { hoverRef.current = true; setHoverAircraft(d); setTip({ x: e.clientX, y: e.clientY }); })
+          .on("mousemove", (e) => setTip({ x: e.clientX, y: e.clientY }))
+          .on("mouseleave", function () { hoverRef.current = false; setHoverAircraft(null); })
+          .on("click", (e, d) => { e.stopPropagation(); setSelAircraft(d); setSelVessel(null); });
+        const aScores = eventScoresRef.current, aAssoc = assocRef.current.nearestByItem;
+        sel = enter.merge(sel)
+          .attr("fill", (d) => {
+            const near = aAssoc.get(d.icao);
+            if (exposureLayerRef.current && near && aScores && aScores[near.eventId] != null) return exposureColor(aScores[near.eventId]);
+            return (AIRCRAFT_TYPES[d.type] || AIRCRAFT_TYPES.other).color;
+          })
+          .attr("fill-opacity", (d) => {
+            if (!selectedNodeId) return 1;
+            const near = aAssoc.get(d.icao);
+            return near && near.eventId === String(selectedNodeId) ? 1 : 0.18;
+          });
+      }
+      sel.each(function (d) {
+        if (!visible(d.lng, d.lat)) { this.style.display = "none"; return; }
+        const p = projection([d.lng, d.lat]);
+        if (!p) { this.style.display = "none"; return; }
+        this.style.display = "";
+        this.setAttribute("transform", `translate(${p[0]},${p[1]}) rotate(${d.heading || 0})`);
+      });
     }
 
     // Throttled (2 Hz) association of live traffic to events — powers tint/dim/counts.
