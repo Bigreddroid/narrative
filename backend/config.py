@@ -114,12 +114,15 @@ class Settings(BaseSettings):
     exposure_snapshot_interval_hours: int = 1
     hazard_ingest_interval_minutes: int = 30   # free real-time feed ingest
     market_ingest_interval_minutes: int = 30
-    osint_ingest_interval_minutes: int = 30    # free keyless OSINT (Reddit) ingest
+    osint_ingest_interval_minutes: int = 30    # free keyless OSINT ingest
 
-    # OSINT (open-source intelligence) — keyless Reddit by default
+    # OSINT (open-source intelligence) — keyless GDELT news by default. Reddit is kept
+    # available but blocks anonymous reads AND app-credential creation, so it is opt-in
+    # via OSINT_SOURCE=reddit (then add reddit_client_id/secret for app-only OAuth).
+    osint_source: str = "gdelt"    # gdelt (keyless, default) | reddit
     osint_subreddits: str = "worldnews,geopolitics,CredibleDefense"
-    reddit_user_agent: str = ""    # descriptive UA for Reddit public .json (recommended)
-    reddit_client_id: str = ""     # optional OAuth upgrade path if rate-limited
+    reddit_user_agent: str = ""    # descriptive UA for Reddit (required by Reddit)
+    reddit_client_id: str = ""     # Reddit app-only OAuth (the anon endpoint 403s)
     reddit_client_secret: str = ""
 
     # Live news (embedded player). Default = curated OFFICIAL channels only.

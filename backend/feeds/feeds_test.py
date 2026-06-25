@@ -12,6 +12,7 @@ from backend.feeds import market
 from backend.feeds import weather
 from backend.feeds import gdacs
 from backend.feeds import gdelt
+from backend.feeds import gdelt_osint
 from backend.feeds import launches
 from backend.feeds import chokepoints
 from backend.feeds import spaceweather
@@ -136,6 +137,33 @@ ok("gdelt coords [lat,lng]", ge[0]["lat"] == 33.3 and ge[0]["lng"] == 44.4)
 ok("gdelt low count ⇒ developing", ge[1]["importance"] == 38 and ge[1]["status"] == "developing")
 ok("gdelt external_id slugged", ge[0]["external_id"] == "gdelt-baghdad--iraq" and ge[0]["source"] == "gdelt")
 ok("gdelt conflict synthesizes ⇒ Defense direct", S.synthesize(ge[0])["direct_impact"][0]["sector"] == "Defense")
+
+# ── OSINT: GDELT DOC article parser (pure, raw candidates for triage) ─────────
+gdoc = {"articles": [
+    {"url": "https://bbc.com/a1", "title": "Major earthquake strikes Iran",
+     "seendate": "20260625T074500Z", "domain": "bbc.com", "language": "English",
+     "sourcecountry": "United Kingdom"},
+    {"url": "https://bbc.com/a1", "title": "dup url dropped",                  # dup url → skipped
+     "seendate": "20260625T074500Z", "domain": "bbc.com", "language": "English"},
+    {"url": "https://x.fr/a2", "title": "Greve a Paris", "language": "French"},  # non-English → skipped
+    {"url": "", "title": "no url", "language": "English"},                     # no url → skipped
+    {"url": "https://y.com/a3", "title": "", "language": "English"},           # no title → skipped
+]}
+gd = gdelt_osint.parse_gdelt_doc(gdoc)
+ok("gdelt-doc keeps only valid unique English articles", len(gd) == 1)
+ok("gdelt-doc external_id namespaced + url-hashed",
+   gd[0]["external_id"].startswith("gdelt-") and len(gd[0]["external_id"]) == 22)
+ok("gdelt-doc puts domain in source-context field", gd[0]["subreddit"] == "bbc.com")
+ok("gdelt-doc empty body (headline is the signal)",
+   gd[0]["selftext"] == "" and gd[0]["title"].startswith("Major earthquake"))
+ok("gdelt-doc seendate → epoch seconds",
+   isinstance(gd[0]["created_utc"], float) and gd[0]["created_utc"] > 1_700_000_000)
+ok("gdelt-doc empty payload ⇒ []", gdelt_osint.parse_gdelt_doc({}) == [])
+# candidate flows through the SAME triage pipeline, tagged with the gdelt source
+gd_sig = osint_agent._heuristic_triage(gd[0], source=gdelt_osint.SOURCE)
+ok("gdelt-doc candidate triages to disaster + osint_gdelt source",
+   gd_sig and gd_sig["category"] == "disaster" and gd_sig["source"] == "osint_gdelt")
+ok("gdelt-doc triaged signal synthesizes", len(S.synthesize(gd_sig)["direct_impact"]) >= 1)
 
 # ── Launch Library 2 ────────────────────────────────────────────────────────
 ll = {"results": [
@@ -302,6 +330,119 @@ ok("heuristic constrains category to SECTOR_MAP", war_sig["category"] in osint_a
 
 ok("geocode known country ⇒ centroid", osint_agent.geocode("Ukraine")[0] is not None)
 ok("geocode empty ⇒ (None, None)", osint_agent.geocode("") == (None, None))
+
+# ── OSINT: Reddit OAuth wiring + keyless fallback (pure + mocked client) ──────
+import asyncio as _asyncio
+
+
+class _Cfg:  # minimal settings stand-in for the reddit_osint helpers
+    def __init__(self, cid, sec):
+        self.reddit_client_id = cid
+        self.reddit_client_secret = sec
+        self.reddit_user_agent = "ua/test"
+
+
+# request target selection (pure): keyless vs authenticated host + headers
+_pub_url, _pub_h, _pub_p = reddit_osint._request_for("worldnews", None, "ua/1", 25)
+ok("reddit keyless → www.reddit.com/.json", _pub_url == "https://www.reddit.com/r/worldnews/hot.json")
+ok("reddit keyless sends Accept, no Authorization",
+   "Authorization" not in _pub_h and _pub_h["Accept"] == "application/json")
+ok("reddit params carry raw_json + limit", _pub_p["raw_json"] == 1 and _pub_p["limit"] == 25)
+
+_oa_url, _oa_h, _oa_p = reddit_osint._request_for("worldnews", "TKN", "ua/1", 25)
+ok("reddit oauth → oauth.reddit.com host", _oa_url == "https://oauth.reddit.com/r/worldnews/hot")
+ok("reddit oauth sends bearer header", _oa_h["Authorization"] == "bearer TKN")
+
+ok("oauth configured needs BOTH creds",
+   reddit_osint._oauth_configured(_Cfg("id", "sec")) is True
+   and reddit_osint._oauth_configured(_Cfg("id", "")) is False
+   and reddit_osint._oauth_configured(_Cfg("", "")) is False)
+
+# token cache validity (pure): valid before expiry, dropped after
+reddit_osint._token_cache.clear()
+ok("no cached token when empty", reddit_osint._cached_token(now=1000.0) is None)
+reddit_osint._token_cache.update({"token": "T1", "expires_at": 2000.0})
+ok("cached token returned before expiry", reddit_osint._cached_token(now=1500.0) == "T1")
+ok("cached token dropped after expiry", reddit_osint._cached_token(now=2500.0) is None)
+
+
+class _Resp:
+    def __init__(self, status, data):
+        self.status_code = status
+        self._d = data
+
+    def json(self):
+        return self._d
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _BoomClient:  # must NOT be called when a valid token is cached
+    async def post(self, *a, **k):
+        raise AssertionError("should not POST when token cached")
+
+
+reddit_osint._token_cache.update({"token": "CACHED", "expires_at": 9_999_999_999.0})
+ok("get_oauth_token reuses cache (no network)",
+   _asyncio.run(reddit_osint._get_oauth_token(_BoomClient(), _Cfg("id", "sec"))) == "CACHED")
+
+
+class _OkClient:
+    async def post(self, *a, **k):
+        return _Resp(200, {"access_token": "NEW", "expires_in": 3600})
+
+
+reddit_osint._token_cache.clear()
+ok("get_oauth_token fetches + caches new token",
+   _asyncio.run(reddit_osint._get_oauth_token(_OkClient(), _Cfg("id", "sec"))) == "NEW"
+   and reddit_osint._cached_token() == "NEW")
+
+
+class _ForbiddenClient:  # 403 on the token call → None → keyless fallback
+    async def post(self, *a, **k):
+        return _Resp(403, {})
+
+
+reddit_osint._token_cache.clear()
+ok("get_oauth_token 403 → None (keyless fallback)",
+   _asyncio.run(reddit_osint._get_oauth_token(_ForbiddenClient(), _Cfg("id", "sec"))) is None)
+reddit_osint._token_cache.clear()  # leave the module cache clean
+
+# ── OSINT: LLM triage maps fields + respects confidence floor (mock LLM) ──────
+from backend.services import llm as _llm
+
+
+class _LLMRes:
+    def __init__(self, text):
+        self.text = text
+
+
+_saved_complete = _llm.complete
+try:
+    _llm.complete = lambda system, user, max_tokens, json_mode=False: _LLMRes(
+        '{"relevant": true, "category": "conflict", "title": "Strike on Kyiv",'
+        ' "summary": "Missiles hit the capital.", "location_name": "Ukraine",'
+        ' "importance": 82, "confidence": 0.9}')
+    _llm_sig = osint_agent._llm_triage({"external_id": "reddit-l1", "title": "raw", "selftext": "",
+                                        "subreddit": "worldnews", "created_utc": 1718000000})
+    ok("llm triage maps category", _llm_sig and _llm_sig["category"] == "conflict")
+    ok("llm triage maps importance + escalating status",
+       _llm_sig["importance"] == 82 and _llm_sig["status"] == "escalating")
+    ok("llm triage geocodes location_name", _llm_sig["lat"] is not None)
+    ok("llm triage carries confidence", _llm_sig["confidence"] == 0.9)
+
+    _llm.complete = lambda system, user, max_tokens, json_mode=False: _LLMRes(
+        '{"relevant": true, "category": "conflict", "importance": 50, "confidence": 0.2}')
+    ok("llm triage drops below confidence floor (0.4)", osint_agent._llm_triage(
+        {"external_id": "reddit-l2", "title": "rumor", "selftext": "", "subreddit": "x"}) is None)
+
+    _llm.complete = lambda system, user, max_tokens, json_mode=False: _LLMRes('{"relevant": false}')
+    ok("llm triage drops not-relevant", osint_agent._llm_triage(
+        {"external_id": "reddit-l3", "title": "opinion", "selftext": "", "subreddit": "x"}) is None)
+finally:
+    _llm.complete = _saved_complete
 
 # ── Live news: iptv-org M3U parser (pure) ────────────────────────────────────
 m3u = (

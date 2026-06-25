@@ -11,6 +11,8 @@ MODULES=(
   backend.api.security_headers_test
   backend.services.analyst_test
   backend.services.llm_test
+  backend.api.routes.live_news_test
+  backend.workers.osint_ingest_worker_test
   backend.consequence_engine.propagation_test
   backend.consequence_engine.calibration_test
   backend.consequence_engine.cluster_logic_test

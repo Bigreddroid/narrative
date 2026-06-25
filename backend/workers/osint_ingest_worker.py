@@ -13,17 +13,27 @@ import asyncio
 import logging
 import time
 
+from backend.config import get_settings
 from backend.database import AsyncSessionLocal
-from backend.feeds import reddit_osint
+from backend.feeds import gdelt_osint, reddit_osint
 from backend.services import cost_guard, osint_agent
 from backend.workers.hazard_ingest_worker import _upsert
 
 logger = logging.getLogger(__name__)
 
 
+def _osint_source():
+    """(fetch_fn, source_tag) for the configured OSINT source. Default = keyless GDELT;
+    Reddit stays available behind OSINT_SOURCE=reddit (uses OAuth when creds are set)."""
+    if (get_settings().osint_source or "gdelt").lower() == "reddit":
+        return reddit_osint.fetch_reddit_osint, reddit_osint.SOURCE
+    return gdelt_osint.fetch_gdelt_osint, gdelt_osint.SOURCE
+
+
 async def run_osint_ingest_worker() -> dict:
     start = time.perf_counter()
-    posts = await reddit_osint.fetch_reddit_osint()
+    fetch, source = _osint_source()
+    posts = await fetch()
     created = ingested = 0
     async with AsyncSessionLocal() as db:
         # One budget check per run: respects the paid hard cap AND that Ollama is up.
@@ -31,7 +41,7 @@ async def run_osint_ingest_worker() -> dict:
         for post in posts:
             try:
                 # triage is synchronous (LLM + geocode HTTP) — offload off the loop.
-                signal = await asyncio.to_thread(osint_agent.triage, post, allow_llm)
+                signal = await asyncio.to_thread(osint_agent.triage, post, allow_llm, source)
             except Exception as exc:  # noqa: BLE001 — one bad post must not sink the run
                 logger.warning("OSINT triage failed (%s): %s", post.get("external_id"), exc)
                 continue
@@ -44,9 +54,10 @@ async def run_osint_ingest_worker() -> dict:
             except Exception as exc:  # noqa: BLE001
                 logger.error("OSINT upsert failed: %s", exc)
         await db.commit()
-    logger.info("OSINT ingest: %d posts, %d triaged-in, %d new (llm=%s, %.1fs)",
-                len(posts), ingested, created, allow_llm, time.perf_counter() - start)
-    return {"posts": len(posts), "ingested": ingested, "created": created, "llm": allow_llm}
+    logger.info("OSINT ingest [%s]: %d posts, %d triaged-in, %d new (llm=%s, %.1fs)",
+                source, len(posts), ingested, created, allow_llm, time.perf_counter() - start)
+    return {"posts": len(posts), "ingested": ingested, "created": created,
+            "llm": allow_llm, "source": source}
 
 
 if __name__ == "__main__":
