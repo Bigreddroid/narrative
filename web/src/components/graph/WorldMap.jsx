@@ -96,7 +96,13 @@ export default function WorldMap({
   // Responsive resize
   useEffect(() => {
     if (!wrapRef.current) return;
-    const ro = new ResizeObserver(([e]) => setDims({ w: e.contentRect.width, h: e.contentRect.height }));
+    // Round + bail when unchanged: ResizeObserver can fire spuriously during
+    // heavy repaints (live AIS/aircraft), and a fresh dims object would re-run
+    // the scene/fly-to effects and snap zoom back to the region default.
+    const ro = new ResizeObserver(([e]) => {
+      const w = Math.round(e.contentRect.width), h = Math.round(e.contentRect.height);
+      setDims((d) => (d.w === w && d.h === h ? d : { w, h }));
+    });
     ro.observe(wrapRef.current);
     return () => ro.disconnect();
   }, []);
@@ -120,7 +126,9 @@ export default function WorldMap({
     const spin = region === "world";
     spinRef.current = spin;
     setSpinning(spin);
-  }, [region, ready, dims]);
+    // NB: intentionally not keyed on `dims` — re-flying on resize would reset
+    // the user's zoom. baseScaleRef is recomputed by the scene effect on resize.
+  }, [region, ready]);
 
   // ── Build the scene + interaction + render loop ──────────────────────────────
   useEffect(() => {
