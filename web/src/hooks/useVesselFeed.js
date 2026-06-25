@@ -7,6 +7,22 @@ const AIS_URL = "wss://stream.aisstream.io/v0/stream";
 const BACKEND_URL = "/api/v1/vessels?latmin=-90&latmax=90&lonmin=-180&lonmax=180";
 const BACKEND_POLL_MS = 60000;
 
+// AISStream bounding boxes ([[latMin,lonMin],[latMax,lonMax]] per box). By
+// default we subscribe to the maritime chokepoints the consequence model cares
+// about (mirrors backend/feeds/chokepoints.py) — this keeps the live feed
+// focused and the globe fluid. Set VITE_AIS_GLOBAL=true to stream every active
+// vessel worldwide instead (heavier; raise the render cap in tandem).
+const CHOKEPOINT_BOXES = [
+  [[24, 53], [29, 59]],     // Strait of Hormuz
+  [[27, 31], [33, 35]],     // Suez Canal / N. Red Sea
+  [[10, 41], [15, 46]],     // Bab-el-Mandeb
+  [[-2, 99], [6, 106]],     // Strait of Malacca / Singapore
+  [[6, -82], [12, -77]],    // Panama Canal
+  [[39, 27], [43, 31]],     // Bosphorus / Dardanelles
+];
+const GLOBAL_BOX = [[[-90, -180], [90, 180]]];
+const AIS_BOXES = import.meta.env.VITE_AIS_GLOBAL === "true" ? GLOBAL_BOX : CHOKEPOINT_BOXES;
+
 // Maritime vessel feed with graceful source preference:
 //   1. backend /api/v1/vessels  (server-side AIS — AISHub/etc, no CORS, creds hidden)
 //   2. AISStream WebSocket       (live, when VITE_AISSTREAM_KEY is set)
@@ -101,7 +117,7 @@ export function useVesselFeed(enabled = true) {
         setLive(true);
         ws.send(JSON.stringify({
           APIKey: AIS_KEY,
-          BoundingBoxes: [[[-90, -180], [90, 180]]],
+          BoundingBoxes: AIS_BOXES,
           FilterMessageTypes: ["PositionReport", "ShipStaticData"],
         }));
         countTimer = setInterval(() => { if (!cancelled) setVesselCount(liveMapRef.current.size); }, 1500);
