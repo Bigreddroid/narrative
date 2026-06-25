@@ -89,6 +89,9 @@ export function useVesselFeed(enabled = true) {
     const tryLive = () => {
       try { ws = new WebSocket(AIS_URL); }
       catch { return; }
+      // AISStream pushes JSON as binary frames; read them as ArrayBuffers so we
+      // can decode to text (a Blob would arrive as an object and never parse).
+      ws.binaryType = "arraybuffer";
       let opened = false;
       const fallbackTimer = setTimeout(() => { if (!opened) { try { ws.close(); } catch {} } }, 4000);
       ws.onopen = () => {
@@ -104,8 +107,10 @@ export function useVesselFeed(enabled = true) {
         countTimer = setInterval(() => { if (!cancelled) setVesselCount(liveMapRef.current.size); }, 1500);
       };
       ws.onmessage = (ev) => {
+        // Frames arrive as ArrayBuffer (binaryType above); decode to JSON text.
+        const raw = typeof ev.data === "string" ? ev.data : new TextDecoder().decode(ev.data);
         // Position update — enrich type from any known static data for this vessel.
-        const v = parseAisMessage(ev.data);
+        const v = parseAisMessage(raw);
         if (v && v.mmsi != null) {
           const known = staticRef.current.get(v.mmsi);
           if (known?.type) v.type = known.type;
@@ -118,7 +123,7 @@ export function useVesselFeed(enabled = true) {
           return;
         }
         // Static data — record ship type and backfill any live vessel already plotted.
-        const s = parseAisStatic(ev.data);
+        const s = parseAisStatic(raw);
         if (s && s.mmsi != null) {
           const prev = staticRef.current.get(s.mmsi) || {};
           staticRef.current.set(s.mmsi, { type: s.type || prev.type, name: s.name || prev.name });
