@@ -169,7 +169,7 @@ function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowi
       </div>
 
       {/* Column body */}
-      <div className="flex-1 overflow-y-auto deck-scroll">
+      <div className="flex-1 overflow-y-auto deck-scroll pb-20 md:pb-0">
         {events.length === 0 ? (
           <div className="flex items-center justify-center h-32 px-4">
             <p className="text-[10px] font-mono uppercase tracking-widest text-center" style={{ color: C.fg20 }}>

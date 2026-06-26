@@ -52,7 +52,7 @@ export default function LiveNewsTab() {
       </div>
 
       {/* Channel grid */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6">
         <p className="text-[9px] font-mono font-bold uppercase tracking-[0.4em] mb-3" style={{ color: FG40 }}>
           Channels
         </p>

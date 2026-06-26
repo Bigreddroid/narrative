@@ -111,7 +111,7 @@ export default function Analyst() {
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={ask} className="flex-shrink-0 border-t border-ink/10 p-3 sm:p-4 max-w-[820px] w-full mx-auto">
+      <form onSubmit={ask} className="flex-shrink-0 border-t border-ink/10 p-3 sm:p-4 mb-20 md:mb-0 max-w-[820px] w-full mx-auto">
         <div className="flex gap-2">
           <input
             value={input}

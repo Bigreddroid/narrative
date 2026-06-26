@@ -71,7 +71,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-paper">
+    <div className="min-h-screen bg-paper pb-20 md:pb-0">
       {/* Header */}
       <header className="bg-ink border-b-2 border-ink sticky top-0 z-50">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
