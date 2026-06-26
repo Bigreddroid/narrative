@@ -84,7 +84,7 @@ class Settings(BaseSettings):
 
     # Pipeline config
     engine_version: str = "2.0"  # versioned scoring/propagation params (the "secret sauce")
-    consequence_engine_model: str = "claude-sonnet-4-20250514"
+    consequence_engine_model: str = "claude-opus-4-8"
     embedding_model: str = "voyage-3"
     importance_threshold_deep: int = 70
     importance_threshold_light: int = 40
