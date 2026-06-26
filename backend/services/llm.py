@@ -27,9 +27,11 @@ from backend.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Anthropic pricing for claude-sonnet-4: $3/MTok in, $15/MTok out.
-_ANTHROPIC_IN_PER_MTOK = 3.0
-_ANTHROPIC_OUT_PER_MTOK = 15.0
+# Anthropic pricing for claude-opus-4-8 (consequence_engine_model): $5/MTok in,
+# $25/MTok out. Keep in sync with config.consequence_engine_model so the hard cap
+# in cost_guard reflects real spend — under-pricing here lets spend overshoot.
+_ANTHROPIC_IN_PER_MTOK = 5.0
+_ANTHROPIC_OUT_PER_MTOK = 25.0
 
 
 class BudgetExceeded(RuntimeError):
