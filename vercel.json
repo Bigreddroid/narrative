@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://__RAILWAY_API_HOST__/api/$1"
+      "destination": "https://narrative-production-2a1c.up.railway.app/api/$1"
     },
     {
       "source": "/(.*)",
