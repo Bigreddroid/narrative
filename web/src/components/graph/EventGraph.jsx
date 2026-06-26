@@ -1,10 +1,12 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCategoryColor, TYPE_COLORS, SEVERITY_COLORS } from "../../lib/colors.js";
 import { api } from "../../lib/api.js";
 import { biasLabel, BIAS_COLORS, SOURCE_BIAS } from "../../lib/bias.js";
 import TierGate from "../TierGate.jsx";
 import { useUser } from "../../hooks/useUser.js";
+import HlsPlayer from "../livenews/HlsPlayer.jsx";
+import { useLiveStreams } from "../../hooks/useLiveStreams.js";
 
 // ─── Source article card ───────────────────────────────────────────────────────
 
@@ -188,9 +190,89 @@ function ImpactCard({ impact, index }) {
   );
 }
 
+// ─── Watch (live TV coverage) ───────────────────────────────────────────────────
+
+// Pick the live channel whose region best matches the event's geography/title.
+// Falls back to channels[0] (the most-reliable default) when nothing matches.
+const REGION_HINTS = {
+  IN: ["india", "delhi", "mumbai", "kashmir", "pakistan", "bangladesh", "sri lanka"],
+  SG: ["singapore", "malaysia", "indonesia", "philippines", "vietnam", "thailand", "myanmar", "asean"],
+  QA: ["qatar", "gaza", "israel", "palestin", "lebanon", "syria", "iran", "iraq", "yemen", "saudi", "egypt", "middle east"],
+  FR: ["france", "paris", "europe", "ukrain", "russia", "germany", "italy", "spain", "poland"],
+  DE: ["germany", "berlin"],
+  GB: ["britain", "united kingdom", "london", "england", "scotland"],
+  US: ["united states", "u.s.", "america", "washington", "new york", "california"],
+  AU: ["australia", "sydney", "melbourne", "new zealand", "pacific"],
+  CA: ["canada", "ottawa", "toronto"],
+  TR: ["turkey", "türkiye", "ankara", "istanbul"],
+};
+
+function pickChannelForEvent(channels, event) {
+  if (!channels?.length) return null;
+  const hay = [...(event?.geography || []), event?.canonical_title || event?.title || ""]
+    .join(" ").toLowerCase();
+  for (const ch of channels) {
+    const hints = REGION_HINTS[ch.region];
+    if (hints && hints.some((k) => hay.includes(k))) return ch;
+  }
+  return channels[0];
+}
+
+function WatchTab({ event }) {
+  const { channels, loading, error } = useLiveStreams();
+  const auto = useMemo(() => pickChannelForEvent(channels, event), [channels, event]);
+  const [activeId, setActiveId] = useState(null);
+  useEffect(() => { if (auto && !activeId) setActiveId(auto.id); }, [auto, activeId]);
+  const active = channels.find((c) => c.id === activeId) || auto;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-5 h-5 border-2 border-ink/10 border-t-crimson rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (!channels.length) {
+    return <p className="text-xs text-ink/30 text-center py-8 font-mono uppercase tracking-wider">No live coverage available.</p>;
+  }
+
+  return (
+    <div>
+      <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
+        <HlsPlayer channel={active} />
+      </div>
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-ink/10">
+        <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
+        <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-crimson">Live</span>
+        {active && <span className="text-[11px] font-semibold text-ink truncate">{active.name}</span>}
+        {error && <span className="ml-auto text-[9px] uppercase tracking-wider text-ink/35">official channels</span>}
+      </div>
+      <div className="flex gap-1.5 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+        {channels.map((c) => {
+          const isActive = c.id === (active && active.id);
+          return (
+            <button
+              key={c.id}
+              onClick={() => setActiveId(c.id)}
+              className="flex-shrink-0 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors"
+              style={{
+                color: isActive ? "#C80028" : "rgba(26,26,26,0.5)",
+                borderColor: isActive ? "rgba(200,0,40,0.5)" : "rgba(26,26,26,0.12)",
+                backgroundColor: isActive ? "rgba(200,0,40,0.08)" : "transparent",
+              }}
+            >
+              {c.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-const TABS = ["Intelligence", "Predictions", "Effects"];
+const TABS = ["Intelligence", "Watch", "Predictions", "Effects"];
 
 export default function EventGraph({ eventId, onClose }) {
   const [event,     setEvent]     = useState(null);
@@ -361,6 +443,9 @@ export default function EventGraph({ eventId, onClose }) {
                 )}
               </div>
             )}
+
+            {/* Watch — live TV coverage, region-matched to the event */}
+            {activeTab === "Watch" && <WatchTab event={event} />}
 
             {/* Predictions */}
             {activeTab === "Predictions" && (

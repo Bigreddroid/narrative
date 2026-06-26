@@ -52,7 +52,37 @@ LIVE_NEWS_CHANNELS: list[dict] = [
     },
 ]
 
-_FREE_CHANNEL_IDS = {"dw-en", "france24-en"}  # free-tier taster (both embed reliably)
+
+def _yt(channel_id: str) -> str:
+    """Official YouTube-live embed URL for a channel — resolves to its current
+    live broadcast, or shows 'offline' gracefully if the channel isn't live."""
+    return f"https://www.youtube.com/embed/live_stream?channel={channel_id}"
+
+
+# Curated official 24/7 channels. Best-effort channel IDs; the opt-in iptv-org
+# expansion (settings.live_news_use_iptv_org) supplies the validated HLS bulk
+# that takes paid users well past 50 channels.
+LIVE_NEWS_CHANNELS += [
+    {"id": "abcnews-us", "name": "ABC News (US)", "lang": "en", "region": "US", "type": "youtube", "official": True, "src": _yt("UCBi2mrWuNuyYy4gbM6fU18Q")},
+    {"id": "nbcnews", "name": "NBC News NOW", "lang": "en", "region": "US", "type": "youtube", "official": True, "src": _yt("UCeY0bbntWzzVIaj2z3QigXg")},
+    {"id": "cbsnews", "name": "CBS News", "lang": "en", "region": "US", "type": "youtube", "official": True, "src": _yt("UC8p1vwvWtl6T73JiExfWs1g")},
+    {"id": "reuters", "name": "Reuters", "lang": "en", "region": "GB", "type": "youtube", "official": True, "src": _yt("UChqUTb7kYRX8-EiaN3XFrSQ")},
+    {"id": "bloomberg", "name": "Bloomberg", "lang": "en", "region": "US", "type": "youtube", "official": True, "src": _yt("UCIALMKvObZNtJ6AmdCLP7Lg")},
+    {"id": "cnbc", "name": "CNBC", "lang": "en", "region": "US", "type": "youtube", "official": True, "src": _yt("UCvJJ_dt2ZPg3Tug9hd9-LwQ")},
+    {"id": "dw-news", "name": "DW News", "lang": "en", "region": "DE", "type": "youtube", "official": True, "src": _yt("UCknLrEdhRCp1aegoMqRaCZg")},
+    {"id": "france24-yt", "name": "FRANCE 24 English", "lang": "en", "region": "FR", "type": "youtube", "official": True, "src": _yt("UCQfwfsi5VrQ8yKZ-UWmAEFg")},
+    {"id": "aljazeera-yt", "name": "Al Jazeera English", "lang": "en", "region": "QA", "type": "youtube", "official": True, "src": _yt("UCNye-wNBqNL5ZzHSJj3l8Bg")},
+    {"id": "trtworld", "name": "TRT World", "lang": "en", "region": "TR", "type": "youtube", "official": True, "src": _yt("UC7fWeaHhqgM4Ry-RMpM2YYw")},
+    {"id": "euronews", "name": "Euronews English", "lang": "en", "region": "FR", "type": "youtube", "official": True, "src": _yt("UCSrZ3UV4jOidv8ppoVuvW9Q")},
+    {"id": "wion", "name": "WION", "lang": "en", "region": "IN", "type": "youtube", "official": True, "src": _yt("UC_gUM8rL-Lrg6O3adPW9K1g")},
+    {"id": "indiatoday", "name": "India Today", "lang": "en", "region": "IN", "type": "youtube", "official": True, "src": _yt("UCYPvAwZP8pZhSMW8qs7cVCw")},
+    {"id": "ndtv", "name": "NDTV 24x7", "lang": "en", "region": "IN", "type": "youtube", "official": True, "src": _yt("UCZFMm1mMw0F81Z37aaEzTUA")},
+    {"id": "cna", "name": "CNA (Channel NewsAsia)", "lang": "en", "region": "SG", "type": "youtube", "official": True, "src": _yt("UC4p_I9eiRewn2KoU-nawc7g")},
+    {"id": "abc-au", "name": "ABC News (Australia)", "lang": "en", "region": "AU", "type": "youtube", "official": True, "src": _yt("UCVgO39Bk5sMo66-6o6Spn6Q")},
+    {"id": "globalnews-ca", "name": "Global News (Canada)", "lang": "en", "region": "CA", "type": "youtube", "official": True, "src": _yt("UChLtXXpo4Ge1ReTEboVvTDg")},
+]
+
+_FREE_CHANNEL_IDS = {"dw-en", "france24-en", "abcnews-us", "aljazeera-yt"}  # free-tier taster
 
 
 @router.get("/streams")
