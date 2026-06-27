@@ -12,6 +12,7 @@ MODULES=(
   backend.services.analyst_test
   backend.services.llm_test
   backend.api.routes.live_news_test
+  backend.api.routes.osint_test
   backend.workers.osint_ingest_worker_test
   backend.consequence_engine.propagation_test
   backend.consequence_engine.calibration_test

@@ -18,6 +18,7 @@ export const ACCESS = {
   // Free
   fullFeed:            0,
   liveNews:            0,  // free taster (2 channels); backend widens set by tier
+  osint:               0,  // free taster of the OSINT tool catalog; backend widens by tier
   // Pro
   eventGraph:          1,
   worldRegions:        1,
@@ -26,6 +27,7 @@ export const ACCESS = {
   biasIndicators:      1,
   predictions:         1,
   effects:             1,
+  osintInvestigate:    1,  // entity-aware OSINT pivots (templated lookups)
   // Intelligence
   apiAccess:           2,
   realTimeAlerts:      2,

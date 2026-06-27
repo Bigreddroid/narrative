@@ -39,6 +39,13 @@ describe("canAccess — tier gating", () => {
     expect(TIERS.paid.rank).toBeLessThan(TIERS.admin.rank);
   });
 
+  it("OSINT catalog is a free taster; entity investigate is paid (pro+)", () => {
+    expect(canAccess("free", "osint")).toBe(true);            // browse taster
+    expect(canAccess("free", "osintInvestigate")).toBe(false); // gated
+    expect(canAccess("pro", "osintInvestigate")).toBe(true);
+    expect(canAccess("paid", "osintInvestigate")).toBe(true);
+  });
+
   it("admin outranks enterprise (highest rank)", () => {
     expect(TIERS.admin.rank).toBeGreaterThan(TIERS.enterprise.rank);
     expect(canAccess("admin", "whiteLabel")).toBe(true);

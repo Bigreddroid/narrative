@@ -127,7 +127,13 @@ def _signal(post: dict, category: str, title: str, summary: str,
 def _heuristic_triage(post: dict, source: str = SOURCE) -> dict | None:
     """No-LLM fallback: keyword category match → Signal, else drop. Low confidence."""
     text = f"{post.get('title', '')} {post.get('selftext', '')}".lower()
-    category = next((cat for kws, cat in _KEYWORDS if any(k in text for k in kws)), None)
+    # Word-boundary match so a keyword can't fire mid-word (e.g. 'war' inside
+    # 'ransomware', which otherwise mis-tags cyber items as conflict). Keyword
+    # stems still match their inflections ('flood' → 'flooding', 'inundat' → 'inundated').
+    category = next(
+        (cat for kws, cat in _KEYWORDS if any(re.search(r"\b" + re.escape(k), text) for k in kws)),
+        None,
+    )
     if not category:
         return None  # no event keyword ⇒ assume noise, don't pollute the feed
     location = next((c for c in _COUNTRY_CENTROIDS if c in text), "")

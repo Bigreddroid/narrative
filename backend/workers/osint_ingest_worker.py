@@ -15,7 +15,7 @@ import time
 
 from backend.config import get_settings
 from backend.database import AsyncSessionLocal
-from backend.feeds import gdelt_osint, reddit_osint
+from backend.feeds import gdelt_osint, osint_threatintel, reddit_osint
 from backend.services import cost_guard, osint_agent
 from backend.workers.hazard_ingest_worker import _upsert
 
@@ -33,30 +33,38 @@ def _osint_source():
 async def run_osint_ingest_worker() -> dict:
     start = time.perf_counter()
     fetch, source = _osint_source()
-    posts = await fetch()
-    created = ingested = 0
+    # Source batches: the configured news source (GDELT/Reddit) + the additive,
+    # keyless cyber threat-intel feed. Each batch is triaged under its own source tag
+    # so events badge correctly. A failing feed returns [] (best-effort, no-op).
+    batches = [
+        (await fetch(), source),
+        (await osint_threatintel.fetch_threatintel(), osint_threatintel.SOURCE),
+    ]
+    total_posts = created = ingested = 0
     async with AsyncSessionLocal() as db:
         # One budget check per run: respects the paid hard cap AND that Ollama is up.
         allow_llm = await cost_guard.llm_allowed(db)
-        for post in posts:
-            try:
-                # triage is synchronous (LLM + geocode HTTP) — offload off the loop.
-                signal = await asyncio.to_thread(osint_agent.triage, post, allow_llm, source)
-            except Exception as exc:  # noqa: BLE001 — one bad post must not sink the run
-                logger.warning("OSINT triage failed (%s): %s", post.get("external_id"), exc)
-                continue
-            if not signal:
-                continue
-            ingested += 1
-            try:
-                if await _upsert(signal, db, require_geo=False):
-                    created += 1
-            except Exception as exc:  # noqa: BLE001
-                logger.error("OSINT upsert failed: %s", exc)
+        for posts, src in batches:
+            total_posts += len(posts)
+            for post in posts:
+                try:
+                    # triage is synchronous (LLM + geocode HTTP) — offload off the loop.
+                    signal = await asyncio.to_thread(osint_agent.triage, post, allow_llm, src)
+                except Exception as exc:  # noqa: BLE001 — one bad post must not sink the run
+                    logger.warning("OSINT triage failed (%s): %s", post.get("external_id"), exc)
+                    continue
+                if not signal:
+                    continue
+                ingested += 1
+                try:
+                    if await _upsert(signal, db, require_geo=False):
+                        created += 1
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("OSINT upsert failed: %s", exc)
         await db.commit()
-    logger.info("OSINT ingest [%s]: %d posts, %d triaged-in, %d new (llm=%s, %.1fs)",
-                source, len(posts), ingested, created, allow_llm, time.perf_counter() - start)
-    return {"posts": len(posts), "ingested": ingested, "created": created,
+    logger.info("OSINT ingest [%s + threatintel]: %d posts, %d triaged-in, %d new (llm=%s, %.1fs)",
+                source, total_posts, ingested, created, allow_llm, time.perf_counter() - start)
+    return {"posts": total_posts, "ingested": ingested, "created": created,
             "llm": allow_llm, "source": source}
 
 
