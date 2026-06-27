@@ -281,12 +281,13 @@ export default function WorldMap({
     }
 
     function positionDots() {
+      // Raw DOM (no per-dot d3.select) — this runs for every dot every moved frame,
+      // so avoiding a selection allocation per dot keeps rotation/zoom fluid.
       dotsG.selectAll("g.dot").each(function (d) {
-        const g = d3.select(this);
-        const vis = visible(d.lng, d.lat);
-        const p = vis ? projection([d.lng, d.lat]) : null;
-        if (!p) { g.attr("display", "none"); return; }
-        g.attr("display", null).attr("transform", `translate(${p[0]},${p[1]})`);
+        const p = visible(d.lng, d.lat) ? projection([d.lng, d.lat]) : null;
+        if (!p) { this.style.display = "none"; return; }
+        this.style.display = "";
+        this.setAttribute("transform", `translate(${p[0]},${p[1]})`);
       });
     }
 
@@ -416,8 +417,14 @@ export default function WorldMap({
       sel.exit().remove();
     }
 
-    // Tint event dots by exposure heat when the exposure layer is on.
+    // Tint event dots by exposure heat when the exposure layer is on. Fill only
+    // changes on selection/exposure/score changes (never during rotation), so cap
+    // this restyle of all dots at ~7 Hz instead of running it every frame.
+    let colorTick = 0;
     function colorDots() {
+      const now = performance.now();
+      if (now - colorTick < 140) return;
+      colorTick = now;
       const scores = eventScoresRef.current;
       const on = exposureLayerRef.current;
       dotsG.selectAll("g.dot").select("circle.core").attr("fill", (d) => {

@@ -36,7 +36,11 @@ async def list_events(
     limit: int = Query(20, le=100),
     offset: int = Query(0),
 ) -> dict:
-    query = select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)
+    query = (
+        select(NarrativeEvent)
+        .where(NarrativeEvent.is_mapped == True)
+        .where(NarrativeEvent.merged_into_id.is_(None))  # hide near-duplicates folded into a canonical event
+    )
 
     if user.tier == "free":
         query = query.limit(10)

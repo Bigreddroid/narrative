@@ -270,6 +270,72 @@ function WatchTab({ event }) {
   );
 }
 
+// Rank channels by how well their region matches the event: region-matched first
+// (most hint hits first), then the rest. Returns the full ordered list plus the set
+// of region-matched ids so the UI can flag "covering this story".
+function rankChannelsForEvent(channels, event) {
+  if (!channels?.length) return { ordered: [], relevantIds: new Set() };
+  const hay = [...(event?.geography || []), event?.canonical_title || event?.title || ""]
+    .join(" ").toLowerCase();
+  const scored = channels.map((ch) => {
+    const hints = REGION_HINTS[ch.region] || [];
+    return { ch, hits: hints.filter((k) => hay.includes(k)).length };
+  });
+  const relevant = scored.filter((s) => s.hits > 0).sort((a, b) => b.hits - a.hits);
+  const rest = scored.filter((s) => s.hits === 0);
+  return {
+    ordered: [...relevant, ...rest].map((s) => s.ch),
+    relevantIds: new Set(relevant.map((s) => s.ch.id)),
+  };
+}
+
+// Compact live-TV player shown inline in the Intelligence panel, beneath the
+// consequence chain — region-matched channels covering the story, with a switcher.
+function LiveCoverageInline({ event }) {
+  const { channels, loading } = useLiveStreams();
+  const { ordered, relevantIds } = useMemo(() => rankChannelsForEvent(channels, event), [channels, event]);
+  const [activeId, setActiveId] = useState(null);
+  useEffect(() => { if (ordered.length && !activeId) setActiveId(ordered[0].id); }, [ordered, activeId]);
+  if (loading || !ordered.length) return null;  // stay quiet when no streams are available
+  const active = ordered.find((c) => c.id === activeId) || ordered[0];
+
+  return (
+    <div className="mt-4 pt-4 border-t border-ink/10">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
+        <span className="text-[9px] font-mono uppercase tracking-[0.3em] text-crimson">Live Coverage</span>
+        {active && <span className="text-[10px] text-ink/50 truncate">{active.name}</span>}
+      </div>
+      <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
+        <HlsPlayer channel={active} />
+      </div>
+      <div className="flex gap-1.5 mt-2 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+        {ordered.map((c) => {
+          const isActive = c.id === active.id;
+          const rel = relevantIds.has(c.id);
+          return (
+            <button
+              key={c.id}
+              onClick={() => setActiveId(c.id)}
+              className="flex-shrink-0 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider border transition-colors"
+              style={{
+                color: isActive ? "#C80028" : rel ? "rgba(26,26,26,0.7)" : "rgba(26,26,26,0.4)",
+                borderColor: isActive ? "rgba(200,0,40,0.5)" : "rgba(26,26,26,0.12)",
+                backgroundColor: isActive ? "rgba(200,0,40,0.08)" : "transparent",
+              }}
+            >
+              {rel && <span className="mr-1 text-crimson">●</span>}{c.name}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[8px] font-mono text-ink/25 mt-1.5 uppercase tracking-wider">
+        Official channels covering this region — live
+      </p>
+    </div>
+  );
+}
+
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
 const TABS = ["Intelligence", "Watch", "Predictions", "Effects"];
@@ -441,6 +507,8 @@ export default function EventGraph({ eventId, onClose }) {
                     ))}
                   </div>
                 )}
+                {/* Live TV coverage as another source, inline under the chain */}
+                <LiveCoverageInline event={event} />
               </div>
             )}
 
