@@ -45,6 +45,15 @@ See `docs/COST.md`. The keys below are **optional** unless you opt into paid pro
      `0.0`, which blocks all paid calls). Leave `EMBEDDINGS_PROVIDER=local` to keep
      embeddings free (fastembed). Skip this only if you intend to ship without the
      AI Analyst.
+   - **Live-news channels (optional iptv-org expansion):** the in-app player ships
+     a curated set of **official** broadcaster streams by default (publisher HLS +
+     official YouTube-live embeds — reliable, $0, keyless). The per-country *local*
+     coverage already pulls from iptv-org on demand. To also expand the paid-tier
+     channel list with iptv-org's bulk keyless HLS catalog, set
+     `LIVE_NEWS_USE_IPTV_ORG=true` (default `false`). Note these are aggregated
+     **unofficial restreams** (copyright/geo/uptime risk) — the curated officials
+     always win on de-dupe, and a failed iptv-org fetch degrades gracefully to the
+     curated set.
 4. **Deploy.** The `api` service runs `alembic ... upgrade head` then gunicorn, and
    exposes `/health` for the healthcheck. First boot auto-migrates the DB.
 5. **Workers (cost control):** the full `scheduler` runs the paid mapping (Claude) +
@@ -67,9 +76,10 @@ See `docs/COST.md`. The keys below are **optional** unless you opt into paid pro
    - `VITE_DEMO_MODE=false` (real beta — never `true` in prod).
    - `VITE_AISSTREAM_KEY` = your free AISStream key (live ship tracking; without it
      the Maritime layer shows a clearly-badged simulated fleet).
-   - `VITE_AIS_GLOBAL=true` to stream **all** active vessels worldwide (the render
-     cap auto-scales to ~2000). Leave unset/`false` to focus only on the maritime
-     chokepoints the consequence model watches (lighter, smoother globe).
+   - `VITE_AIS_GLOBAL=true` to stream **all** active vessels worldwide (the memory
+     cap auto-scales to ~15000; the canvas layer renders the full fleet). Leave
+     unset/`false` to focus only on the maritime chokepoints the consequence model
+     watches (lighter, smoother globe).
 4. **Deploy.** You get `https://<project>.vercel.app` (add a custom domain if desired).
 
 ---
