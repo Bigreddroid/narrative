@@ -339,6 +339,19 @@ export default function EventDetail() {
   const aggrBias = calcEventBias(articles);
   const isLive   = event.current_status === "escalating" || event.current_status === "developing";
 
+  // OSINT investigate pivots: derive entities from the event (locations from
+  // geography, source domains from article URLs) → /osint?value=&kind=.
+  const osintEntities = (() => {
+    const out = [];
+    (event.geography || []).slice(0, 4).forEach(g => out.push({ value: g, kind: "location" }));
+    const hosts = new Set();
+    (articles || []).forEach(a => {
+      try { const h = new URL(a.url).hostname.replace(/^www\./, ""); if (h) hosts.add(h); } catch { /* skip */ }
+    });
+    [...hosts].slice(0, 4).forEach(h => out.push({ value: h, kind: "domain" }));
+    return out;
+  })();
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-paper">
       <PageHeader {...headerProps} />
@@ -400,6 +413,24 @@ export default function EventDetail() {
                     {g}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {can("osintInvestigate") && osintEntities.length > 0 && (
+              <div className="mt-4 border-t border-ink/8 pt-3">
+                <p className="text-[9px] font-mono uppercase tracking-wider text-ink/35 mb-2">Investigate · OSINT</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {osintEntities.map((e) => (
+                    <button
+                      key={`${e.kind}:${e.value}`}
+                      onClick={() => navigate(`/osint?value=${encodeURIComponent(e.value)}&kind=${e.kind}`)}
+                      className="text-[10px] font-mono border border-ink/12 px-2 py-1 text-ink/55 hover:border-crimson hover:text-crimson transition-colors"
+                      title={`Open OSINT lookups for ${e.value}`}
+                    >
+                      {e.value}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

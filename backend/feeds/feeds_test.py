@@ -19,6 +19,7 @@ from backend.feeds import spaceweather
 from backend.feeds import cyber
 from backend.feeds import sanctions
 from backend.feeds import reddit_osint
+from backend.feeds import osint_threatintel
 from backend.feeds import iptv_org
 from backend.services import osint_agent
 
@@ -466,6 +467,30 @@ ok("iptv parser extracts name + id + src", ch[0]["name"] == "Al Jazeera English"
 ok("iptv parser carries logo + country + marks unofficial",
    ch[0]["logo"].endswith("aj.png") and ch[0]["region"] == "QA" and ch[0]["official"] is False)
 ok("iptv parser empty text ⇒ []", iptv_org.parse_m3u("") == [])
+
+# ── OSINT: threat-intel (ransomware.live) candidate parser ───────────────────
+ti_raw = [
+    {"victim": "Acme Mfg", "group": "safepay", "country": "DE", "activity": "Manufacturing",
+     "attackdate": "2026-06-27T18:28:12.666586+00:00", "claim_url": "http://x.onion/acme",
+     "description": "A maker of widgets."},
+    {"victim": "Acme Mfg", "group": "safepay",  # dup (same group|victim|date) → skipped
+     "attackdate": "2026-06-27T18:28:12.666586+00:00"},
+    {"group": "play", "country": "US"},  # no victim → skipped
+]
+ti = osint_threatintel.parse_threatintel(ti_raw)
+ok("threatintel keeps unique victims, skips dup + victimless", len(ti) == 1)
+ok("threatintel external_id namespaced", ti[0]["external_id"].startswith("threatintel-"))
+ok("threatintel title carries group + victim + ransomware keyword",
+   "safepay" in ti[0]["title"] and "Acme Mfg" in ti[0]["title"] and "Ransomware" in ti[0]["title"])
+ok("threatintel source-context set", ti[0]["subreddit"] == "ransomware.live")
+ok("threatintel attackdate → epoch seconds",
+   isinstance(ti[0]["created_utc"], float) and ti[0]["created_utc"] > 1_700_000_000)
+ok("threatintel empty payload ⇒ []", osint_threatintel.parse_threatintel(None) == [])
+# candidate flows through the SAME triage pipeline, tagged with the threatintel source
+ti_sig = osint_agent._heuristic_triage(ti[0], source=osint_threatintel.SOURCE)
+ok("threatintel candidate triages to cyber + osint_threatintel source",
+   ti_sig and ti_sig["category"] == "cyber" and ti_sig["source"] == "osint_threatintel")
+ok("threatintel triaged signal synthesizes", len(S.synthesize(ti_sig)["direct_impact"]) >= 1)
 
 print(f"\nfeeds: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

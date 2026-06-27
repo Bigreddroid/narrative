@@ -60,6 +60,17 @@ const TABS = [
     ),
   },
   {
+    id: "osint",
+    path: "/osint",
+    label: "OSINT",
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round">
+        <circle cx="9" cy="9" r="6" />
+        <path d="M13.5 13.5L17 17" />
+      </svg>
+    ),
+  },
+  {
     id: "tracked",
     path: "/following",
     label: "Tracked",
@@ -89,6 +100,7 @@ export default function MobileNav() {
 
   const activeId =
     location.pathname === "/analyst" ? "analyst"
+    : location.pathname === "/osint" ? "osint"
     : location.pathname === "/following" ? "tracked"
     : location.pathname === "/settings" ? "profile"
     : location.search.includes("tab=deck") ? "deck"
