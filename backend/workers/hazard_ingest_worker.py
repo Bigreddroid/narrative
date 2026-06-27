@@ -198,6 +198,8 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
         confidence=syn["confidence"],
         disputed_points=syn["disputed_points"],
         sources_analyzed=syn["sources_analyzed"],
+        prediction_score=syn.get("prediction_score"),
+        prediction_reasoning=syn.get("prediction_reasoning"),
     ))
     return True
 

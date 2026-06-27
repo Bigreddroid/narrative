@@ -73,6 +73,16 @@ export default function WorldMap({
   const zoneCountRef    = useRef({ vessels: 0, aircraft: 0 });
   const lastTransformRef = useRef("");
   const rafRef          = useRef(0);
+  // Vessels render on a <canvas> (not SVG) so the full global AIS fleet (~8k+)
+  // stays fluid. vesselScreenRef caches per-frame screen positions for hit-testing.
+  const vesselCanvasRef = useRef(null);
+  const vesselCtxRef    = useRef(null);
+  const vesselScreenRef = useRef([]);
+  const enabledVesselTypesRef = useRef(null);   // Set of enabled type keys, or null = all
+  const enabledAircraftTypesRef = useRef(null);
+  const selVesselRef    = useRef(null);
+  const hoverVesselRef  = useRef(null);
+  const dragMovedRef    = useRef(false);        // distinguishes a globe-drag from a vessel click
 
   const [ready, setReady]       = useState(false);
   const [dims, setDims]         = useState({ w: 1200, h: 700 });
@@ -84,6 +94,16 @@ export default function WorldMap({
   const [selAircraft, setSelAircraft]     = useState(null);
   const [zoneCount, setZoneCount] = useState({ vessels: 0, aircraft: 0 });
   const [tip, setTip]           = useState({ x: 0, y: 0 });
+  // Type filters — default all on; toggled via the legend.
+  const [vesselFilter,   setVesselFilter]   = useState(() => new Set(Object.keys(VESSEL_TYPES)));
+  const [aircraftFilter, setAircraftFilter] = useState(() => new Set(Object.keys(AIRCRAFT_TYPES)));
+  useEffect(() => { enabledVesselTypesRef.current = vesselFilter; }, [vesselFilter]);
+  useEffect(() => { enabledAircraftTypesRef.current = aircraftFilter; }, [aircraftFilter]);
+  const toggleType = (setter) => (key) => setter((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   useEffect(() => { getVesselsRef.current = getVessels; }, [getVessels]);
   useEffect(() => { showVesselsRef.current = showVessels; }, [showVessels]);
@@ -92,6 +112,8 @@ export default function WorldMap({
   useEffect(() => { eventScoresRef.current = eventScores; }, [eventScores]);
   useEffect(() => { exposureLayerRef.current = exposureLayer; }, [exposureLayer]);
   useEffect(() => { anomaliesRef.current = anomalies; }, [anomalies]);
+  useEffect(() => { selVesselRef.current = selVessel; }, [selVessel]);
+  useEffect(() => { hoverVesselRef.current = hoverVessel; }, [hoverVessel]);
 
   // Responsive resize
   useEffect(() => {
@@ -155,6 +177,17 @@ export default function WorldMap({
     const svg = d3.select(svgRef.current).attr("width", w).attr("height", h);
     svg.selectAll("*").remove();
 
+    // Vessel canvas — DPR-scaled so triangles/trails stay crisp.
+    const dpr = window.devicePixelRatio || 1;
+    const vcanvas = vesselCanvasRef.current;
+    if (vcanvas) {
+      vcanvas.width = Math.round(w * dpr);
+      vcanvas.height = Math.round(h * dpr);
+      const vctx = vcanvas.getContext("2d");
+      vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      vesselCtxRef.current = vctx;
+    }
+
     // Glow filters
     const defs = svg.append("defs");
     const mkGlow = (id, dev, double) => {
@@ -203,8 +236,9 @@ export default function WorldMap({
 
     // ── Interaction: drag to rotate ──
     const drag = d3.drag()
-      .on("start", () => { draggingRef.current = true; })
+      .on("start", () => { draggingRef.current = true; dragMovedRef.current = false; })
       .on("drag", (e) => {
+        dragMovedRef.current = true;
         const k = 76 / scaleRef.current;
         const r = rotateRef.current;
         let lat = r[1] - e.dy * k;
@@ -227,6 +261,33 @@ export default function WorldMap({
     };
     const wrap = wrapRef.current;
     wrap.addEventListener("wheel", onWheel, { passive: false });
+
+    // Vessel hover/click — the canvas is pointer-events:none, so hit-test the
+    // per-frame screen cache against the pointer (nearest vessel within ~9px).
+    const hitVessel = (clientX, clientY) => {
+      const rect = svgRef.current.getBoundingClientRect();
+      const mx = clientX - rect.left, my = clientY - rect.top;
+      let best = null, bestSq = 81;
+      for (const s of vesselScreenRef.current) {
+        const dx = s.x - mx, dy = s.y - my, dsq = dx * dx + dy * dy;
+        if (dsq < bestSq) { bestSq = dsq; best = s; }
+      }
+      return best;
+    };
+    const onVesselMove = (e) => {
+      if (!showVesselsRef.current) return;
+      const hit = hitVessel(e.clientX, e.clientY);
+      if (hit) { hoverRef.current = true; setHoverVessel(hit.v); setTip({ x: e.clientX, y: e.clientY }); }
+      else if (hoverVesselRef.current) { hoverRef.current = false; setHoverVessel(null); }
+    };
+    const onVesselClick = (e) => {
+      if (!showVesselsRef.current || dragMovedRef.current) return;
+      const hit = hitVessel(e.clientX, e.clientY);
+      if (hit) { setSelVessel(hit.v); setSelAircraft(null); }
+    };
+    const svgNode = svgRef.current;
+    svgNode.addEventListener("pointermove", onVesselMove);
+    svgNode.addEventListener("click", onVesselClick);
 
     // ── Build data-bound dots + arcs ──
     rebuildDots();
@@ -259,8 +320,8 @@ export default function WorldMap({
         positionDots();
         positionArcs();
       }
-      if (showVesselsRef.current && getVesselsRef.current) renderVessels();
-      else vesselsG.selectAll("*").remove();
+      if (showVesselsRef.current && getVesselsRef.current) drawVessels();
+      else clearVessels();
       if (showAircraftRef.current && getAircraftRef.current) renderAircraft();
       else aircraftG.selectAll("*").remove();
       updateAssoc();
@@ -295,49 +356,89 @@ export default function WorldMap({
       arcsG.selectAll("path.arc").attr("d", (d) => path({ type: "LineString", coordinates: d.coords }));
     }
 
-    // Reconcile the DOM set + per-vessel styling at ~3 Hz (data identity,
-    // selection and exposure tint change far slower than the 60fps loop); then
-    // reposition every frame in a cheap single pass so motion stays fluid even
-    // with hundreds of live AIS vessels.
-    let vesselStyleT = 0;
-    function renderVessels() {
-      let sel = vesselsG.selectAll("path.vessel");
-      const now = performance.now();
-      if (now - vesselStyleT > 300) {
-        vesselStyleT = now;
-        const data = getVesselsRef.current() || [];
-        sel = sel.data(data, (d) => d.mmsi);
-        sel.exit().remove();
-        const enter = sel.enter().append("path")
-          .attr("class", "vessel")
-          .attr("d", VESSEL_ARROW)
-          .attr("stroke", "rgba(0,0,0,0.35)").attr("stroke-width", 0.4)
-          .style("cursor", "pointer")
-          .on("pointerdown", (e) => e.stopPropagation())
-          .on("mouseenter", function (e, d) { hoverRef.current = true; setHoverVessel(d); setTip({ x: e.clientX, y: e.clientY }); })
-          .on("mousemove", (e) => setTip({ x: e.clientX, y: e.clientY }))
-          .on("mouseleave", function () { hoverRef.current = false; setHoverVessel(null); })
-          .on("click", (e, d) => { e.stopPropagation(); setSelVessel(d); setSelAircraft(null); });
-        const vScores = eventScoresRef.current, vAssoc = assocRef.current.nearestByItem;
-        sel = enter.merge(sel)
-          .attr("fill", (d) => {
-            const near = vAssoc.get(d.mmsi);
-            if (exposureLayerRef.current && near && vScores && vScores[near.eventId] != null) return exposureColor(vScores[near.eventId]);
-            return (VESSEL_TYPES[d.type] || VESSEL_TYPES.other).color;
-          })
-          .attr("fill-opacity", (d) => {
-            if (!selectedNodeId) return 1;
-            const near = vAssoc.get(d.mmsi);
-            return near && near.eventId === String(selectedNodeId) ? 1 : 0.18;
-          });
-      }
-      sel.each(function (d) {
-        if (!visible(d.lng, d.lat)) { this.style.display = "none"; return; }
+    // Vessels are drawn on <canvas> (not SVG) so the full global AIS fleet (~8k+)
+    // stays fluid. One projection per visible vessel per frame (same cost the old
+    // SVG path did), plus a per-frame screen cache for hover/click hit-testing.
+    // Trails ("where it came from") draw for every vessel when the fleet is small;
+    // in the dense global feed only the selected/hovered vessel gets a trail so
+    // rotation stays smooth. The triangle points along heading ("where it's going").
+    function drawVessels() {
+      const ctx = vesselCtxRef.current;
+      if (!ctx) return;
+      ctx.clearRect(0, 0, w, h);
+      const data = getVesselsRef.current() || [];
+      const enabled = enabledVesselTypesRef.current;
+      const vScores = eventScoresRef.current, vAssoc = assocRef.current.nearestByItem;
+      const selId = selectedNodeId ? String(selectedNodeId) : null;
+      const selMmsi = selVesselRef.current?.mmsi;
+      const hovMmsi = hoverVesselRef.current?.mmsi;
+      const showAllTrails = data.length <= 2500;
+      const screen = [];
+
+      for (const d of data) {
+        const type = d.type || "other";
+        if (enabled && !enabled.has(type)) continue;
+        if (!visible(d.lng, d.lat)) continue;
         const p = projection([d.lng, d.lat]);
-        if (!p) { this.style.display = "none"; return; }
-        this.style.display = "";
-        this.setAttribute("transform", `translate(${p[0]},${p[1]}) rotate(${d.heading || 0})`);
-      });
+        if (!p) continue;
+        const [x, y] = p;
+        screen.push({ mmsi: d.mmsi, x, y, v: d });
+
+        const near = vAssoc.get(d.mmsi);
+        let fill = (VESSEL_TYPES[type] || VESSEL_TYPES.other).color;
+        if (exposureLayerRef.current && near && vScores && vScores[near.eventId] != null) fill = exposureColor(vScores[near.eventId]);
+        const alpha = selId ? (near && near.eventId === selId ? 1 : 0.18) : 1;
+        const isSel = selMmsi != null && d.mmsi === selMmsi;
+        const isHov = hovMmsi != null && d.mmsi === hovMmsi;
+
+        // Trail through recent positions.
+        if (d.track && d.track.length > 1 && (showAllTrails || isSel || isHov)) {
+          ctx.beginPath();
+          let started = false;
+          for (let i = 0; i < d.track.length; i++) {
+            const tp = projection([d.track[i].lng, d.track[i].lat]);
+            if (!tp) { started = false; continue; }
+            if (started) ctx.lineTo(tp[0], tp[1]); else { ctx.moveTo(tp[0], tp[1]); started = true; }
+          }
+          ctx.strokeStyle = fill;
+          ctx.globalAlpha = alpha * (isSel || isHov ? 0.6 : 0.25);
+          ctx.lineWidth = isSel ? 1.5 : 1;
+          ctx.stroke();
+        }
+
+        // Triangle pointing along heading (0deg = north -> tip up).
+        const size = isSel ? 6 : isHov ? 4.5 : 3.2;
+        const ang = ((d.heading || 0) - 90) * Math.PI / 180;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(ang);
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(size, 0);
+        ctx.lineTo(-size * 0.7, size * 0.7);
+        ctx.lineTo(-size * 0.7, -size * 0.7);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.restore();
+
+        if (isSel) {
+          ctx.globalAlpha = 1;
+          ctx.beginPath(); ctx.arc(x, y, 11, 0, 2 * Math.PI);
+          ctx.strokeStyle = CRIMSON; ctx.lineWidth = 1; ctx.stroke();
+          const hx = x + Math.cos(ang) * 22, hy = y + Math.sin(ang) * 22;
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(hx, hy);
+          ctx.strokeStyle = CRIMSON; ctx.globalAlpha = 0.7; ctx.lineWidth = 1; ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+      vesselScreenRef.current = screen;
+    }
+
+    function clearVessels() {
+      const ctx = vesselCtxRef.current;
+      if (ctx) ctx.clearRect(0, 0, w, h);
+      vesselScreenRef.current = [];
     }
 
     let aircraftStyleT = 0;
@@ -346,7 +447,8 @@ export default function WorldMap({
       const now = performance.now();
       if (now - aircraftStyleT > 300) {
         aircraftStyleT = now;
-        const data = getAircraftRef.current() || [];
+        const af = enabledAircraftTypesRef.current;
+        const data = (getAircraftRef.current() || []).filter((a) => !af || af.has(a.type || "other"));
         sel = sel.data(data, (d) => d.icao);
         sel.exit().remove();
         const enter = sel.enter().append("path")
@@ -510,6 +612,8 @@ export default function WorldMap({
     return () => {
       cancelAnimationFrame(rafRef.current);
       wrap.removeEventListener("wheel", onWheel);
+      svgNode.removeEventListener("pointermove", onVesselMove);
+      svgNode.removeEventListener("click", onVesselClick);
       svg.on(".drag", null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -547,6 +651,9 @@ export default function WorldMap({
       )}
 
       <svg ref={svgRef} className="absolute inset-0" style={{ width: "100%", height: "100%" }} />
+      {/* Vessel layer — canvas (pointer-events pass through to the SVG for drag/zoom;
+          vessel hover/click is hit-tested against the per-frame screen cache). */}
+      <canvas ref={vesselCanvasRef} className="absolute inset-0" style={{ width: "100%", height: "100%", pointerEvents: "none" }} />
 
       {ready && (
         <GlobeControls onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={reset} spinning={spinning} onToggleSpin={toggleSpin} />
@@ -606,7 +713,7 @@ export default function WorldMap({
           ["Heading", `${Math.round(selVessel.heading ?? 0)}°`],
           ["Latitude", (selVessel.lat ?? 0).toFixed(3)],
           ["Longitude", (selVessel.lng ?? 0).toFixed(3)],
-          ["Route", selVessel.lane || "—"],
+          ["Destination", selVessel.destination || selVessel.lane || "—"],
         ];
         return (
           <div className="absolute bottom-3 left-3 z-30 w-64 backdrop-blur-sm border shadow-xl"
@@ -703,23 +810,31 @@ export default function WorldMap({
       {ready && (
         <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-2 items-end">
           {showVessels && (
-            <div className="flex items-center gap-3 backdrop-blur-sm border px-3 py-2 shadow-sm" style={{ backgroundColor: "rgba(14,21,32,0.85)", borderColor: "rgba(232,228,220,0.12)" }}>
-              {Object.values(VESSEL_TYPES).slice(0, 4).map((t) => (
-                <div key={t.label} className="flex items-center gap-1.5">
-                  <span style={{ width: 0, height: 0, borderLeft: "3px solid transparent", borderRight: "3px solid transparent", borderBottom: `6px solid ${t.color}` }} />
-                  <span className="text-[9px] tracking-wide" style={{ color: "rgba(232,228,220,0.5)" }}>{t.label}</span>
-                </div>
-              ))}
+            <div className="flex items-center gap-2.5 backdrop-blur-sm border px-3 py-2 shadow-sm" style={{ backgroundColor: "rgba(14,21,32,0.85)", borderColor: "rgba(232,228,220,0.12)" }}>
+              {Object.entries(VESSEL_TYPES).map(([key, t]) => {
+                const on = vesselFilter.has(key);
+                return (
+                  <button key={key} onClick={() => toggleType(setVesselFilter)(key)} title={`Toggle ${t.label}`}
+                    className="flex items-center gap-1.5 transition-opacity" style={{ opacity: on ? 1 : 0.3 }}>
+                    <span style={{ width: 0, height: 0, borderLeft: "3px solid transparent", borderRight: "3px solid transparent", borderBottom: `6px solid ${t.color}` }} />
+                    <span className="text-[9px] tracking-wide" style={{ color: "rgba(232,228,220,0.65)" }}>{t.label}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
           {showAircraft && (
-            <div className="flex items-center gap-3 backdrop-blur-sm border px-3 py-2 shadow-sm" style={{ backgroundColor: "rgba(14,21,32,0.85)", borderColor: "rgba(232,228,220,0.12)" }}>
-              {Object.values(AIRCRAFT_TYPES).slice(0, 4).map((t) => (
-                <div key={t.label} className="flex items-center gap-1.5">
-                  <span style={{ color: t.color, fontSize: 10, lineHeight: 1 }}>✈</span>
-                  <span className="text-[9px] tracking-wide" style={{ color: "rgba(232,228,220,0.5)" }}>{t.label}</span>
-                </div>
-              ))}
+            <div className="flex items-center gap-2.5 backdrop-blur-sm border px-3 py-2 shadow-sm" style={{ backgroundColor: "rgba(14,21,32,0.85)", borderColor: "rgba(232,228,220,0.12)" }}>
+              {Object.entries(AIRCRAFT_TYPES).map(([key, t]) => {
+                const on = aircraftFilter.has(key);
+                return (
+                  <button key={key} onClick={() => toggleType(setAircraftFilter)(key)} title={`Toggle ${t.label}`}
+                    className="flex items-center gap-1.5 transition-opacity" style={{ opacity: on ? 1 : 0.3 }}>
+                    <span style={{ color: t.color, fontSize: 10, lineHeight: 1 }}>✈</span>
+                    <span className="text-[9px] tracking-wide" style={{ color: "rgba(232,228,220,0.65)" }}>{t.label}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
           <div className="flex items-center gap-4 backdrop-blur-sm border px-4 py-2 shadow-sm" style={{ backgroundColor: "rgba(14,21,32,0.85)", borderColor: "rgba(232,228,220,0.12)" }}>

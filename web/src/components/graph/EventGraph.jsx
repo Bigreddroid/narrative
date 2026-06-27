@@ -7,6 +7,7 @@ import TierGate from "../TierGate.jsx";
 import { useUser } from "../../hooks/useUser.js";
 import HlsPlayer from "../livenews/HlsPlayer.jsx";
 import { useLiveStreams } from "../../hooks/useLiveStreams.js";
+import { COUNTRY_NAMES } from "../../lib/countries.js";
 
 // ─── Source article card ───────────────────────────────────────────────────────
 
@@ -278,8 +279,14 @@ function rankChannelsForEvent(channels, event) {
   const hay = [...(event?.geography || []), event?.canonical_title || event?.title || ""]
     .join(" ").toLowerCase();
   const scored = channels.map((ch) => {
-    const hints = REGION_HINTS[ch.region] || [];
-    return { ch, hits: hints.filter((k) => hay.includes(k)).length };
+    const code = (ch.region || "").toUpperCase();
+    // Strongest signal: the channel's OWN country appears in the event geography
+    // (iptv-org tags region as an ISO-2 code) -> local coverage.
+    const names = COUNTRY_NAMES[code] || [];
+    let hits = names.some((n) => hay.includes(n)) ? 3 : 0;
+    // Legacy curated-channel keyword hints (broader regions).
+    hits += (REGION_HINTS[code] || []).filter((k) => hay.includes(k)).length;
+    return { ch, hits };
   });
   const relevant = scored.filter((s) => s.hits > 0).sort((a, b) => b.hits - a.hits);
   const rest = scored.filter((s) => s.hits === 0);
@@ -289,38 +296,88 @@ function rankChannelsForEvent(channels, event) {
   };
 }
 
+// First ISO-2 country code whose name appears in the event's geography/title.
+function countryCodeForEvent(event) {
+  const hay = [...(event?.geography || []), event?.canonical_title || event?.title || ""].join(" ").toLowerCase();
+  for (const [code, names] of Object.entries(COUNTRY_NAMES)) {
+    if (names.some((n) => hay.includes(n))) return code.toLowerCase();
+  }
+  return null;
+}
+
 // Compact live-TV player shown inline in the Intelligence panel, beneath the
-// consequence chain — region-matched channels covering the story, with a switcher.
+// consequence chain. Prefers channels from the event's OWN country (iptv-org
+// per-country playlist), then region-matched curated channels, with a switcher.
 function LiveCoverageInline({ event }) {
-  const { channels, loading } = useLiveStreams();
-  const { ordered, relevantIds } = useMemo(() => rankChannelsForEvent(channels, event), [channels, event]);
+  const { channels } = useLiveStreams();
+  // Local channels for the event's country (keyless iptv-org), prepended so the
+  // most locally-relevant coverage ranks first.
+  const [localChannels, setLocalChannels] = useState([]);
+  useEffect(() => {
+    const code = countryCodeForEvent(event);
+    if (!code) { setLocalChannels([]); return; }
+    let alive = true;
+    api.get(`/live-news/local?country=${code}`)
+      .then((d) => { if (alive) setLocalChannels(Array.isArray(d?.channels) ? d.channels : []); })
+      .catch(() => { if (alive) setLocalChannels([]); });
+    return () => { alive = false; };
+  }, [event]);
+  const merged = useMemo(() => [...localChannels, ...channels], [localChannels, channels]);
+  const { ordered, relevantIds } = useMemo(() => rankChannelsForEvent(merged, event), [merged, event]);
   const [activeId, setActiveId] = useState(null);
-  useEffect(() => { if (ordered.length && !activeId) setActiveId(ordered[0].id); }, [ordered, activeId]);
-  if (loading || !ordered.length) return null;  // stay quiet when no streams are available
+  // Until the user picks a channel, the default follows the top-ranked one — so when
+  // the async local-country channels arrive and re-rank, the player switches to the
+  // local channel instead of staying on the initial curated default.
+  const userPicked = useRef(false);
+  useEffect(() => { userPicked.current = false; setActiveId(null); }, [event]);
+  useEffect(() => { if (!userPicked.current && ordered.length) setActiveId(ordered[0].id); }, [ordered]);
   const active = ordered.find((c) => c.id === activeId) || ordered[0];
+  const hasChannels = ordered.length > 0;
+
+  // Event-specific clips: YouTube's keyless search-embed is deprecated (plays
+  // "unavailable"), so we open a YouTube search for the event in a new tab on
+  // demand. The inline player shows the working region-matched live channel.
+  const ytSearch = useMemo(() => {
+    const geo = (event?.geography || [])[0];
+    const q = [event?.canonical_title || event?.title || "", geo, "news"].filter(Boolean).join(" ");
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+  }, [event]);
+
+  if (!hasChannels) return null;
 
   return (
     <div className="mt-4 pt-4 border-t border-ink/10">
       <div className="flex items-center gap-2 mb-2">
         <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
         <span className="text-[9px] font-mono uppercase tracking-[0.3em] text-crimson">Live Coverage</span>
-        {active && <span className="text-[10px] text-ink/50 truncate">{active.name}</span>}
+        <a
+          href={ytSearch} target="_blank" rel="noopener noreferrer"
+          className="ml-auto px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border transition-colors text-ink/55 hover:text-crimson"
+          style={{ borderColor: "rgba(128,128,128,0.3)" }}
+          title="Open YouTube clips for this event"
+        >
+          Clips on this event ↗
+        </a>
       </div>
+
       <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
-        <HlsPlayer channel={active} />
+        {active && <HlsPlayer channel={active} />}
       </div>
+
       <div className="flex gap-1.5 mt-2 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
         {ordered.map((c) => {
-          const isActive = c.id === active.id;
+          const isActive = c.id === active?.id;
           const rel = relevantIds.has(c.id);
           return (
             <button
               key={c.id}
-              onClick={() => setActiveId(c.id)}
-              className="flex-shrink-0 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider border transition-colors"
+              onClick={() => { userPicked.current = true; setActiveId(c.id); }}
+              className={`flex-shrink-0 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider border transition-colors ${
+                isActive ? "" : rel ? "text-ink/70" : "text-ink/40"
+              }`}
               style={{
-                color: isActive ? "#C80028" : rel ? "rgba(26,26,26,0.7)" : "rgba(26,26,26,0.4)",
-                borderColor: isActive ? "rgba(200,0,40,0.5)" : "rgba(26,26,26,0.12)",
+                color: isActive ? "#C80028" : undefined,
+                borderColor: isActive ? "rgba(200,0,40,0.5)" : "rgba(128,128,128,0.25)",
                 backgroundColor: isActive ? "rgba(200,0,40,0.08)" : "transparent",
               }}
             >
@@ -329,8 +386,9 @@ function LiveCoverageInline({ event }) {
           );
         })}
       </div>
-      <p className="text-[8px] font-mono text-ink/25 mt-1.5 uppercase tracking-wider">
-        Official channels covering this region — live
+
+      <p className="text-[8px] font-mono text-ink/30 mt-1.5 uppercase tracking-wider">
+        {relevantIds.has(active?.id) ? "Region-matched live channel" : "Live channel"} · clips on this event ↗
       </p>
     </div>
   );
@@ -391,10 +449,15 @@ export default function EventGraph({ eventId, onClose }) {
   const indirectImpacts = Array.isArray(map?.indirect_impact) ? map.indirect_impact : map?.indirect_impact ? [map.indirect_impact] : [];
   const allImpacts      = [...directImpacts, ...indirectImpacts];
 
+  // Two concrete scenario arcs from the prediction score (likelihood of continued
+  // escalation vs. stabilising) — clearer than a single generic "confidence" arc.
   const predictions = Array.isArray(map?.predictions)
     ? map.predictions
-    : map?.prediction_score !== undefined
-    ? [{ label: map.confidence || "confidence", confidence: map.prediction_score }]
+    : map?.prediction_score != null
+    ? [
+        { label: "Further escalation", confidence: map.prediction_score },
+        { label: "Stabilizes", confidence: Math.max(0, 100 - map.prediction_score) },
+      ]
     : [];
 
   return (
@@ -463,8 +526,10 @@ export default function EventGraph({ eventId, onClose }) {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className="flex-1 py-2.5 text-[9px] font-mono uppercase tracking-widest transition-colors relative"
-            style={{ color: activeTab === tab ? "#C80028" : "#1A1A1A80" }}
+            className={`flex-1 py-2.5 text-[9px] font-mono uppercase tracking-widest transition-colors relative ${
+              activeTab === tab ? "" : "text-ink/45 hover:text-ink/70"
+            }`}
+            style={activeTab === tab ? { color: "#C80028" } : undefined}
           >
             {tab}
             {activeTab === tab && (

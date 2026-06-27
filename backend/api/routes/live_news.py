@@ -11,12 +11,18 @@ the iptv-org expansion when enabled). $0 to serve — just a JSON manifest the
 frontend HlsPlayer / YouTube iframe consumes.
 """
 
+import time
+
 from fastapi import APIRouter
 
 from backend.api.dependencies import UserDep
 from backend.config import get_settings
 
 router = APIRouter(prefix="/live-news", tags=["live-news"])
+
+# Per-country local-channel lookups are cached (iptv-org playlists rarely change).
+_LOCAL_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_LOCAL_TTL = 3600  # 1 hour
 
 # Official, broadcaster-published 24/7 streams. `type`: "hls" (HlsPlayer) or
 # "youtube" (official live iframe via channel id). All free-to-embed.
@@ -108,3 +114,47 @@ async def list_streams(user: UserDep) -> dict:
         channels.extend(c for c in extra if c["id"] not in seen)
 
     return {"channels": channels, "tier": user.tier, "total": len(channels)}
+
+
+# Strong, unambiguous news-name tokens (no generic "tv"/"channel"/"live", which
+# match entertainment). Multilingual: es/pt/tr/fr + common intl brands.
+_NEWS_TOKENS = (
+    "news", "noticias", "notici", "notícias", "informativ", "actualidad",
+    "telesur", "globovis", "euronews", "jazeera", "haber", "jornal", "24 horas",
+    "rolling news", "noticentro", "telenoticias",
+)
+# Reject parser noise from community playlists (User-Agent strings as channel names).
+_NAME_JUNK = ("mozilla", "gecko", "applewebkit", "chrome/", "safari/", "http-", "user-agent")
+
+
+def _newsy(c: dict) -> bool:
+    n = (c.get("name") or "").lower()
+    if any(j in n for j in _NAME_JUNK):
+        return False
+    return any(k in n for k in _NEWS_TOKENS)
+
+
+@router.get("/local")
+async def local_channels(country: str, user: UserDep) -> dict:
+    """News channels from a specific country (iptv-org per-country playlist), so an
+    event can surface LOCAL coverage. Keyless; cached; filtered to news-named
+    channels (empty ⇒ the UI keeps the curated regional fallback). Aggregated
+    restreams — less reliable than the curated officials."""
+    code = "".join(c for c in (country or "").lower() if c.isalpha())[:2]
+    if len(code) != 2:
+        return {"channels": [], "country": code}
+    now = time.time()
+    hit = _LOCAL_CACHE.get(code)
+    if hit and now - hit[0] < _LOCAL_TTL:
+        return {"channels": hit[1], "country": code}
+
+    from backend.feeds.iptv_org import fetch_iptv_news  # fetch+parse any M3U (HLS only)
+    s = get_settings()
+    chans = [c for c in await fetch_iptv_news(f"{s.live_news_iptv_country_base}/{code}.m3u", limit=120)
+             if _newsy(c)]
+    for c in chans:
+        c["region"] = (c.get("region") or code.upper())
+        c["local"] = True
+    top = chans[:10]
+    _LOCAL_CACHE[code] = (now, top)
+    return {"channels": top, "country": code}

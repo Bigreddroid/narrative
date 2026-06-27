@@ -23,10 +23,11 @@ const CHOKEPOINT_BOXES = [
 const GLOBAL_BOX = [[[-90, -180], [90, 180]]];
 const AIS_GLOBAL = import.meta.env.VITE_AIS_GLOBAL === "true";
 const AIS_BOXES = AIS_GLOBAL ? GLOBAL_BOX : CHOKEPOINT_BOXES;
-// Render cap scales with scope: chokepoint mode stays light; global mode shows
-// the full active fleet up to the SVG-safe ceiling (≈2000 paths — beyond that
-// the WorldMap vessel layer would need to move to canvas).
-const VESSEL_CAP = AIS_GLOBAL ? 2000 : 600;
+// The WorldMap vessel layer renders on <canvas>, so the whole active fleet shows
+// fluidly — this cap is just a memory bound (prune the stalest when exceeded), not
+// a render limit. Chokepoint mode is naturally small.
+const VESSEL_CAP = AIS_GLOBAL ? 15000 : 1500;
+const TRACK_LEN = 8;  // recent positions kept per vessel for the motion trail
 
 // Maritime vessel feed with graceful source preference:
 //   1. backend /api/v1/vessels  (server-side AIS — AISHub/etc, no CORS, creds hidden)
@@ -135,25 +136,33 @@ export function useVesselFeed(enabled = true) {
         if (v && v.mmsi != null) {
           const known = staticRef.current.get(v.mmsi);
           if (known?.type) v.type = known.type;
+          if (known?.destination) v.destination = known.destination;
+          // Carry the prior vessel's track forward and append the new position so
+          // the canvas can draw a short motion trail ("where it came from").
+          const prevV = liveMapRef.current.get(v.mmsi);
+          const track = prevV?.track || [];
+          track.push({ lng: v.lng, lat: v.lat });
+          if (track.length > TRACK_LEN) track.shift();
+          v.track = track;
           v._ts = performance.now();
           liveMapRef.current.set(v.mmsi, v);
-          // Cap the live set so the SVG layer stays smooth (VESSEL_CAP scales
-          // with scope: 600 chokepoint / 2000 global). Over the cap we prune the
-          // stalest vessels (no position update in 2 min).
+          // Memory bound only (canvas renders the full fleet): prune the stalest
+          // vessels (no update in 2 min) once over the cap.
           if (liveMapRef.current.size > VESSEL_CAP) {
             const cutoff = performance.now() - 120000;
             for (const [k, val] of liveMapRef.current) if (val._ts < cutoff) liveMapRef.current.delete(k);
           }
           return;
         }
-        // Static data — record ship type and backfill any live vessel already plotted.
+        // Static data — record ship type/destination and backfill any plotted vessel.
         const s = parseAisStatic(raw);
         if (s && s.mmsi != null) {
           const prev = staticRef.current.get(s.mmsi) || {};
-          staticRef.current.set(s.mmsi, { type: s.type || prev.type, name: s.name || prev.name });
+          staticRef.current.set(s.mmsi, { type: s.type || prev.type, name: s.name || prev.name, destination: s.destination || prev.destination });
           if (staticRef.current.size > 2000) staticRef.current.delete(staticRef.current.keys().next().value);
           const existing = liveMapRef.current.get(s.mmsi);
           if (existing && s.type && s.type !== "other") existing.type = s.type;
+          if (existing && s.destination) existing.destination = s.destination;
         }
       };
     };

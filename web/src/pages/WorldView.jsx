@@ -341,7 +341,7 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
       </div>{/* /center column */}
 
       {/* Right panel: EventGraph or dark signal widgets */}
-      <div className="w-80 flex-shrink-0 hidden lg:block relative border-l border-ink/10 overflow-hidden">
+      <div className="w-96 flex-shrink-0 hidden lg:block relative border-l border-ink/10 overflow-hidden">
         <AnimatePresence mode="wait">
           {selectedEventId ? (
             <motion.div
@@ -612,7 +612,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
               exit={{ opacity: 0, x: 40 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               className="hidden lg:block absolute top-4 right-4 bottom-4 overflow-hidden z-30 shadow-2xl"
-              style={{ width: 420 }}
+              style={{ width: 480 }}
             >
               <EventGraph eventId={selectedEventId} onClose={onEventClose} />
             </motion.div>

@@ -23,6 +23,29 @@ SECTOR_MAP = {
 }
 DEFAULT_SECTORS = (["Infrastructure"], ["Energy"])
 
+# How likely a category is to keep escalating (drives the prediction score).
+PRED_VOLATILITY = {
+    "conflict": 0.92, "unrest": 0.85, "market": 0.82, "sanction": 0.75,
+    "cyber": 0.70, "disaster": 0.60, "storm": 0.60, "flood": 0.55,
+    "wildfire": 0.62, "drought": 0.45, "volcano": 0.50, "space": 0.35,
+}
+# Concrete escalation phrasing per category (used in the prediction sentence).
+ESCALATION = {
+    "conflict": "military escalation and supply-route disruption",
+    "unrest": "civil unrest and governance strain",
+    "market": "market-volatility spillover",
+    "sanction": "trade and banking friction",
+    "cyber": "follow-on intrusions and outages",
+    "disaster": "humanitarian and infrastructure strain",
+    "storm": "transport and power disruption",
+    "flood": "displacement and infrastructure damage",
+    "wildfire": "air-quality and evacuation impacts",
+    "drought": "crop and water stress",
+    "volcano": "aviation and evacuation impacts",
+    "space": "launch-cadence and orbital effects",
+}
+DEFAULT_ESCALATION = "knock-on disruption"
+
 
 def severity_from(importance: float) -> str:
     if importance >= 80:
@@ -32,6 +55,23 @@ def severity_from(importance: float) -> str:
     if importance >= 40:
         return "medium"
     return "low"
+
+
+def _timeframe(sev: str) -> str:
+    return {"critical": "days", "high": "1–2 weeks",
+            "medium": "several weeks"}.get(sev, "a month")
+
+
+def predict_from(cat: str, importance: float, severity: str, geo: list[str], sectors: list[str]) -> tuple[int, str]:
+    """Deterministic (score, reasoning) — concrete likelihood of continued escalation."""
+    vol = PRED_VOLATILITY.get(cat, 0.50)
+    score = round(min(95, max(20, importance * vol + 8)))
+    where = ", ".join(geo[:2]) if geo and geo[0] != "the affected area" else "the affected area"
+    reasoning = (
+        f"~{score}% likelihood of continued {ESCALATION.get(cat, DEFAULT_ESCALATION)} "
+        f"affecting {', '.join(sectors)} within {_timeframe(severity)}, given the situation in {where}."
+    )
+    return score, reasoning
 
 
 def synthesize(signal: dict) -> dict:
@@ -54,6 +94,7 @@ def synthesize(signal: dict) -> dict:
         {"type": "SPECULATIVE EFFECT",
          "content": f"Knock-on pressure on {', '.join(indirect_sectors) or 'connected sectors'} if conditions persist."},
     ]
+    pred_score, pred_reasoning = predict_from(cat, imp, sev, geo, direct_sectors)
     return {
         "consensus_summary": signal.get("summary") or title,
         "consequence_chain": chain,
@@ -63,4 +104,6 @@ def synthesize(signal: dict) -> dict:
         "sources_analyzed": [signal.get("source", "feed")],
         "disputed_points": [],
         "affected_sectors": direct_sectors + indirect_sectors,
+        "prediction_score": pred_score,
+        "prediction_reasoning": pred_reasoning,
     }
