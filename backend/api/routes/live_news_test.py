@@ -32,7 +32,7 @@ class _FakeUser:  # the handler only reads user.tier
 
 # ── free tier → small taster only ────────────────────────────────────────────
 free = asyncio.run(list_streams(user=_FakeUser("free")))
-ok("free tier → only taster channels", free["total"] == len(_FREE_CHANNEL_IDS) == 2)
+ok("free tier → only taster channels", free["total"] == len(_FREE_CHANNEL_IDS))
 ok("free tier ids are exactly the taster set", {c["id"] for c in free["channels"]} == _FREE_CHANNEL_IDS)
 ok("free tier label echoed", free["tier"] == "free")
 

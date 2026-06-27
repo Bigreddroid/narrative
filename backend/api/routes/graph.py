@@ -28,6 +28,7 @@ async def get_world_graph(
     events_result = await db.execute(
         select(NarrativeEvent)
         .where(NarrativeEvent.is_mapped == True)
+        .where(NarrativeEvent.merged_into_id.is_(None))  # hide near-duplicates folded into a canonical event
         .where(NarrativeEvent.geo_centroid_lat.isnot(None))
         .where(NarrativeEvent.geo_centroid_lng.isnot(None))
         .order_by(NarrativeEvent.global_importance_score.desc())

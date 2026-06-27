@@ -17,6 +17,7 @@ MODULES=(
   backend.consequence_engine.calibration_test
   backend.consequence_engine.cluster_logic_test
   backend.consequence_engine.corroboration_test
+  backend.consequence_engine.title_dedup_test
   backend.consequence_engine.evolution_logic_test
   backend.consequence_engine.graph_scoring_test
   backend.consequence_engine.importance_scorer_test

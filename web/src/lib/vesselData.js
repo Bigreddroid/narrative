@@ -182,5 +182,6 @@ export function parseAisStatic(raw) {
     mmsi,
     type: aisTypeBucket(sd.Type),
     name: (meta.ShipName || sd.Name || "").trim() || undefined,
+    destination: (sd.Destination || "").trim() || undefined,  // "where it's going" (AIS-reported)
   };
 }

@@ -46,6 +46,12 @@ ok("indirect softer than direct", S.severity_from(90 - 25) != "critical")
 ok("chain has 3 evidence-graded steps", len(m["consequence_chain"]) == 3)
 ok("sources_analyzed carries feed", m["sources_analyzed"] == ["usgs"])
 ok("affected_sectors populated", len(m["affected_sectors"]) >= 2)
+ok("prediction_score in range", 20 <= m["prediction_score"] <= 95)
+ok("prediction_reasoning is concrete", isinstance(m["prediction_reasoning"], str)
+   and str(m["prediction_score"]) in m["prediction_reasoning"] and "Japan" in m["prediction_reasoning"])
+ok("higher volatility ⇒ higher score",
+   S.synthesize({"title": "war", "category": "conflict", "importance": 70})["prediction_score"]
+   > S.synthesize({"title": "dry", "category": "drought", "importance": 70})["prediction_score"])
 
 low = S.synthesize({"title": "minor", "category": "disaster", "importance": 30})
 ok("low importance ⇒ low severity", low["direct_impact"][0]["severity"] == "low")

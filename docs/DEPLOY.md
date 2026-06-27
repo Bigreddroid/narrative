@@ -37,6 +37,14 @@ See `docs/COST.md`. The keys below are **optional** unless you opt into paid pro
    - `APP_ENV=production`, `APP_BASE_URL=https://<your-vercel-domain>`,
      `ALLOWED_ORIGINS=https://<your-vercel-domain>`.
    - Stripe: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID` (webhook secret added in step 4).
+   - **AI Analyst (no Ollama in the cloud):** Railway has no local LLM, so the
+     default `LLM_PROVIDER=ollama` leaves the Analyst chat / consequence mapping
+     with no model. To turn them on, set `LLM_PROVIDER=anthropic`,
+     `PAID_APIS_ENABLED=true`, and a non-zero spend cap
+     (`CLAUDE_HARD_CAP_DAILY_USD` / `CLAUDE_HARD_CAP_MONTHLY_USD` — they default to
+     `0.0`, which blocks all paid calls). Leave `EMBEDDINGS_PROVIDER=local` to keep
+     embeddings free (fastembed). Skip this only if you intend to ship without the
+     AI Analyst.
 4. **Deploy.** The `api` service runs `alembic ... upgrade head` then gunicorn, and
    exposes `/health` for the healthcheck. First boot auto-migrates the DB.
 5. **Workers (cost control):** the full `scheduler` runs the paid mapping (Claude) +
@@ -52,11 +60,16 @@ See `docs/COST.md`. The keys below are **optional** unless you opt into paid pro
 
 1. **Import the same GitHub repo.** Vercel reads `vercel.json` (build `cd web && npm
    install && npm run build`, output `web/dist`, SPA fallback).
-2. **Edit `vercel.json`** → replace `__RAILWAY_API_HOST__` in the `/api/(.*)` rewrite
-   `destination` with your real Railway API host (no scheme), e.g.
-   `narrative-api-production.up.railway.app`. Commit.
+2. **Check `vercel.json`** → the `/api/(.*)` rewrite `destination` already points at
+   the live Railway API host (`narrative-production-2a1c.up.railway.app`). If you
+   deploy the backend to a different host, update that host here (no scheme) and commit.
 3. **Env / secrets:** the frontend needs no map token (the world map is d3/topojson).
-   Leave `VITE_DEMO_MODE` unset/false for a real beta.
+   - `VITE_DEMO_MODE=false` (real beta — never `true` in prod).
+   - `VITE_AISSTREAM_KEY` = your free AISStream key (live ship tracking; without it
+     the Maritime layer shows a clearly-badged simulated fleet).
+   - `VITE_AIS_GLOBAL=true` to stream **all** active vessels worldwide (the render
+     cap auto-scales to ~2000). Leave unset/`false` to focus only on the maritime
+     chokepoints the consequence model watches (lighter, smoother globe).
 4. **Deploy.** You get `https://<project>.vercel.app` (add a custom domain if desired).
 
 ---

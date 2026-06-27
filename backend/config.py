@@ -128,7 +128,12 @@ class Settings(BaseSettings):
     # Live news (embedded player). Default = curated OFFICIAL channels only.
     # iptv-org is a huge keyless HLS catalog but aggregates unofficial restreams
     # (copyright/geo/uptime risk) — opt-in only, never the shipped default.
+    # iptv-org's category news.m3u carries no country tags, so it can't drive
+    # local matching — left OFF. Local coverage instead comes from iptv-org's
+    # per-country playlists, fetched on demand by the live-news /local endpoint.
     live_news_use_iptv_org: bool = False
+    # Base for iptv-org per-country playlists: <base>/<cc>.m3u (e.g. .../ve.m3u).
+    live_news_iptv_country_base: str = "https://iptv-org.github.io/iptv/countries"
     live_news_iptv_org_url: str = "https://iptv-org.github.io/iptv/categories/news.m3u"
 
     # Free feed keys (optional — most sources need none)

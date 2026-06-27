@@ -27,6 +27,11 @@ class NarrativeEvent(Base):
     # Free-feed provenance (real-source events): dedupe by (source, external_id).
     source: Mapped[str | None] = mapped_column(Text)
     external_id: Mapped[str | None] = mapped_column(Text)
+    # Set when this event is a near-duplicate folded into a canonical event; such
+    # rows are kept (provenance) but excluded from every feed/map query.
+    merged_into_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     is_mapped: Mapped[bool] = mapped_column(Boolean, default=False)
     is_importance_scored: Mapped[bool] = mapped_column(Boolean, default=False)
     is_graph_connected: Mapped[bool] = mapped_column(Boolean, default=False)
