@@ -56,9 +56,9 @@ try:
 except llm.BudgetExceeded:
     ok("complete raises when off", True)
 
-# ── anthropic cost estimate: $3/MTok in, $15/MTok out ────────────────────────
-ok("estimate 1M in = $3", abs(llm.estimate_anthropic_cost(1_000_000, 0) - 3.0) < 1e-9)
-ok("estimate 1M out = $15", abs(llm.estimate_anthropic_cost(0, 1_000_000) - 15.0) < 1e-9)
+# ── anthropic cost estimate: claude-opus-4-8 $5/MTok in, $25/MTok out ─────────
+ok("estimate 1M in = $5", abs(llm.estimate_anthropic_cost(1_000_000, 0) - 5.0) < 1e-9)
+ok("estimate 1M out = $25", abs(llm.estimate_anthropic_cost(0, 1_000_000) - 25.0) < 1e-9)
 
 # ── cost_guard: free/local provider is always allowed (no DB touched) ─────────
 _set(False, "ollama")
