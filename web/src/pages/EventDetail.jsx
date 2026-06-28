@@ -11,6 +11,7 @@ import { useTrafficNearEvent } from "../hooks/useTrafficNearEvent.js";
 import { findAnalogs, momentum, trendLabel } from "../lib/temporal.js";
 import { HISTORICAL_ANALOGS } from "../lib/analogs.js";
 import TierGate from "../components/TierGate.jsx";
+import { extractEntities } from "../lib/osintEntities.js";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -339,17 +340,26 @@ export default function EventDetail() {
   const aggrBias = calcEventBias(articles);
   const isLive   = event.current_status === "escalating" || event.current_status === "developing";
 
-  // OSINT investigate pivots: derive entities from the event (locations from
-  // geography, source domains from article URLs) → /osint?value=&kind=.
+  // OSINT investigate pivots: derive entities from the event → /osint?value=&kind=.
+  // Locations from geography, source domains from article URLs, and typed entities
+  // (crypto wallets, file hashes, CVEs, IPs, vessel IMO/MMSI) mined from the text.
   const osintEntities = (() => {
     const out = [];
-    (event.geography || []).slice(0, 4).forEach(g => out.push({ value: g, kind: "location" }));
+    const seen = new Set();
+    const push = (value, kind) => {
+      const key = `${kind}:${String(value).toLowerCase()}`;
+      if (value && !seen.has(key)) { seen.add(key); out.push({ value, kind }); }
+    };
+    (event.geography || []).slice(0, 4).forEach(g => push(g, "location"));
     const hosts = new Set();
     (articles || []).forEach(a => {
       try { const h = new URL(a.url).hostname.replace(/^www\./, ""); if (h) hosts.add(h); } catch { /* skip */ }
     });
-    [...hosts].slice(0, 4).forEach(h => out.push({ value: h, kind: "domain" }));
-    return out;
+    [...hosts].slice(0, 4).forEach(h => push(h, "domain"));
+    const blob = [event.canonical_title, event.title, event.canonical_summary,
+      ...(articles || []).map(a => a.title)].filter(Boolean).join("  ");
+    extractEntities(blob, { cap: 6 }).forEach(e => push(e.value, e.kind));
+    return out.slice(0, 10);
   })();
 
   return (
@@ -424,10 +434,11 @@ export default function EventDetail() {
                     <button
                       key={`${e.kind}:${e.value}`}
                       onClick={() => navigate(`/osint?value=${encodeURIComponent(e.value)}&kind=${e.kind}`)}
-                      className="text-[10px] font-mono border border-ink/12 px-2 py-1 text-ink/55 hover:border-crimson hover:text-crimson transition-colors"
-                      title={`Open OSINT lookups for ${e.value}`}
+                      className="flex items-center gap-1.5 text-[10px] font-mono border border-ink/12 px-2 py-1 text-ink/55 hover:border-crimson hover:text-crimson transition-colors"
+                      title={`Open OSINT lookups for ${e.value} (${e.kind})`}
                     >
-                      {e.value}
+                      <span className="text-[8px] uppercase tracking-wider text-ink/30">{e.kind}</span>
+                      <span className="max-w-[140px] truncate">{e.value}</span>
                     </button>
                   ))}
                 </div>
