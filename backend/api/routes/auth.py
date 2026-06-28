@@ -59,11 +59,33 @@ _DEV_TIERS = {
     "admin@narrative.dev": "admin",
 }
 
-# Dev accounts that require a specific password (others accept any value).
-# Beta testers sign in to the enterprise account with this password.
-_DEV_PASSWORDS = {
-    "enterprise@narrative.dev": "betatest1",
+# Beta-test accounts: real, password-protected accounts that ALSO work in
+# production (unlike /dev-login, which is disabled when APP_ENV=production).
+# Beta testers sign in through the normal /login flow with these credentials,
+# and the account is auto-provisioned at the given tier on first login.
+_BETA_ACCOUNTS = {
+    "enterprise@narrative.dev": {"password": "betatest1", "tier": "enterprise"},
 }
+
+
+async def _provision_beta_account(email: str, password: str, db, beta: dict) -> User | None:
+    """Find-or-create a beta account and pin its tier. None if password wrong."""
+    if password != beta["password"]:
+        return None
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if not user:
+        user = User(
+            id=uuid.uuid4(),
+            email=email,
+            tier=beta["tier"],
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(user)
+        await db.flush()
+    elif user.tier != beta["tier"]:
+        user.tier = beta["tier"]
+    await db.commit()
+    return user
 
 
 @router.post("/dev-login")
@@ -76,8 +98,8 @@ async def dev_login(body: DevLoginRequest, db: DbDep) -> dict:
         raise HTTPException(status_code=404, detail="Not found")
 
     email = body.email.strip().lower()
-    required_pw = _DEV_PASSWORDS.get(email)
-    if required_pw is not None and body.password != required_pw:
+    beta = _BETA_ACCOUNTS.get(email)
+    if beta is not None and body.password != beta["password"]:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     result = await db.execute(select(User).where(User.email == email))
@@ -139,6 +161,16 @@ async def signup(body: CredentialsRequest, db: DbDep) -> dict:
 async def login(body: CredentialsRequest, db: DbDep) -> dict:
     """Real email+password login. Works in production. Returns a signed JWT."""
     email = body.email.strip().lower()
+
+    # Beta-test accounts (e.g. enterprise@narrative.dev) are provisioned on
+    # demand so they work on the deployed build, where /dev-login is disabled.
+    beta = _BETA_ACCOUNTS.get(email)
+    if beta is not None:
+        user = await _provision_beta_account(email, body.password, db, beta)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Incorrect email or password")
+        return _issue_token(user)
+
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
