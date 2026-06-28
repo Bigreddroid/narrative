@@ -59,6 +59,12 @@ _DEV_TIERS = {
     "admin@narrative.dev": "admin",
 }
 
+# Dev accounts that require a specific password (others accept any value).
+# Beta testers sign in to the enterprise account with this password.
+_DEV_PASSWORDS = {
+    "enterprise@narrative.dev": "betatest1",
+}
+
 
 @router.post("/dev-login")
 async def dev_login(body: DevLoginRequest, db: DbDep) -> dict:
@@ -70,6 +76,10 @@ async def dev_login(body: DevLoginRequest, db: DbDep) -> dict:
         raise HTTPException(status_code=404, detail="Not found")
 
     email = body.email.strip().lower()
+    required_pw = _DEV_PASSWORDS.get(email)
+    if required_pw is not None and body.password != required_pw:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 

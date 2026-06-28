@@ -25,7 +25,7 @@ export default function PrivateRoute({ children }) {
         const r = await fetch("/api/v1/auth/dev-login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: DEV_EMAIL, password: "dev" }),
+          body: JSON.stringify({ email: DEV_EMAIL, password: "betatest1" }),
         });
         const d = r.ok ? await r.json() : null;
         if (d?.access_token) {

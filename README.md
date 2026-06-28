@@ -38,8 +38,10 @@ python -m backend.scheduler
 cd web && npm install && npm run dev        # http://localhost:5173
 ```
 
-Sign in with a dev account (e.g. `enterprise@narrative.dev`, any password) — dev
-login is enabled when `APP_ENV != production`.
+Sign in with a dev account — dev login is enabled when `APP_ENV != production`.
+The enterprise (beta-test) account requires a password: `enterprise@narrative.dev`
+/ `betatest1`. Other dev accounts (`free@`, `pro@`, `intel@`, `admin@narrative.dev`)
+accept any password.
 
 ### Real data vs. demo
 
