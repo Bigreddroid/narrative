@@ -26,7 +26,7 @@ Get a dev token locally:
 ```bash
 curl -s -X POST $NARRATIVE_API_URL/api/v1/auth/dev-login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"enterprise@narrative.dev","password":"x"}' | jq -r .access_token
+  -d '{"email":"enterprise@narrative.dev","password":"betatest1"}' | jq -r .access_token
 ```
 
 ## Tools

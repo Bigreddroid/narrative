@@ -9,6 +9,7 @@ export const CATEGORY_COLORS = {
   conflict:    "#C80028",
   social:      "#B07820",
   policy:      "#4878A8",
+  disinfo:     "#C040A0",
 };
 
 export const STATUS_PULSE = {

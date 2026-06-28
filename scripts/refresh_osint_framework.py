@@ -90,7 +90,7 @@ def _curate(root: dict) -> tuple[list[dict], list[str]]:
     categories: list[str] = []
     seen_ids: set[str] = set()
 
-    def walk(node: dict, category: str) -> None:
+    def walk(node: dict, category: str, subpath: list[str]) -> None:
         if node.get("type") == "url":
             if node.get("deprecated") or (node.get("status") or "").lower() in DEAD_STATUS:
                 return
@@ -109,6 +109,10 @@ def _curate(root: dict) -> tuple[list[dict], list[str]]:
                 "id": tid,
                 "name": name,
                 "category": category,
+                # subfolder breadcrumb for the hierarchical tree UI; "" = tool sits
+                # directly under the top-level category.
+                "subcategory": subpath[0] if subpath else "",
+                "path": [category, *subpath],
                 "url": url,
                 "description": (node.get("description") or "").strip(),
                 "pricing": (node.get("pricing") or "unknown").strip().lower(),
@@ -121,15 +125,21 @@ def _curate(root: dict) -> tuple[list[dict], list[str]]:
                 "registration": bool(node.get("registration")),
                 "api": bool(node.get("api")),
             })
+            return
+        # folder node: descend, extending the breadcrumb with each sub-folder's name.
         for child in node.get("children") or []:
-            walk(child, category)
+            if child.get("type") == "url":
+                walk(child, category, subpath)
+            else:
+                cname = (child.get("name") or "").strip()
+                walk(child, category, [*subpath, cname] if cname else subpath)
 
     for top in root.get("children") or []:
         cat = (top.get("name") or "").strip()
         if not cat:
             continue
         categories.append(cat)
-        walk(top, cat)
+        walk(top, cat, [])
 
     return tools, categories
 
@@ -155,6 +165,11 @@ TEMPLATES: dict[str, list[dict]] = {
         {"name": "Shodan", "url": "https://www.shodan.io/search?query={value}"},
         {"name": "Wayback Machine", "url": "https://web.archive.org/web/*/{value}"},
         {"name": "Whois", "url": "https://www.whois.com/whois/{value}"},
+        # Cyber Threat Intelligence pivots (keyless):
+        {"name": "URLhaus", "url": "https://urlhaus.abuse.ch/browse.php?search={value}"},
+        {"name": "ThreatFox", "url": "https://threatfox.abuse.ch/browse.php?search=ioc%3A{value}"},
+        {"name": "AlienVault OTX", "url": "https://otx.alienvault.com/indicator/domain/{value}"},
+        {"name": "Pulsedive", "url": "https://pulsedive.com/indicator/?ioc={value}"},
     ],
     "ip": [
         {"name": "VirusTotal", "url": "https://www.virustotal.com/gui/ip-address/{value}"},
@@ -163,6 +178,10 @@ TEMPLATES: dict[str, list[dict]] = {
         {"name": "GreyNoise", "url": "https://viz.greynoise.io/ip/{value}"},
         {"name": "Censys", "url": "https://search.censys.io/hosts/{value}"},
         {"name": "ipinfo.io", "url": "https://ipinfo.io/{value}"},
+        # Cyber Threat Intelligence pivots (keyless):
+        {"name": "AlienVault OTX", "url": "https://otx.alienvault.com/indicator/ip/{value}"},
+        {"name": "ThreatFox", "url": "https://threatfox.abuse.ch/browse.php?search=ioc%3A{value}"},
+        {"name": "Pulsedive", "url": "https://pulsedive.com/indicator/?ioc={value}"},
     ],
     "email": [
         {"name": "EmailRep", "url": "https://emailrep.io/{value}"},
@@ -175,6 +194,8 @@ TEMPLATES: dict[str, list[dict]] = {
         {"name": "LinkedIn", "url": "https://www.linkedin.com/search/results/all/?keywords={value}"},
         {"name": "OpenCorporates", "url": "https://opencorporates.com/companies?q={value}"},
         {"name": "OCCRP Aleph", "url": "https://aleph.occrp.org/search/?q={value}"},
+        {"name": "IntelX", "url": "https://intelx.io/?s={value}"},
+        {"name": "Ahmia (dark web)", "url": "https://ahmia.fi/search/?q={value}"},
     ],
     "location": [
         {"name": "Google Maps", "url": "https://www.google.com/maps/search/{value}"},
@@ -185,6 +206,61 @@ TEMPLATES: dict[str, list[dict]] = {
     "phone": [
         {"name": "Google (exact)", "url": "https://www.google.com/search?q=%22{value}%22"},
         {"name": "NumLookup", "url": "https://www.numlookup.com/results?phone={value}"},
+    ],
+    "username": [
+        {"name": "WhatsMyName", "url": "https://whatsmyname.app/", "note": "manual: enter username"},
+        {"name": "GitHub", "url": "https://github.com/{value}"},
+        {"name": "X / Twitter", "url": "https://twitter.com/{value}"},
+        {"name": "Instagram", "url": "https://www.instagram.com/{value}/"},
+        {"name": "Reddit", "url": "https://www.reddit.com/user/{value}"},
+        {"name": "Google (exact)", "url": "https://www.google.com/search?q=%22{value}%22"},
+        {"name": "IntelX", "url": "https://intelx.io/?s={value}"},
+        {"name": "Ahmia (dark web)", "url": "https://ahmia.fi/search/?q={value}"},
+    ],
+    # ── Blockchain & Cryptocurrency: wallet address / tx hash → explorers ────────
+    "crypto": [
+        {"name": "Blockchair (multi-chain)", "url": "https://blockchair.com/search?q={value}"},
+        {"name": "Etherscan", "url": "https://etherscan.io/address/{value}"},
+        {"name": "Blockchain.com", "url": "https://www.blockchain.com/explorer/search?search={value}"},
+        {"name": "BscScan", "url": "https://bscscan.com/address/{value}"},
+        {"name": "Tronscan", "url": "https://tronscan.org/#/address/{value}"},
+        {"name": "ChainAbuse", "url": "https://www.chainabuse.com/address/{value}"},
+        {"name": "WalletExplorer", "url": "https://www.walletexplorer.com/address/{value}"},
+    ],
+    # ── Malicious File Analysis: file hash → sandboxes / malware repos ───────────
+    "hash": [
+        {"name": "VirusTotal", "url": "https://www.virustotal.com/gui/file/{value}"},
+        {"name": "MalwareBazaar", "url": "https://bazaar.abuse.ch/browse.php?search={value}"},
+        {"name": "Hybrid Analysis", "url": "https://www.hybrid-analysis.com/search?query={value}"},
+        {"name": "Triage (tria.ge)", "url": "https://tria.ge/s?q={value}"},
+        {"name": "ThreatFox", "url": "https://threatfox.abuse.ch/browse.php?search=ioc%3A{value}"},
+        {"name": "ANY.RUN", "url": "https://app.any.run/submissions", "note": "manual: search hash"},
+    ],
+    # ── Cyber Threat Intelligence: CVE id → vuln databases ──────────────────────
+    "cve": [
+        {"name": "NVD", "url": "https://nvd.nist.gov/vuln/detail/{value}"},
+        {"name": "CVE.org", "url": "https://www.cve.org/CVERecord?id={value}"},
+        {"name": "MITRE", "url": "https://cve.mitre.org/cgi-bin/cvename.cgi?name={value}"},
+        {"name": "Exploit-DB", "url": "https://www.exploit-db.com/search?cve={value}"},
+        {"name": "GitHub Advisories", "url": "https://github.com/advisories?query={value}"},
+        {"name": "CISA KEV", "url": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog", "note": "manual: search id"},
+    ],
+    # ── Transportation: flight/tail/IMO/MMSI → live trackers ────────────────────
+    "vehicle": [
+        {"name": "FlightRadar24", "url": "https://www.flightradar24.com/data/aircraft/{value}"},
+        {"name": "ADS-B Exchange", "url": "https://globe.adsbexchange.com/?reg={value}"},
+        {"name": "MarineTraffic", "url": "https://www.marinetraffic.com/en/ais/index/search/all?keyword={value}"},
+        {"name": "VesselFinder", "url": "https://www.vesselfinder.com/vessels?name={value}"},
+        {"name": "OpenSky", "url": "https://opensky-network.org/aircraft-profile?icao24={value}"},
+    ],
+    # ── Disinformation & Media Verification: image URL / claim → reverse-image + fact-check ─
+    "media": [
+        {"name": "Google Lens", "url": "https://lens.google.com/uploadbyurl?url={value}"},
+        {"name": "Yandex Images", "url": "https://yandex.com/images/search?rpt=imageview&url={value}"},
+        {"name": "TinEye", "url": "https://tineye.com/search?url={value}"},
+        {"name": "Bing Visual", "url": "https://www.bing.com/images/search?view=detailv2&iss=sbi&q=imgurl:{value}"},
+        {"name": "Google Fact Check", "url": "https://toolbox.google.com/factcheck/explorer/search/{value}"},
+        {"name": "InVID", "url": "https://www.invid-project.eu/tools-and-services/invid-verification-plugin/", "note": "manual: verify video/image"},
     ],
 }
 

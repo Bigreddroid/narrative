@@ -20,6 +20,7 @@ SECTOR_MAP = {
     "sanction":  (["Banking"],                                ["Commodities", "Shipping & Logistics"]),
     "space":     (["Aerospace", "Technology"],                ["Telecommunications"]),
     "market":    (["Commodities", "Energy"],                  ["Shipping & Logistics"]),
+    "disinfo":   (["Information Integrity", "Public Trust"],  ["Elections", "Financial Markets"]),
 }
 DEFAULT_SECTORS = (["Infrastructure"], ["Energy"])
 
@@ -28,6 +29,7 @@ PRED_VOLATILITY = {
     "conflict": 0.92, "unrest": 0.85, "market": 0.82, "sanction": 0.75,
     "cyber": 0.70, "disaster": 0.60, "storm": 0.60, "flood": 0.55,
     "wildfire": 0.62, "drought": 0.45, "volcano": 0.50, "space": 0.35,
+    "disinfo": 0.68,
 }
 # Concrete escalation phrasing per category (used in the prediction sentence).
 ESCALATION = {
@@ -43,6 +45,7 @@ ESCALATION = {
     "drought": "crop and water stress",
     "volcano": "aviation and evacuation impacts",
     "space": "launch-cadence and orbital effects",
+    "disinfo": "narrative manipulation and erosion of public trust",
 }
 DEFAULT_ESCALATION = "knock-on disruption"
 
