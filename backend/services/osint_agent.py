@@ -56,6 +56,8 @@ _KEYWORDS = [
     (("sanction", "embargo", "export ban"), "sanction"),
     (("ransomware", "data breach", "cyberattack", "hacked", "malware"), "cyber"),
     (("default", "currency", "inflation", "stock market", "oil price"), "market"),
+    (("disinformation", "misinformation", "fake news", "deepfake", "propaganda",
+      "fact-check", "fact check", "debunk", "false claim", "hoax", "doctored"), "disinfo"),
 ]
 
 # Coarse country centroids (lat, lng) — keyless fast path for the common hot spots.

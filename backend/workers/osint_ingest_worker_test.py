@@ -84,10 +84,15 @@ async def _fake_ti_empty(*a, **k):
     return []
 
 
+async def _fake_di_empty(*a, **k):
+    return []
+
+
 # Patch the names as the worker resolves them (module-global lookups at call time).
 W.AsyncSessionLocal = _FakeSession
 W._osint_source = lambda: (_fake_fetch, "osint_gdelt")  # bypass config/network selection
 W.osint_threatintel.fetch_threatintel = _fake_ti_empty  # additive feed off for the base run
+W.osint_disinfo.fetch_disinfo = _fake_di_empty          # curated feed off for the base run
 cost_guard.llm_allowed = _fake_llm_allowed
 osint_agent.triage = _fake_triage
 W._upsert = _fake_upsert
@@ -125,6 +130,36 @@ res2 = asyncio.run(W.run_osint_ingest_worker())
 ok("threat-intel batch adds to post count", res2["posts"] == 4)
 ok("threat-intel post upserted", "threatintel-x" in _upsert_calls)
 ok("threat-intel triaged with its own source tag", ti_sources == ["osint_threatintel"])
+
+# ── curated disinfo feed upserts directly, bypassing triage ───────────────────
+triage_seen: list[str] = []
+
+
+def _watch_triage(post, allow_llm, source="osint_gdelt"):
+    triage_seen.append(post["external_id"])
+    return _fake_triage(post, allow_llm, source)
+
+
+async def _fake_di_two(*a, **k):
+    return [
+        {"external_id": "disinfo-a", "source": "osint_disinfo", "title": "False flood photo",
+         "summary": "x", "category": "disinfo", "lat": None, "lng": None, "importance": 45,
+         "status": "developing", "geography": [], "ts": None, "confidence": 0.5, "evidence_url": ""},
+        {"external_id": "disinfo-b", "source": "osint_disinfo", "title": "Doctored clip",
+         "summary": "y", "category": "disinfo", "lat": None, "lng": None, "importance": 45,
+         "status": "developing", "geography": [], "ts": None, "confidence": 0.5, "evidence_url": ""},
+    ]
+
+
+_upsert_calls.clear()
+W.osint_threatintel.fetch_threatintel = _fake_ti_empty
+W.osint_disinfo.fetch_disinfo = _fake_di_two
+osint_agent.triage = _watch_triage
+res3 = asyncio.run(W.run_osint_ingest_worker())
+
+ok("disinfo feed adds to post count", res3["posts"] == 5)  # 3 reddit + 0 ti + 2 disinfo
+ok("disinfo signals upserted directly", "disinfo-a" in _upsert_calls and "disinfo-b" in _upsert_calls)
+ok("disinfo bypasses triage", "disinfo-a" not in triage_seen and "disinfo-b" not in triage_seen)
 
 print(f"\nosint_ingest_worker: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -20,6 +20,7 @@ from backend.feeds import cyber
 from backend.feeds import sanctions
 from backend.feeds import reddit_osint
 from backend.feeds import osint_threatintel
+from backend.feeds import osint_disinfo
 from backend.feeds import iptv_org
 from backend.services import osint_agent
 
@@ -491,6 +492,23 @@ ti_sig = osint_agent._heuristic_triage(ti[0], source=osint_threatintel.SOURCE)
 ok("threatintel candidate triages to cyber + osint_threatintel source",
    ti_sig and ti_sig["category"] == "cyber" and ti_sig["source"] == "osint_threatintel")
 ok("threatintel triaged signal synthesizes", len(S.synthesize(ti_sig)["direct_impact"]) >= 1)
+
+# ── OSINT disinfo (curated, pre-categorized fact-check feed) ──────────────────
+di_raw = [
+    {"title": "No, this photo does not show a 2026 flood", "summary": "Doctored image.",
+     "link": "https://politifact.com/x", "ts": 1_750_000_000.0},
+    {"title": "No, this photo does not show a 2026 flood", "link": "https://politifact.com/x"},  # dup link
+    {"summary": "headline-less", "link": "https://x/y"},  # no title → skipped
+]
+di = osint_disinfo.parse_disinfo(di_raw)
+ok("disinfo keeps unique items, skips dup + titleless", len(di) == 1)
+ok("disinfo external_id namespaced", di[0]["external_id"].startswith("disinfo-"))
+ok("disinfo category is disinfo + source set", di[0]["category"] == "disinfo" and di[0]["source"] == "osint_disinfo")
+ok("disinfo is non-geo", di[0]["lat"] is None and di[0]["lng"] is None)
+ok("disinfo ts → epoch ms", di[0]["ts"] == 1_750_000_000_000)
+ok("disinfo empty payload ⇒ []", osint_disinfo.parse_disinfo(None) == [])
+ok("disinfo signal synthesizes via SECTOR_MAP", len(S.synthesize(di[0])["direct_impact"]) >= 1)
+ok("disinfo category allowed by triage", "disinfo" in osint_agent.ALLOWED_CATEGORIES)
 
 print(f"\nfeeds: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

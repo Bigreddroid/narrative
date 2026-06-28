@@ -15,7 +15,7 @@ import time
 
 from backend.config import get_settings
 from backend.database import AsyncSessionLocal
-from backend.feeds import gdelt_osint, osint_threatintel, reddit_osint
+from backend.feeds import gdelt_osint, osint_disinfo, osint_threatintel, reddit_osint
 from backend.services import cost_guard, osint_agent
 from backend.workers.hazard_ingest_worker import _upsert
 
@@ -61,8 +61,20 @@ async def run_osint_ingest_worker() -> dict:
                         created += 1
                 except Exception as exc:  # noqa: BLE001
                     logger.error("OSINT upsert failed: %s", exc)
+
+        # Curated disinfo feed: editorial fact-check sources are pre-vetted, so they
+        # skip relevance triage and upsert directly as 'disinfo' Signals.
+        disinfo_signals = await osint_disinfo.fetch_disinfo()
+        total_posts += len(disinfo_signals)
+        for signal in disinfo_signals:
+            ingested += 1
+            try:
+                if await _upsert(signal, db, require_geo=False):
+                    created += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.error("OSINT disinfo upsert failed: %s", exc)
         await db.commit()
-    logger.info("OSINT ingest [%s + threatintel]: %d posts, %d triaged-in, %d new (llm=%s, %.1fs)",
+    logger.info("OSINT ingest [%s + threatintel + disinfo]: %d posts, %d triaged-in, %d new (llm=%s, %.1fs)",
                 source, total_posts, ingested, created, allow_llm, time.perf_counter() - start)
     return {"posts": total_posts, "ingested": ingested, "created": created,
             "llm": allow_llm, "source": source}
