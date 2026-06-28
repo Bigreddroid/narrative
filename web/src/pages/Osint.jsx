@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { api } from "../lib/api.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useOsintFramework } from "../hooks/useOsintFramework.js";
+import { buildTree } from "../lib/osintTree.js";
 import TierGate from "../components/TierGate.jsx";
 
 const KIND_LABELS = {
@@ -89,6 +90,51 @@ function ToolCard({ tool }) {
   );
 }
 
+// ── Tree view: browsable category → subfolder → tools hierarchy ───────────────
+function TreeView({ tools, forceExpand }) {
+  const tree = useMemo(() => buildTree(tools), [tools]);
+  const [open, setOpen] = useState(() => new Set());
+  const isOpen = (c) => forceExpand || open.has(c);
+  const toggle = (c) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      next.has(c) ? next.delete(c) : next.add(c);
+      return next;
+    });
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {tree.map(({ category, count, subs }) => (
+        <div key={category} className="border border-ink/10">
+          <button
+            onClick={() => toggle(category)}
+            className="w-full flex items-center justify-between px-3 py-2.5 bg-ink/[0.02] hover:bg-ink/[0.05] transition-colors text-left">
+            <span className="flex items-center gap-2">
+              <span className="text-ink/30 text-[10px] font-mono w-2">{isOpen(category) ? "−" : "+"}</span>
+              <span className="text-[13px] font-semibold text-ink">{category}</span>
+            </span>
+            <span className="text-[9px] font-mono text-ink/35">{count}</span>
+          </button>
+          {isOpen(category) && (
+            <div className="p-2.5 flex flex-col gap-3">
+              {subs.map(({ name, tools: subTools }) => (
+                <div key={name || "_root"}>
+                  {name && (
+                    <p className="text-[9px] font-mono uppercase tracking-[0.2em] text-ink/35 px-0.5 mb-1.5">{name}</p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {subTools.map((t) => <ToolCard key={t.id} tool={t} />)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Osint() {
   const navigate = useNavigate();
   const { isDark, toggle } = useTheme();
@@ -101,6 +147,8 @@ export default function Osint() {
   const [cat, setCat] = useState("all");
   const [pricing, setPricing] = useState("all");
   const [opsec, setOpsec] = useState("all");
+  const [view, setView] = useState("tree");
+  const filtersActive = q.trim() !== "" || cat !== "all" || pricing !== "all" || opsec !== "all";
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -166,12 +214,18 @@ export default function Osint() {
           <div className="flex items-center justify-between mb-3">
             <span className="text-[9px] font-mono uppercase tracking-[0.3em] text-ink/35">
               {filtered.length} {filtered.length === 1 ? "tool" : "tools"}
+              {limited && total_available ? ` of ${total_available}` : ""}
             </span>
-            {limited && (
-              <span className="text-[9px] font-mono text-ink/35">
-                Taster — {total_available}+ tools on paid plans
-              </span>
-            )}
+            {/* Tree / Grid view toggle */}
+            <div className="flex border border-ink/12">
+              {["tree", "grid"].map((v) => (
+                <button key={v} onClick={() => setView(v)}
+                  className={`px-2.5 py-1 text-[9px] font-mono uppercase tracking-wider transition-colors ${
+                    view === v ? "bg-crimson/10 text-crimson" : "text-ink/40 hover:text-ink/70"}`}>
+                  {v}
+                </button>
+              ))}
+            </div>
           </div>
 
           {loading ? (
@@ -180,6 +234,10 @@ export default function Osint() {
             <p className="text-xs text-ink/30 text-center py-12 font-mono uppercase tracking-wider">Couldn't load the OSINT catalog.</p>
           ) : filtered.length === 0 ? (
             <p className="text-xs text-ink/30 text-center py-12 font-mono uppercase tracking-wider">No tools match these filters.</p>
+          ) : view === "tree" ? (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+              <TreeView tools={filtered} forceExpand={filtersActive} />
+            </motion.div>
           ) : (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
               className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">

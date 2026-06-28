@@ -90,7 +90,7 @@ def _curate(root: dict) -> tuple[list[dict], list[str]]:
     categories: list[str] = []
     seen_ids: set[str] = set()
 
-    def walk(node: dict, category: str) -> None:
+    def walk(node: dict, category: str, subpath: list[str]) -> None:
         if node.get("type") == "url":
             if node.get("deprecated") or (node.get("status") or "").lower() in DEAD_STATUS:
                 return
@@ -109,6 +109,10 @@ def _curate(root: dict) -> tuple[list[dict], list[str]]:
                 "id": tid,
                 "name": name,
                 "category": category,
+                # subfolder breadcrumb for the hierarchical tree UI; "" = tool sits
+                # directly under the top-level category.
+                "subcategory": subpath[0] if subpath else "",
+                "path": [category, *subpath],
                 "url": url,
                 "description": (node.get("description") or "").strip(),
                 "pricing": (node.get("pricing") or "unknown").strip().lower(),
@@ -121,15 +125,21 @@ def _curate(root: dict) -> tuple[list[dict], list[str]]:
                 "registration": bool(node.get("registration")),
                 "api": bool(node.get("api")),
             })
+            return
+        # folder node: descend, extending the breadcrumb with each sub-folder's name.
         for child in node.get("children") or []:
-            walk(child, category)
+            if child.get("type") == "url":
+                walk(child, category, subpath)
+            else:
+                cname = (child.get("name") or "").strip()
+                walk(child, category, [*subpath, cname] if cname else subpath)
 
     for top in root.get("children") or []:
         cat = (top.get("name") or "").strip()
         if not cat:
             continue
         categories.append(cat)
-        walk(top, cat)
+        walk(top, cat, [])
 
     return tools, categories
 
