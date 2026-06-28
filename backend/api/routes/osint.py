@@ -30,7 +30,12 @@ _DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "osint_framework.jso
 
 # Free tier sees a small taster of the catalog (the full set is a paid feature).
 _FREE_TOOL_CAP = 40
-_VALID_KINDS = {"username", "domain", "ip", "email", "name", "location", "phone", "image"}
+_VALID_KINDS = {
+    "username", "domain", "ip", "email", "name", "location", "phone", "image",
+    # entity kinds added for per-category investigators (Blockchain, Malware,
+    # Cyber Threat Intel, Transportation, Disinformation & Media Verification):
+    "crypto", "hash", "cve", "vehicle", "media",
+}
 
 
 @lru_cache(maxsize=1)
@@ -59,6 +64,19 @@ def detect_entity_kind(value: str) -> str:
         pass
     if re.fullmatch(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+", v):
         return "location"
+    if re.fullmatch(r"CVE-\d{4}-\d{4,}", v, re.I):
+        return "cve"
+    # crypto: ETH address/tx (0x + 40/64 hex), BTC bech32 (bc1…), BTC legacy (1/3…).
+    if (re.fullmatch(r"0x(?:[0-9a-f]{40}|[0-9a-f]{64})", v, re.I)
+            or re.fullmatch(r"bc1[a-z0-9]{20,87}", v, re.I)
+            or re.fullmatch(r"[13][a-km-zA-HJ-NP-Z1-9]{25,34}", v)):
+        return "crypto"
+    # file hash: md5(32) / sha1(40) / sha256(64) hex — checked before username so a
+    # bare hex blob doesn't read as a handle.
+    if re.fullmatch(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}", v, re.I):
+        return "hash"
+    if re.fullmatch(r"IMO\s?\d{7}", v, re.I):
+        return "vehicle"
     if " " not in v and re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", v, re.I):
         return "domain"
     if " " not in v and re.fullmatch(r"[a-z0-9_.-]+", v, re.I):

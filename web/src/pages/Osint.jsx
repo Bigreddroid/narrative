@@ -9,6 +9,8 @@ import TierGate from "../components/TierGate.jsx";
 const KIND_LABELS = {
   username: "Username", domain: "Domain / URL", ip: "IP / MAC", email: "Email",
   name: "Person / Org", location: "Location", phone: "Phone", image: "Image",
+  crypto: "Crypto Address", hash: "File Hash", cve: "CVE", vehicle: "Vessel / Aircraft",
+  media: "Media / Image URL",
 };
 const PRICING_COLORS = { free: "#2E8B57", freemium: "#B07020", paid: "#C80028", unknown: "#6A6A60" };
 
