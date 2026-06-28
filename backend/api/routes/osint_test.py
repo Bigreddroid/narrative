@@ -11,7 +11,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from backend.api.routes.osint import (
-    framework, investigate, detect_entity_kind, _templated, _load, _FREE_TOOL_CAP,
+    framework, investigate, detect_entity_kind, _templated, _load,
 )
 
 passed = failed = 0
@@ -37,16 +37,16 @@ data = _load()
 ok("snapshot has tools", len(data.get("tools", [])) > 200)
 ok("snapshot has templates", isinstance(data.get("templates"), dict) and len(data["templates"]) > 0)
 
-# ── framework: free taster vs paid full ──────────────────────────────────────
+# ── framework: full catalog for everyone; investigate templates paid-only ─────
+all_tools = _load().get("tools", [])
 free = asyncio.run(framework(user=_FakeUser("free")))
-ok("free tier is limited", free["limited"] is True)
-ok("free tier capped at _FREE_TOOL_CAP", len(free["tools"]) <= _FREE_TOOL_CAP)
-ok("free taster is free-priced only", all(t["pricing"] == "free" for t in free["tools"]))
-ok("free tier hides templates", free["templates"] == {})
+ok("free tier sees full catalog (all tools)", len(free["tools"]) == len(all_tools) > 1000)
+ok("free tier sees all 33 categories", len(free["categories"]) == 33)
+ok("free tier not limited", free["limited"] is False)
+ok("free tier hides investigate templates", free["templates"] == {})
 
 paid = asyncio.run(framework(user=_FakeUser("pro")))
-ok("paid tier not limited", paid["limited"] is False)
-ok("paid tier sees full catalog", len(paid["tools"]) > len(free["tools"]))
+ok("paid tier sees full catalog too", len(paid["tools"]) == len(free["tools"]))
 ok("paid tier exposes templates", len(paid["templates"]) > 0)
 
 # ── entity-kind detection ────────────────────────────────────────────────────

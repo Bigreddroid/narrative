@@ -28,8 +28,8 @@ router = APIRouter(prefix="/osint", tags=["osint"])
 
 _DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "osint_framework.json"
 
-# Free tier sees a small taster of the catalog (the full set is a paid feature).
-_FREE_TOOL_CAP = 40
+# The full catalog (all 33 categories / 1,098 tools) is open to every tier; only the
+# entity-aware *investigate* templating stays a paid feature.
 _VALID_KINDS = {
     "username", "domain", "ip", "email", "name", "location", "phone", "image",
     # entity kinds added for per-category investigators (Blockchain, Malware,
@@ -104,34 +104,19 @@ def _templated(value: str, kind: str) -> list[dict]:
 
 @router.get("/framework")
 async def framework(user: UserDep) -> dict:
-    """The curated OSINT tool catalog.
-
-    free → a capped taster of free-pricing tools; paid+ → the full catalog plus
-    the full investigate template set.
+    """The curated OSINT tool catalog — the full set (all 33 categories / 1,098
+    tools) is open to every tier. Only the entity-aware *investigate* templating
+    stays a paid feature, so the free tier gets the whole catalog but an empty
+    `templates` set.
     """
     data = _load()
-    tools = data.get("tools", [])
     is_free = user.tier == "free"
-
-    if is_free:
-        taster = [t for t in tools if t.get("pricing") == "free"][:_FREE_TOOL_CAP]
-        cats = sorted({t["category"] for t in taster})
-        return {
-            "tier": user.tier,
-            "categories": cats,
-            "counts": {"tools": len(taster), "categories": len(cats)},
-            "templates": {},  # investigate templating is a paid feature
-            "tools": taster,
-            "limited": True,
-            "total_available": len(tools),
-        }
-
     return {
         "tier": user.tier,
         "categories": data.get("categories", []),
         "counts": data.get("counts", {}),
-        "templates": data.get("templates", {}),
-        "tools": tools,
+        "templates": {} if is_free else data.get("templates", {}),
+        "tools": data.get("tools", []),
         "limited": False,
     }
 
