@@ -19,7 +19,10 @@ export function useExposure() {
     setLoading(true);
     setError(null);
 
-    api.get("/exposure")
+    // Exposure runs server-side CPE over the whole event graph — the heaviest
+    // endpoint in the app. Override the default 3.5s fail-fast (which intermittently
+    // aborts a healthy-but-busy response) with a generous budget.
+    api.get("/exposure", { timeoutMs: 20000 })
       .then((data) => {
         if (cancelled) return;
         if (!data || !Array.isArray(data.sectors)) throw new Error("empty exposure model");
