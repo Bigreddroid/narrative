@@ -78,5 +78,46 @@ counts = oc.capability_counts(sample_tools)
 ok("counts sum to tool total", sum(counts.values()) == len(sample_tools))
 ok("counts has all three tiers", set(counts) == {"live", "pivot", "launch"})
 
+# ── entityKinds override recovery ───────────────────────────────────────────────
+# A tool the vendored catalog left as entityKinds:[] but the curated override file
+# tags should behave as if it carried that kind natively.
+overrides = oc._kind_overrides()
+ok("override map is non-empty", len(overrides) > 0)
+sample_id = next(iter(overrides))
+recovered = {"id": sample_id, "url": "https://example.org/", "entityKinds": []}
+ok("_effective_kinds falls back to override", oc._effective_kinds(recovered) == overrides[sample_id])
+ok("explicit kinds win over override", oc._effective_kinds({"id": sample_id, "entityKinds": ["ip"]}) == ["ip"])
+ok("unknown id with no kinds stays empty", oc._effective_kinds({"id": "no-such-id", "entityKinds": []}) == [])
+# A recovered tool is no longer a dead launch: it earns a real capability and is
+# investigable. (NVD even reaches 'live' via the keyless CVE enricher.)
+nvd = {"id": "cyber-threat-intelligence-nvd-nist", "name": "NVD", "url": "https://nvd.nist.gov/",
+       "entityKinds": [], "category": "Cyber Threat Intelligence", "pricing": "free", "opsec": "passive"}
+ok("recovered NVD escapes launch tier", oc.capability_of(nvd) in {"live", "pivot"})
+ok("recovered NVD investigable by cve", any(t["name"] == "NVD" for t in oc.catalog_investigate("CVE-2024-3094", "cve", [nvd])))
+# A pure pivot recovery (site-scoped, no live enricher): a VIN decoder → vehicle.
+vin = {"id": "transportation-carvertical-vin-decoder", "name": "carVertical", "url": "https://www.carvertical.com/",
+       "entityKinds": [], "category": "Transportation", "pricing": "freemium", "opsec": "passive"}
+ok("recovered VIN decoder classifies as pivot", oc.capability_of(vin) == "pivot")
+
+# ── reachability: every catalog tool resolves to an action ──────────────────────
+# The "every tool reachable" guarantee: no dead links. Each tool must have a
+# resolvable host OR be a javascript: bookmarklet (a valid in-browser action).
+import json as _json
+from pathlib import Path as _Path
+_cat = _json.loads((_Path(oc.__file__).resolve().parents[1] / "data" / "osint_framework.json").read_text(encoding="utf-8"))
+_all_tools = _cat.get("tools", [])
+ok("catalog loaded (1098 tools)", len(_all_tools) == 1098)
+_unreachable = [t for t in _all_tools
+                if not oc.host_of(t.get("url") or "")
+                and not (t.get("url") or "").startswith("javascript:")]
+ok("zero unreachable tools (no dead links)", len(_unreachable) == 0)
+# Every override id must exist in the real catalog (no rot in the override map).
+_ids = {t.get("id") for t in _all_tools}
+_orphans = [tid for tid in overrides if tid not in _ids]
+ok("no orphan override ids", len(_orphans) == 0)
+# Every override tool was genuinely entity-less in the vendored data (honest recovery).
+_already = [tid for tid in overrides if (next(t for t in _all_tools if t.get("id") == tid).get("entityKinds") or [])]
+ok("overrides only recover entity-less tools", len(_already) == 0)
+
 print(f"\nosint_catalog: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

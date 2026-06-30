@@ -57,6 +57,44 @@
     "filescan.io": {"hash": "https://www.filescan.io/search-result?query={value}"},
 
     "facecheck.id": {"image": "https://facecheck.id/"},
-    "bing.com": {"media": "https://www.bing.com/images/search?view=detailv2&iss=sbi&q=imgurl:{value}"}
+    "bing.com": {"media": "https://www.bing.com/images/search?view=detailv2&iss=sbi&q=imgurl:{value}"},
+
+    "osv.dev": {"cve": "https://osv.dev/vulnerability/{value}"},
+    "xmrchain.net": {"crypto": "https://xmrchain.net/search?value={value}"},
+    "search.wikileaks.org": {"name": "https://search.wikileaks.org/?q={value}"}
+  },
+  "_entityKinds_meta": "Recovers tools the vendored catalog shipped with entityKinds:[] that DO take an entity value. Keyed by tool id -> [entityKind]. Applied as _effective_kinds() in osint_catalog.py WITHOUT mutating the vendored osint_framework.json. Each gets a native pivot (if its host has a pattern above) or an honest site-scoped fallback.",
+  "entityKinds": {
+    "cyber-threat-intelligence-nvd-nist": ["cve"],
+    "cyber-threat-intelligence-cve-details": ["cve"],
+    "cyber-threat-intelligence-cve-mitre": ["cve"],
+    "cyber-threat-intelligence-osv-vulnerability-library": ["cve"],
+    "cyber-threat-intelligence-exploit-db": ["cve"],
+    "domain-name-shodan-2": ["domain", "ip"],
+    "ip-mac-address-shodan": ["ip", "domain"],
+    "ip-mac-address-hurricane-electric-bgp-toolkit": ["ip"],
+    "domain-name-analyzeid": ["domain"],
+    "malicious-file-analysis-virusshare-com": ["hash"],
+    "malicious-file-analysis-totalhash": ["hash"],
+    "malicious-file-analysis-national-software-reference-library": ["hash"],
+    "cyber-threat-intelligence-hashes-org": ["hash"],
+    "blockchain-cryptocurrency-xmrchain-net": ["crypto"],
+    "blockchain-cryptocurrency-xmrchain-net-monero": ["crypto"],
+    "blockchain-cryptocurrency-monero-blocks": ["crypto"],
+    "email-address-verifyemail-r": ["email"],
+    "telephone-numbers-numbering-plans": ["phone"],
+    "telephone-numbers-hlr-lookup-portal-r": ["phone"],
+    "transportation-nhtsa-vehicle-api": ["vehicle"],
+    "transportation-findbyplate": ["vehicle"],
+    "transportation-carvertical-vin-decoder": ["vehicle"],
+    "transportation-autodna-vin-lookup": ["vehicle"],
+    "transportation-vindecodr": ["vehicle"],
+    "transportation-autoref-eu": ["vehicle"],
+    "transportation-finnik-nl": ["vehicle"],
+    "transportation-flightradar24-com": ["vehicle"],
+    "transportation-world-aeronautical-database": ["vehicle"],
+    "transportation-ads-b-nl": ["vehicle"],
+    "images-videos-docs-wikileaks-search": ["name"],
+    "images-videos-docs-leaked-cables": ["name"]
   }
 }
