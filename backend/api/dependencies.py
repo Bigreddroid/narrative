@@ -23,12 +23,14 @@ async def get_current_user(
     token = authorization.removeprefix("Bearer ").strip()
 
     try:
-        # Supabase JWTs are signed with the service role secret (JWT_SECRET).
-        # We decode without audience/issuer enforcement for simplicity;
-        # in production, set options={"verify_aud": False} and pass the Supabase JWT secret.
+        # Bearer tokens are minted by backend/api/routes/auth.py (_issue_token),
+        # HS256-signed with secret_key — so verification MUST use the same key.
+        # (Supabase tokens are handled separately by /auth/exchange via the Supabase
+        # SDK and are never presented as bearer tokens here, so the former
+        # `supabase_service_key or …` fallback only broke logins when that key was set.)
         payload = jwt.decode(
             token,
-            settings.supabase_service_key or settings.secret_key,
+            settings.secret_key,
             algorithms=["HS256"],
             options={"verify_aud": False},
         )

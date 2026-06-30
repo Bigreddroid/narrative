@@ -89,5 +89,18 @@ try:
 except Exception:
     ok("token rejects wrong signing key", True)
 
+# ── verification-key invariant ───────────────────────────────────────────────
+# dependencies.get_current_user MUST verify with secret_key — the same key
+# _issue_token signs with. A different key (e.g. a set SUPABASE_SERVICE_KEY) must
+# NOT verify our tokens; the old `supabase_service_key or secret_key` fallback
+# silently broke every login whenever that key was configured.
+ok("issued token verifies under secret_key (the verify key)",
+   jwt.decode(tok["access_token"], settings.secret_key, algorithms=["HS256"])["sub"] == str(uid))
+try:
+    jwt.decode(tok["access_token"], "a-set-supabase-service-key", algorithms=["HS256"])
+    ok("token does NOT verify under a different (supabase) key", False)
+except Exception:
+    ok("token does NOT verify under a different (supabase) key", True)
+
 print(f"\nauth: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
