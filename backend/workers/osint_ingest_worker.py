@@ -15,7 +15,7 @@ import time
 
 from backend.config import get_settings
 from backend.database import AsyncSessionLocal
-from backend.feeds import gdelt_osint, osint_disinfo, osint_threatintel, reddit_osint
+from backend.feeds import gdelt_osint, osint_disinfo, osint_threatintel, reddit_osint, rss_osint
 from backend.services import cost_guard, osint_agent
 from backend.workers.hazard_ingest_worker import _upsert
 
@@ -34,12 +34,15 @@ async def run_osint_ingest_worker() -> dict:
     start = time.perf_counter()
     fetch, source = _osint_source()
     # Source batches: the configured news source (GDELT/Reddit) + the additive,
-    # keyless cyber threat-intel feed. Each batch is triaged under its own source tag
-    # so events badge correctly. A failing feed returns [] (best-effort, no-op).
+    # keyless cyber threat-intel feed + the OSINT v2 multi-source RSS/Atom portfolio.
+    # Each batch is triaged under its own source tag so events badge correctly. A
+    # failing feed returns [] (best-effort, no-op) — no single source can starve ingest.
     batches = [
         (await fetch(), source),
         (await osint_threatintel.fetch_threatintel(), osint_threatintel.SOURCE),
     ]
+    if (get_settings().osint_rss_enabled):
+        batches.append((await rss_osint.fetch_rss_osint(), rss_osint.SOURCE))
     total_posts = created = ingested = 0
     async with AsyncSessionLocal() as db:
         # One budget check per run: respects the paid hard cap AND that Ollama is up.

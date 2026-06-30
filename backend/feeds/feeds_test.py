@@ -21,6 +21,7 @@ from backend.feeds import sanctions
 from backend.feeds import reddit_osint
 from backend.feeds import osint_threatintel
 from backend.feeds import osint_disinfo
+from backend.feeds import rss_osint
 from backend.feeds import iptv_org
 from backend.services import osint_agent
 
@@ -509,6 +510,45 @@ ok("disinfo ts → epoch ms", di[0]["ts"] == 1_750_000_000_000)
 ok("disinfo empty payload ⇒ []", osint_disinfo.parse_disinfo(None) == [])
 ok("disinfo signal synthesizes via SECTOR_MAP", len(S.synthesize(di[0])["direct_impact"]) >= 1)
 ok("disinfo category allowed by triage", "disinfo" in osint_agent.ALLOWED_CATEGORIES)
+
+# ── OSINT RSS/Atom v2 multi-source collector ─────────────────────────────────
+_RSS_XML = """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>T</title>
+  <item><title>Missile strike hits Kyiv power grid</title>
+    <link>https://ex.com/a</link>
+    <description>An &lt;b&gt;airstrike&lt;/b&gt; hit the capital.</description>
+    <pubDate>Wed, 10 Jun 2026 14:30:00 GMT</pubDate></item>
+  <item><title>Dup link</title><link>https://ex.com/a</link></item>
+  <item><link>https://ex.com/notitle</link></item>
+</channel></rss>"""
+rss = rss_osint.parse_rss(_RSS_XML, "news.google.com")
+ok("rss keeps unique titled items, skips dup-link + titleless", len(rss) == 1)
+ok("rss external_id namespaced + url-hashed",
+   rss[0]["external_id"].startswith("rss-") and len(rss[0]["external_id"]) == 20)
+ok("rss source label → subreddit context field", rss[0]["subreddit"] == "news.google.com")
+ok("rss strips HTML from summary", "<b>" not in rss[0]["selftext"] and "airstrike" in rss[0]["selftext"])
+ok("rss pubDate → epoch seconds", isinstance(rss[0]["created_utc"], float))
+
+_ATOM_XML = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry><title>Earthquake M6 strikes coast</title>
+    <link href="https://ex.com/self" rel="self"/>
+    <link href="https://ex.com/atom1" rel="alternate"/>
+    <summary>Magnitude 6 quake offshore</summary>
+    <published>2026-06-10T14:30:00Z</published></entry>
+</feed>"""
+atom = rss_osint.parse_rss(_ATOM_XML, "reddit/worldnews")
+ok("atom parses entry", len(atom) == 1)
+ok("atom prefers rel=alternate over rel=self link", atom[0]["url"] == "https://ex.com/atom1")
+ok("atom published → epoch seconds", isinstance(atom[0]["created_utc"], float))
+ok("rss & atom date parsers agree on the same instant",
+   rss_osint._parse_date("Wed, 10 Jun 2026 14:30:00 GMT") == rss_osint._parse_date("2026-06-10T14:30:00Z"))
+ok("rss garbage XML ⇒ []", rss_osint.parse_rss("<not xml", "x") == [] and rss_osint.parse_rss("", "x") == [])
+# RSS candidate flows through the SAME triage pipeline as the other OSINT sources
+rss_sig = osint_agent._heuristic_triage(rss[0], source=rss_osint.SOURCE)
+ok("rss candidate triages to conflict + osint_rss source",
+   rss_sig and rss_sig["category"] == "conflict" and rss_sig["source"] == "osint_rss")
+ok("rss triaged signal synthesizes", len(S.synthesize(rss_sig)["direct_impact"]) >= 1)
 
 print(f"\nfeeds: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
