@@ -194,6 +194,29 @@ def _search_patterns() -> dict[str, dict[str, str]]:
     return merged
 
 
+@lru_cache(maxsize=1)
+def _kind_overrides() -> dict[str, list[str]]:
+    """Tool-id → entityKinds overrides from the patterns file. Recovers tools the
+    vendored catalog shipped with entityKinds:[] that genuinely take an entity value
+    (e.g. NVD→cve, Shodan→ip/domain, VIN decoders→vehicle), WITHOUT mutating the
+    vendored osint_framework.json. Missing/corrupt file ⇒ {}. Cached."""
+    try:
+        with open(_PATTERNS_PATH, encoding="utf-8") as f:
+            return {tid: list(kinds) for tid, kinds in (json.load(f).get("entityKinds") or {}).items()}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _effective_kinds(tool: dict) -> list[str]:
+    """The tool's entityKinds, falling back to the curated id→kinds override when the
+    vendored catalog left it empty. Single source of truth for 'what does this tool
+    accept' across capability_of / search_url_for / catalog_investigate."""
+    kinds = tool.get("entityKinds") or []
+    if kinds:
+        return kinds
+    return _kind_overrides().get(tool.get("id") or "", [])
+
+
 def _native_map(url: str) -> dict[str, str]:
     pats = _search_patterns()
     h = _registry_key(url)
@@ -205,7 +228,7 @@ def capability_of(tool: dict) -> str:
     """Classify a catalog tool: 'live' | 'pivot' | 'launch'. Pure function of the
     tool's url + flags + entityKinds."""
     url = tool.get("url") or ""
-    kinds = tool.get("entityKinds") or []
+    kinds = _effective_kinds(tool)
     if _live_kinds(url) & set(kinds):
         return "live"
     # A local desktop install can't be driven by a pre-filled URL, no matter its
@@ -228,7 +251,7 @@ def search_url_for(tool: dict, kind: str, encoded_value: str) -> tuple[str, bool
     native = _native_map(url).get(kind)
     if native:
         return native.replace("{value}", encoded_value), True
-    if kind in (tool.get("entityKinds") or []):
+    if kind in _effective_kinds(tool):
         h = host_of(url)
         if h:
             return _SITE_SEARCH.replace("{host}", h).replace("{value}", encoded_value), False
@@ -253,7 +276,7 @@ def catalog_investigate(value: str, kind: str, tools: list[dict], limit: int = 4
     encoded = quote(value, safe="")
     scored: list[tuple[int, dict]] = []
     for t in tools:
-        if kind not in (t.get("entityKinds") or []):
+        if kind not in _effective_kinds(t):
             continue
         cap = capability_of(t)
         resolved = search_url_for(t, kind, encoded)
