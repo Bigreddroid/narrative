@@ -129,7 +129,29 @@ ok("multiple providers per kind (ip ≥ 3)", sum(1 for p in oe.PROVIDERS if "ip"
 
 non = run(oe.enrich("Jane Doe", "name"))
 ok("enrich: non-enrichable kind → empty", non["facts"] == [] and non["kind"] == "name")
+ok("enrich: non-enrichable kind → no consequence", non["consequence"] is None)
 ok("enrich: empty value → empty", run(oe.enrich("", "ip"))["facts"] == [])
+
+# ── entity → consequence projection (pure, no network) ───────────────────────────
+cve_facts = [{"label": "CVSS", "value": "9.8 (CRITICAL)", "source": "nvd.nist.gov"},
+             {"label": "Description", "value": "RCE in libfoo.", "source": "nvd.nist.gov"}]
+proj = oe.project_consequence("CVE-2024-3094", "cve", cve_facts)
+ok("projection: cve maps to cyber category", proj and proj["category"] == "cyber")
+ok("projection: cvss 9.8 → importance 98 + critical severity",
+   proj["importance"] == 98 and proj["severity"] == "critical")
+ok("projection: runs the CPE (direct impact present)", len(proj["map"]["direct_impact"]) >= 1)
+ok("projection: CPE includes an escalation prediction", proj["map"]["prediction_score"] > 0)
+
+hash_base = oe.project_consequence("a" * 64, "hash", [{"label": "File type", "value": "exe", "source": "x"}])
+hash_fam = oe.project_consequence("a" * 64, "hash",
+    [{"label": "Malware family", "value": "Emotet", "source": "x"}])
+ok("projection: named malware family raises importance",
+   hash_fam["importance"] > hash_base["importance"])
+ok("projection: crypto maps to sanction", oe.project_consequence("0x" + "a" * 40, "crypto",
+   [{"label": "Balance", "value": "1000 wei", "source": "x"}])["category"] == "sanction")
+ok("projection: unmapped kind → None", oe.project_consequence("IMO 1234567", "vehicle",
+   [{"label": "x", "value": "y", "source": "z"}]) is None)
+ok("projection: no facts → None", oe.project_consequence("CVE-2024-3094", "cve", []) is None)
 
 print(f"\nosint_enrich: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
