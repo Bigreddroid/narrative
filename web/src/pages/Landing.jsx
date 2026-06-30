@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { useUser } from "../hooks/useUser.js";
 
-const ROTATING_WORDS = ["Conflict", "Economics", "Geopolitics", "Climate", "Security", "Policy"];
+const ROTATING_WORDS = ["IP", "DOMAIN", "ACTOR", "WALLET", "VESSEL", "CLAIM"];
 
 const CHAIN_EXAMPLES = [
   [
@@ -185,7 +185,7 @@ export default function Landing() {
             Pricing
           </button>
           <button
-            onClick={() => navigate(isLoggedIn ? "/world" : "/auth")}
+            onClick={() => navigate(isLoggedIn ? "/osint" : "/auth")}
             className="text-[11px] font-bold uppercase tracking-widest border border-ink/20 px-5 py-2 hover:border-crimson hover:text-crimson transition-colors"
           >
             {isLoggedIn ? "Open App →" : "Sign In"}
@@ -202,27 +202,27 @@ export default function Landing() {
         >
           <div className="inline-flex items-center gap-2 border border-ink/12 px-4 py-1.5 mb-10 text-[10px] font-semibold uppercase tracking-widest text-ink/40">
             <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
-            Live intelligence · 100+ sources monitored
+            Live OSINT · 1,098 tools · entity → consequence
           </div>
 
           <h1 className="font-display text-[2.6rem] sm:text-[4rem] md:text-[5.5rem] lg:text-[7rem] leading-none tracking-tighter text-ink mb-6">
-            THE WORLD IN<br />
+            TRACK ANY<br />
             <RotatingWord />{" "}
             <span className="text-ink/20">—</span><br />
-            <span className="text-ink">CONSEQUENCE MAPPED.</span>
+            <span className="text-ink">TO ITS CONSEQUENCE.</span>
           </h1>
 
           <p className="text-[15px] text-ink/50 max-w-xl mx-auto leading-relaxed mb-10 font-normal">
-            Every global event traced through cause and mechanism to its real-world consequence.
-            Consequences, not headlines.
+            One open-source intelligence surface — 1,098 OSINT tools, live entity enrichment,
+            and a consequence engine. Most OSINT stops at the link. We carry the signal to what it means.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
-              onClick={() => navigate(isLoggedIn ? "/world" : "/auth")}
+              onClick={() => navigate(isLoggedIn ? "/osint" : "/auth")}
               className="px-8 py-3.5 bg-ink text-paper text-[12px] font-bold uppercase tracking-widest hover:bg-crimson transition-colors"
             >
-              Start Free →
+              Start Investigating →
             </button>
             <button
               onClick={() => document.getElementById("how")?.scrollIntoView({ behavior: "smooth" })}
@@ -255,18 +255,18 @@ export default function Landing() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             {
-              title: "Intelligence Feed",
-              desc: "Events ranked by AI consequence score. Not viral. Not clickbait. The things that actually matter, first.",
+              title: "Entity Investigation",
+              desc: "Parse any IP, domain, CVE, hash, wallet or actor across 1,098 OSINT tools — live-enriched server-side and tiered by what's actually verifiable.",
               accent: "#C80028",
             },
             {
               title: "Consequence Chains",
-              desc: "Every event unfolded: Verified facts → Inferred mechanisms → Speculative effects. See the full causal path.",
+              desc: "The OSINT others can't do: a verified signal unfolded to its downstream effect — facts → mechanisms → impact — scored and self-graded.",
               accent: "#B07020",
             },
             {
-              title: "World View",
-              desc: "Live geopolitical atlas. Click any event node to see how it connects to others across borders.",
+              title: "Threat & Disinfo Feed",
+              desc: "OSINT-driven threat and disinformation signals, corroborated across open sources and ranked by consequence before they land.",
               accent: "#2D7DD2",
             },
           ].map(item => (
@@ -348,11 +348,11 @@ export default function Landing() {
             <polygon points="11,1 20,6 20,16 11,21 2,16 2,6" stroke="#C80028" strokeWidth="1.5" fill="none" />
           </svg>
           <span className="text-[9px] font-bold uppercase tracking-[0.35em] text-ink/30">
-            The Narrative Intelligence
+            The Narrative · OSINT
           </span>
         </div>
         <p className="text-[9px] font-mono text-ink/25 uppercase tracking-widest">
-          © 2026 · Consequences, not headlines.
+          © 2026 · Open-source signal to scored consequence.
         </p>
       </footer>
     </div>

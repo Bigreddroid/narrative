@@ -64,7 +64,7 @@ export default function Onboarding() {
     try {
       await api.patch("/users/me", { country, city, profession, spending_categories: sectors });
     } catch {}
-    navigate("/world");
+    navigate("/osint");
   };
 
   const stepContent = [

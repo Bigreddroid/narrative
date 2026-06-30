@@ -4,6 +4,27 @@ import { useFollowing } from "../../hooks/useFollowing.js";
 
 const TABS = [
   {
+    id: "osint",
+    path: "/osint",
+    label: "OSINT",
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round">
+        <circle cx="9" cy="9" r="6" />
+        <path d="M13.5 13.5L17 17" />
+      </svg>
+    ),
+  },
+  {
+    id: "threats",
+    path: "/threats",
+    label: "Threats",
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10 2.5l6 2.2v4.6c0 4-2.7 6.6-6 8.2-3.3-1.6-6-4.2-6-8.2V4.7l6-2.2z" />
+      </svg>
+    ),
+  },
+  {
     id: "feed",
     path: "/world",
     label: "Feed",
@@ -28,18 +49,6 @@ const TABS = [
     ),
   },
   {
-    id: "deck",
-    path: "/world?tab=deck",
-    label: "Deck",
-    icon: (active) => (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round">
-        <rect x="3" y="3" width="4" height="14" rx="1" />
-        <rect x="8" y="3" width="4" height="14" rx="1" />
-        <rect x="13" y="3" width="4" height="14" rx="1" />
-      </svg>
-    ),
-  },
-  {
     id: "exposure",
     path: "/world?tab=exposure",
     label: "Exposure",
@@ -56,17 +65,6 @@ const TABS = [
     icon: (active) => (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h11A1.5 1.5 0 0 1 17 5.5v6A1.5 1.5 0 0 1 15.5 13H8l-4 3v-3H4.5A1.5 1.5 0 0 1 3 11.5z" />
-      </svg>
-    ),
-  },
-  {
-    id: "osint",
-    path: "/osint",
-    label: "OSINT",
-    icon: (active) => (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round">
-        <circle cx="9" cy="9" r="6" />
-        <path d="M13.5 13.5L17 17" />
       </svg>
     ),
   },
@@ -101,9 +99,9 @@ export default function MobileNav() {
   const activeId =
     location.pathname === "/analyst" ? "analyst"
     : location.pathname === "/osint" ? "osint"
+    : location.pathname === "/threats" ? "threats"
     : location.pathname === "/following" ? "tracked"
     : location.pathname === "/settings" ? "profile"
-    : location.search.includes("tab=deck") ? "deck"
     : location.search.includes("tab=exposure") ? "exposure"
     : location.search.includes("tab=world") ? "world"
     : "feed";
