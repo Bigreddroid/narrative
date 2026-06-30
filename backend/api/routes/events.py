@@ -10,6 +10,7 @@ from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.event_revision import EventRevision
 from backend.models.narrative_event import NarrativeEvent
 from backend.models.source import Source
+from backend.services import osint_enrich, osint_extract
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -201,4 +202,52 @@ async def get_event_revisions(
             }
             for r in revisions
         ]
+    }
+
+
+@router.get("/{event_id}/osint")
+async def get_event_osint(
+    event_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+) -> dict:
+    """Server-side OSINT linking for an event: investigatable entities extracted
+    from its title + summary + consequence-map prose, each tagged with its kind and
+    whether live enrichment is available. Open to all tiers (the actual investigate/
+    enrich pivots stay gated); free users see what's there but the pivots are locked."""
+    event = await db.get(NarrativeEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    map_result = await db.execute(
+        select(EventConsequenceMap)
+        .where(EventConsequenceMap.narrative_event_id == event_id)
+        .where(EventConsequenceMap.is_suppressed == False)
+        .order_by(EventConsequenceMap.version.desc())
+        .limit(1)
+    )
+    latest_map = map_result.scalar_one_or_none()
+    map_blob = None
+    if latest_map:
+        map_blob = {
+            "consensus_summary": latest_map.consensus_summary,
+            "prediction_reasoning": latest_map.prediction_reasoning,
+            "direct_impact": latest_map.direct_impact,
+            "indirect_impact": latest_map.indirect_impact,
+            "disputed_points": latest_map.disputed_points,
+            "consequence_chain": latest_map.consequence_chain,
+        }
+
+    entities = osint_extract.entities_for_event(
+        event.canonical_title, event.canonical_summary, map_blob
+    )
+    for e in entities:
+        e["enrichable"] = e["kind"] in osint_enrich.ENRICHABLE_KINDS
+
+    return {
+        "event_id": str(event.id),
+        "source": event.source,
+        "is_osint": (event.source or "").startswith("osint_"),
+        "entities": entities,
+        "locked": user.tier == "free",
     }
