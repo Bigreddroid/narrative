@@ -1,6 +1,10 @@
 from functools import lru_cache
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The public dev default for secret_key. auth.py signs JWTs with secret_key, so a
+# production deploy left on this string lets anyone forge tokens (incl. admin).
+_INSECURE_SECRET = "dev-secret-key-change-in-production"
 
 
 class Settings(BaseSettings):
@@ -178,6 +182,19 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @model_validator(mode="after")
+    def _require_real_secret_in_prod(self) -> "Settings":
+        # Fail closed: a production boot must not run on the public dev SECRET_KEY (or
+        # an empty one). auth.py signs JWTs with secret_key, so the default would let
+        # anyone mint valid admin tokens. Generate one with: openssl rand -hex 32
+        if self.is_production and self.secret_key.strip() in ("", _INSECURE_SECRET):
+            raise ValueError(
+                "SECRET_KEY is unset or still the insecure dev default while APP_ENV=production. "
+                "Set a strong random SECRET_KEY (e.g. `openssl rand -hex 32`) before deploying — "
+                "JWTs are signed with it, so leaving the default lets anyone forge tokens."
+            )
+        return self
 
 
 @lru_cache

@@ -44,5 +44,26 @@ ok("password with embedded scheme-like text is not double-rewritten",
 ok("default URL already uses asyncpg",
    Settings().database_url.startswith("postgresql+asyncpg://"))
 
+# ── production secret-key guard (fail closed) ────────────────────────────────────
+# Pass secret_key explicitly so the assertions don't depend on a local .env (which
+# may set a real SECRET_KEY and mask the default).
+_DEF = "dev-secret-key-change-in-production"
+
+
+def _raises(**kw) -> bool:
+    try:
+        Settings(**kw)
+        return False
+    except Exception:
+        return True
+
+
+ok("dev default secret is fine outside production",
+   Settings(app_env="development", secret_key=_DEF).secret_key == _DEF)
+ok("production + default secret → boot refused", _raises(app_env="production", secret_key=_DEF))
+ok("production + empty secret → boot refused", _raises(app_env="production", secret_key=""))
+ok("production + real secret → boots",
+   Settings(app_env="production", secret_key="a" * 64).secret_key == "a" * 64)
+
 print(f"\nconfig: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
