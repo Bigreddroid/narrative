@@ -88,11 +88,16 @@ async def _fake_di_empty(*a, **k):
     return []
 
 
+async def _fake_rss_empty(*a, **k):
+    return []
+
+
 # Patch the names as the worker resolves them (module-global lookups at call time).
 W.AsyncSessionLocal = _FakeSession
 W._osint_source = lambda: (_fake_fetch, "osint_gdelt")  # bypass config/network selection
 W.osint_threatintel.fetch_threatintel = _fake_ti_empty  # additive feed off for the base run
 W.osint_disinfo.fetch_disinfo = _fake_di_empty          # curated feed off for the base run
+W.rss_osint.fetch_rss_osint = _fake_rss_empty           # RSS portfolio off for the base run (no network)
 cost_guard.llm_allowed = _fake_llm_allowed
 osint_agent.triage = _fake_triage
 W._upsert = _fake_upsert
@@ -130,6 +135,34 @@ res2 = asyncio.run(W.run_osint_ingest_worker())
 ok("threat-intel batch adds to post count", res2["posts"] == 4)
 ok("threat-intel post upserted", "threatintel-x" in _upsert_calls)
 ok("threat-intel triaged with its own source tag", ti_sources == ["osint_threatintel"])
+
+# ── additive RSS/Atom portfolio batch is triaged under its own source tag ─────
+rss_sources: list[str] = []
+
+
+def _capture_rss_triage(post, allow_llm, source="osint_gdelt"):
+    if post["external_id"].startswith("rss-"):
+        rss_sources.append(source)
+    return _fake_triage(post, allow_llm, source)
+
+
+async def _fake_rss_one(*a, **k):
+    return [{"external_id": "rss-x", "title": "Earthquake strikes coast", "selftext": "",
+             "score": 0, "created_utc": None, "subreddit": "news.google.com"}]
+
+
+_upsert_calls.clear()
+W.osint_threatintel.fetch_threatintel = _fake_ti_empty
+W.rss_osint.fetch_rss_osint = _fake_rss_one
+osint_agent.triage = _capture_rss_triage
+res_rss = asyncio.run(W.run_osint_ingest_worker())
+
+ok("rss batch adds to post count", res_rss["posts"] == 4)  # 3 reddit + 0 ti + 1 rss
+ok("rss post upserted", "rss-x" in _upsert_calls)
+ok("rss triaged with its own source tag", rss_sources == ["osint_rss"])
+
+# reset RSS to empty so the disinfo-test post counts below are unaffected
+W.rss_osint.fetch_rss_osint = _fake_rss_empty
 
 # ── curated disinfo feed upserts directly, bypassing triage ───────────────────
 triage_seen: list[str] = []
