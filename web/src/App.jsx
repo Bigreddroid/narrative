@@ -16,6 +16,7 @@ const Following = lazy(() => import("./pages/Following.jsx"));
 const Settings = lazy(() => import("./pages/Settings.jsx"));
 const Analyst = lazy(() => import("./pages/Analyst.jsx"));
 const Osint = lazy(() => import("./pages/Osint.jsx"));
+const DisinfoThreat = lazy(() => import("./pages/DisinfoThreat.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
 const Dashboard = lazy(() => import("./admin/Dashboard.jsx"));
 const PipelineMonitor = lazy(() => import("./admin/PipelineMonitor.jsx"));
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="/following"       element={<PrivateRoute><Following /></PrivateRoute>} />
         <Route path="/analyst"         element={<PrivateRoute><Analyst /></PrivateRoute>} />
         <Route path="/osint"           element={<PrivateRoute><Osint /></PrivateRoute>} />
+        <Route path="/threats"         element={<PrivateRoute><DisinfoThreat /></PrivateRoute>} />
         <Route path="/settings"        element={<PrivateRoute><Settings /></PrivateRoute>} />
 
         {/* Admin */}

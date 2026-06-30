@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     local_llm_model: str = "llama3.2:latest"               # works out-of-box; qwen2.5:7b = sharper JSON
     local_embedding_model: str = "BAAI/bge-large-en-v1.5"  # 1024-dim ⇒ no schema change
+    # Where fastembed caches the downloaded model. Empty ⇒ library default (a tmp
+    # dir under the ephemeral container FS, re-downloaded every boot). On Railway,
+    # point this at a persistent volume (FASTEMBED_CACHE_DIR=/data/models) so the
+    # ~1.3 GB bge-large model is fetched once, not on every scheduler restart.
+    fastembed_cache_dir: str = ""
     ollama_timeout_seconds: float = 120.0
 
     # Database

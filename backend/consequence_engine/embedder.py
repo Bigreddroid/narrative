@@ -35,7 +35,13 @@ def _local_model():
     from fastembed import TextEmbedding
 
     logger.info("Loading local embedding model: %s", settings.local_embedding_model)
-    return TextEmbedding(model_name=settings.local_embedding_model)
+    # When a cache dir is configured (e.g. a Railway volume at /data/models), the
+    # model is downloaded once and reused across restarts instead of being re-fetched
+    # into the ephemeral container FS every boot. Empty ⇒ library default.
+    kwargs: dict = {}
+    if settings.fastembed_cache_dir:
+        kwargs["cache_dir"] = settings.fastembed_cache_dir
+    return TextEmbedding(model_name=settings.local_embedding_model, **kwargs)
 
 
 def _embed_local(texts: list[str]) -> list[list[float]]:

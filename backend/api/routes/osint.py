@@ -23,6 +23,7 @@ from urllib.parse import quote
 from fastapi import APIRouter
 
 from backend.api.dependencies import UserDep
+from backend.services import osint_catalog, osint_enrich
 
 router = APIRouter(prefix="/osint", tags=["osint"])
 
@@ -108,24 +109,45 @@ async def framework(user: UserDep) -> dict:
     tools) is open to every tier. Only the entity-aware *investigate* templating
     stays a paid feature, so the free tier gets the whole catalog but an empty
     `templates` set.
+
+    Every tool is badged with a `capability` (live | pivot | launch) so the UI can
+    show, honestly, what each tool can actually do in-app; `capabilities` carries
+    the per-tier totals.
     """
     data = _load()
     is_free = user.tier == "free"
+    raw_tools = data.get("tools", [])
     return {
         "tier": user.tier,
         "categories": data.get("categories", []),
         "counts": data.get("counts", {}),
+        "capabilities": osint_catalog.capability_counts(raw_tools),
         "templates": {} if is_free else data.get("templates", {}),
-        "tools": data.get("tools", []),
+        "tools": [osint_catalog.augment(t) for t in raw_tools],
         "limited": False,
     }
 
 
+def _curated_capability(item: dict, kind: str) -> dict:
+    """Tag a curated template item with a capability tier so it merges cleanly with
+    the catalog-derived tools. Native templated lookups are pivots; manual-entry
+    tools (those carrying a `note`) are launches; hosts with a live enricher win."""
+    host = osint_catalog.host_of(item.get("url") or "")
+    bare = host[4:] if host.startswith("www.") else host
+    live = (osint_catalog.LIVE_HOSTS.get(host) or osint_catalog.LIVE_HOSTS.get(bare) or set())
+    native = bool(item.get("templated"))
+    cap = "live" if kind in live else ("pivot" if native else "launch")
+    return {**item, "capability": cap, "native": native, "source": "curated",
+            "category": None, "pricing": None, "opsec": None, "registration": False}
+
+
 @router.get("/investigate")
 async def investigate(user: UserDep, value: str, kind: str | None = None) -> dict:
-    """Entity-aware pivot: return the curated lookups for `value`, with the value
-    templated in. `kind` is auto-detected when omitted. Paid feature; free tier
-    gets an empty set (gated)."""
+    """Entity-aware pivot: every in-catalog tool that accepts `value`, resolved to a
+    one-click action. Combines the curated high-signal lookups with the full catalog
+    (native search where we have a pattern, else a site-scoped pivot, else launch).
+    Each tool is tagged with a `capability` (live | pivot | launch). `kind` is
+    auto-detected when omitted. Paid feature; free tier gets an empty set (gated)."""
     value = (value or "").strip()
     if user.tier == "free" or not value:
         return {"value": value, "kind": kind, "tools": [], "limited": user.tier == "free"}
@@ -134,4 +156,32 @@ async def investigate(user: UserDep, value: str, kind: str | None = None) -> dic
     if resolved not in _VALID_KINDS:
         resolved = detect_entity_kind(value)
 
-    return {"value": value, "kind": resolved, "tools": _templated(value, resolved), "limited": False}
+    # Curated high-signal pivots first, then the rest of the catalog for this kind.
+    curated = [_curated_capability(t, resolved) for t in _templated(value, resolved)]
+    seen = {(t["name"], t["url"]) for t in curated}
+    catalog = [t for t in osint_catalog.catalog_investigate(value, resolved, _load().get("tools", []))
+               if (t["name"], t["url"]) not in seen]
+
+    tools = curated + catalog
+    counts = {"live": 0, "pivot": 0, "launch": 0}
+    for t in tools:
+        counts[t["capability"]] = counts.get(t["capability"], 0) + 1
+    return {"value": value, "kind": resolved, "tools": tools, "capabilities": counts,
+            "enrichable": resolved in osint_enrich.ENRICHABLE_KINDS, "limited": False}
+
+
+@router.get("/enrich")
+async def enrich(user: UserDep, value: str, kind: str | None = None) -> dict:
+    """Tier 1 live enrichment: real facts fetched server-side from keyless APIs
+    (ip/domain/cve/hash/crypto). Paid feature, gated exactly like investigate; free
+    tier and non-enrichable kinds get an empty `facts` set."""
+    value = (value or "").strip()
+    if user.tier == "free" or not value:
+        return {"value": value, "kind": kind, "facts": [], "sources": [],
+                "limited": user.tier == "free"}
+
+    resolved = (kind or "").strip().lower()
+    if resolved not in _VALID_KINDS:
+        resolved = detect_entity_kind(value)
+
+    return await osint_enrich.enrich(value, resolved)

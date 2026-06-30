@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { api } from "../lib/api.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useOsintFramework } from "../hooks/useOsintFramework.js";
 import { buildTree } from "../lib/osintTree.js";
 import TierGate from "../components/TierGate.jsx";
+import OsintInvestigate from "../components/OsintInvestigate.jsx";
+
+const CAP_DOT = { live: "#2E8B57", pivot: "#1E5FA8", launch: "#B07020" };
 
 const KIND_LABELS = {
   username: "Username", domain: "Domain / URL", ip: "IP / MAC", email: "Email",
@@ -15,61 +17,17 @@ const KIND_LABELS = {
 };
 const PRICING_COLORS = { free: "#2E8B57", freemium: "#B07020", paid: "#C80028", unknown: "#6A6A60" };
 
-// ── Investigate panel: templated lookups for an entity passed via ?value=&kind= ──
-function InvestigatePanel({ value, kind }) {
-  const [tools, setTools] = useState([]);
-  const [resolvedKind, setResolvedKind] = useState(kind);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    const qs = new URLSearchParams({ value, ...(kind ? { kind } : {}) }).toString();
-    api.get(`/osint/investigate?${qs}`)
-      .then((d) => { if (!alive) return; setTools(d?.tools || []); setResolvedKind(d?.kind || kind); })
-      .catch(() => { if (alive) setTools([]); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [value, kind]);
-
-  return (
-    <TierGate feature="osintInvestigate">
-      <div className="mb-8 border border-crimson/30 bg-crimson/[0.03] p-4">
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className="text-[9px] font-mono uppercase tracking-[0.3em] text-crimson">Investigate</span>
-          <span className="text-sm font-semibold text-ink">{value}</span>
-          {resolvedKind && (
-            <span className="text-[9px] font-mono uppercase tracking-wider border border-ink/15 px-1.5 py-px text-ink/45">
-              {KIND_LABELS[resolvedKind] || resolvedKind}
-            </span>
-          )}
-        </div>
-        {loading ? (
-          <p className="text-[11px] font-mono text-ink/30 py-3">Resolving lookups…</p>
-        ) : tools.length === 0 ? (
-          <p className="text-[11px] font-mono text-ink/30 py-3">No templated lookups for this entity kind.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {tools.map((t) => (
-              <a key={t.name} href={t.url} target="_blank" rel="noopener noreferrer"
-                 className="text-[12px] border border-ink/15 px-3 py-1.5 hover:border-crimson hover:text-crimson transition-colors text-ink/75"
-                 title={t.note || t.url}>
-                {t.name}{t.note ? " ↗" : ""}
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-    </TierGate>
-  );
-}
-
 function ToolCard({ tool }) {
   const pc = PRICING_COLORS[tool.pricing] || PRICING_COLORS.unknown;
+  const capColor = CAP_DOT[tool.capability];
   return (
     <a href={tool.url} target="_blank" rel="noopener noreferrer"
        className="block border border-ink/10 bg-ink/[0.02] p-3 hover:border-ink/25 transition-colors">
       <div className="flex items-center gap-2 mb-1.5">
+        {capColor && (
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: capColor }}
+                title={`capability: ${tool.capability}`} />
+        )}
         <span className="text-[12px] font-semibold text-ink leading-tight flex-1">{tool.name}</span>
         <span className="text-[8px] font-mono uppercase tracking-wide flex-shrink-0" style={{ color: pc }}>{tool.pricing}</span>
       </div>
@@ -147,8 +105,9 @@ export default function Osint() {
   const [cat, setCat] = useState("all");
   const [pricing, setPricing] = useState("all");
   const [opsec, setOpsec] = useState("all");
+  const [cap, setCap] = useState("all");
   const [view, setView] = useState("tree");
-  const filtersActive = q.trim() !== "" || cat !== "all" || pricing !== "all" || opsec !== "all";
+  const filtersActive = q.trim() !== "" || cat !== "all" || pricing !== "all" || opsec !== "all" || cap !== "all";
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -156,10 +115,11 @@ export default function Osint() {
       if (cat !== "all" && t.category !== cat) return false;
       if (pricing !== "all" && t.pricing !== pricing) return false;
       if (opsec !== "all" && t.opsec !== opsec) return false;
+      if (cap !== "all" && t.capability !== cap) return false;
       if (needle && !(`${t.name} ${t.description} ${t.bestFor}`.toLowerCase().includes(needle))) return false;
       return true;
     });
-  }, [tools, q, cat, pricing, opsec]);
+  }, [tools, q, cat, pricing, opsec, cap]);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-paper">
@@ -175,7 +135,12 @@ export default function Osint() {
           <span className="font-display text-lg leading-none tracking-tighter" style={{ color: "#F0EDE8" }}>
             OSINT <span style={{ color: "#C80028" }}>FRAMEWORK</span>
           </span>
-          <button onClick={toggle} className="ml-auto" style={{ color: "rgba(240,237,232,0.35)" }} title={isDark ? "Day mode" : "Night mode"}>
+          <button onClick={() => navigate("/threats")}
+            className="ml-auto text-[10px] font-mono uppercase tracking-widest hover:text-crimson transition-colors"
+            style={{ color: "rgba(240,237,232,0.45)" }} title="Disinfo / Threat feed">
+            Threats
+          </button>
+          <button onClick={toggle} style={{ color: "rgba(240,237,232,0.35)" }} title={isDark ? "Day mode" : "Night mode"}>
             {isDark
               ? <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="2.5"/><line x1="7" y1="1" x2="7" y2="2.5"/><line x1="7" y1="11.5" x2="7" y2="13"/><line x1="1" y1="7" x2="2.5" y2="7"/><line x1="11.5" y1="7" x2="13" y2="7"/></svg>
               : <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M11 8.5A5.5 5.5 0 1 1 4.5 2a4 4 0 0 0 6.5 6.5z"/></svg>}
@@ -186,7 +151,11 @@ export default function Osint() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-[920px] mx-auto px-4 sm:px-6 pt-6 pb-28 md:pb-10">
 
-          {value && <InvestigatePanel value={value} kind={kind} />}
+          {value && (
+            <TierGate feature="osintInvestigate">
+              <OsintInvestigate value={value} kind={kind} />
+            </TierGate>
+          )}
 
           {/* Controls */}
           <div className="flex flex-wrap gap-2 mb-5">
@@ -209,6 +178,19 @@ export default function Osint() {
               <option value="passive">Passive</option>
               <option value="active">Active</option>
             </select>
+            <select value={cap} onChange={(e) => setCap(e.target.value)} className="bg-ink/[0.03] border border-ink/12 px-2 py-2 text-[12px] text-ink/70 outline-none" title="Filter by what the tool can do in-app">
+              <option value="all">Any capability</option>
+              <option value="live">Live facts</option>
+              <option value="pivot">One-click</option>
+              <option value="launch">Launch</option>
+            </select>
+          </div>
+
+          {/* Capability legend — honest per-tool capability tiers */}
+          <div className="flex items-center gap-3 mb-3 text-[9px] font-mono text-ink/40">
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CAP_DOT.live }} />live facts</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CAP_DOT.pivot }} />one-click pivot</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CAP_DOT.launch }} />launch + copy</span>
           </div>
 
           <div className="flex items-center justify-between mb-3">
