@@ -15,15 +15,22 @@ the frontend renders — no paid calls, no DB.
 
 import ipaddress
 import json
+import logging
 import re
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter
+from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
-from backend.api.dependencies import UserDep
+from backend.api.dependencies import DbDep, UserDep
+from backend.models.osint_triage_decision import OsintTriageDecision
 from backend.services import osint_catalog, osint_enrich
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/osint", tags=["osint"])
 
@@ -185,3 +192,57 @@ async def enrich(user: UserDep, value: str, kind: str | None = None) -> dict:
         resolved = detect_entity_kind(value)
 
     return await osint_enrich.enrich(value, resolved)
+
+
+@router.get("/triage/stats")
+async def triage_stats(user: UserDep, db: DbDep, hours: int = 24) -> dict:
+    """The OSINT triage flywheel, made visible: over the last `hours`, how many
+    open-source posts the agent KEPT vs DROPPED, broken down by reason and by source.
+
+    Drops normally vanish (triage returns None), so this is the only window into the
+    rejection funnel — what the thresholds are actually filtering out, and whether
+    they're too tight. Paid feature; free tier gets an empty (gated) summary. If the
+    decisions table isn't present yet (migration drift), degrade to an empty summary
+    rather than 500."""
+    hours = max(1, min(int(hours or 24), 168))
+    empty = {"window_hours": hours, "kept": 0, "dropped": 0, "keep_rate": None,
+             "by_reason": [], "by_source": []}
+    if user.tier == "free":
+        return {**empty, "limited": True}
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    try:
+        totals = (await db.execute(
+            select(OsintTriageDecision.kept, func.count())
+            .where(OsintTriageDecision.created_at >= cutoff)
+            .group_by(OsintTriageDecision.kept)
+        )).all()
+        reasons = (await db.execute(
+            select(OsintTriageDecision.reason, OsintTriageDecision.kept, func.count())
+            .where(OsintTriageDecision.created_at >= cutoff)
+            .group_by(OsintTriageDecision.reason, OsintTriageDecision.kept)
+            .order_by(func.count().desc())
+        )).all()
+        sources = (await db.execute(
+            select(OsintTriageDecision.source, func.count())
+            .where(OsintTriageDecision.created_at >= cutoff)
+            .group_by(OsintTriageDecision.source)
+            .order_by(func.count().desc())
+        )).all()
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        logger.warning("triage_stats query failed (table missing?): %s", exc)
+        return {**empty, "limited": False, "unavailable": True}
+
+    kept = sum(c for k, c in totals if k)
+    dropped = sum(c for k, c in totals if not k)
+    total = kept + dropped
+    return {
+        "window_hours": hours,
+        "kept": kept,
+        "dropped": dropped,
+        "keep_rate": round(kept / total, 3) if total else None,
+        "by_reason": [{"reason": r, "kept": bool(k), "count": c} for r, k, c in reasons],
+        "by_source": [{"source": s, "count": c} for s, c in sources],
+        "limited": False,
+    }
