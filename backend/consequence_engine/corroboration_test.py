@@ -3,6 +3,11 @@ Property test for cross-feed corroboration. Run from repo root:
     python -m backend.consequence_engine.corroboration_test
 """
 
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
+
 from backend.consequence_engine import corroboration as C
 
 passed = failed = 0

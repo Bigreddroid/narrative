@@ -14,6 +14,12 @@ import math
 # Blend weights across dimensions (sectors dominate, then geography, then keywords).
 DIM_WEIGHTS = {"sector": 0.5, "geo": 0.3, "keyword": 0.2}
 
+# Below this embedding cosine, two events sharing a sector/geo tag are treated as a
+# coincidence, not a real link (e.g. an unrelated refinery fire and an OPEC statement
+# both tagged Energy+US). This gate is what stops the graph from asserting causal
+# edges purely from shared tags — the core "linking is inaccurate" problem.
+SEMANTIC_FLOOR = 0.30
+
 
 def build_idf(token_lists: list[list[str]]) -> dict[str, float]:
     """Smoothed IDF over a corpus of per-event token lists for one dimension."""
@@ -49,6 +55,40 @@ def weighted_overlap(a: list[str] | None, b: list[str] | None, idf: dict[str, fl
 def blended_weight(sector: float, geo: float, keyword: float) -> float:
     """Weighted blend of the three dimension overlaps."""
     return sector * DIM_WEIGHTS["sector"] + geo * DIM_WEIGHTS["geo"] + keyword * DIM_WEIGHTS["keyword"]
+
+
+def cosine(a: list[float] | None, b: list[float] | None) -> float | None:
+    """Cosine similarity of two event embeddings. None if either is absent (so the
+    caller can degrade to tag-only linking); 0.0 for a degenerate/zero vector."""
+    if not a or not b or len(a) != len(b):
+        return None
+    dot = na = nb = 0.0
+    for x, y in zip(a, b):
+        dot += x * y
+        na += x * x
+        nb += y * y
+    if na <= 0.0 or nb <= 0.0:
+        return 0.0
+    return dot / math.sqrt(na * nb)
+
+
+def semantic_adjust(tag_blend: float, cos: float | None) -> float | None:
+    """Refine a tag-overlap weight with embedding cosine similarity.
+
+    - ``cos is None`` (an event lacks an embedding) ⇒ return ``tag_blend`` unchanged
+      so we degrade safely to the old tag-only behaviour rather than dropping edges.
+    - ``cos`` below :data:`SEMANTIC_FLOOR` ⇒ ``None`` (drop the edge: the events share
+      a tag but are about different things — a coincidence, not a causal link).
+    - otherwise scale the tag weight by how semantically related the events are, so
+      genuinely-related pairs rank above tag-only near-misses. Kept ≥ 0.5·tag_blend
+      above the floor so related events aren't over-pruned.
+    """
+    if cos is None:
+        return tag_blend
+    if cos < SEMANTIC_FLOOR:
+        return None
+    factor = (cos - SEMANTIC_FLOOR) / (1.0 - SEMANTIC_FLOOR)  # 0 at floor → 1 at cos=1
+    return tag_blend * (0.5 + 0.5 * factor)
 
 
 def causal_direction(a_time, b_time) -> str | None:

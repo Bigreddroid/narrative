@@ -10,6 +10,7 @@ receive only computed scores + driver attribution.
 """
 
 from collections import defaultdict
+from uuid import UUID
 
 from fastapi import APIRouter
 from sqlalchemy import select
@@ -32,14 +33,20 @@ PAID_TIER_EVENT_LIMIT = 500
 HISTORY_POINTS = 12  # real ExposureSnapshot points attached per entity (oldest→newest)
 
 
-async def _load_graph(db, limit: int) -> tuple[list[dict], list[dict]]:
-    """Load mapped events (with their latest consequence map) + causal edges."""
-    events_result = await db.execute(
-        select(NarrativeEvent)
-        .where(NarrativeEvent.is_mapped == True)  # noqa: E712
-        .order_by(NarrativeEvent.global_importance_score.desc())
-        .limit(limit)
-    )
+async def _load_graph(db, limit: int, event_ids: list | None = None) -> tuple[list[dict], list[dict]]:
+    """Load mapped events (with their latest consequence map) + causal edges.
+
+    When ``event_ids`` is given, load exactly those events (question-scoped
+    exposure for the analyst chat) instead of the global top-importance slice —
+    so the readout differs per question rather than being the same global list.
+    """
+    stmt = select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
+    if event_ids:
+        ids = [UUID(x) if isinstance(x, str) else x for x in event_ids]
+        stmt = stmt.where(NarrativeEvent.id.in_(ids)).limit(len(ids))
+    else:
+        stmt = stmt.order_by(NarrativeEvent.global_importance_score.desc()).limit(limit)
+    events_result = await db.execute(stmt)
     events = events_result.scalars().all()
     event_ids = [e.id for e in events]
     if not event_ids:
