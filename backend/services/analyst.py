@@ -169,12 +169,18 @@ async def answer_question(db, question: str) -> dict:
     its hard cap), degrade to a templated, grounded answer instead of erroring."""
     events = await retrieve_events(db, question)
     exposure = await exposure_summary(db)
+    # Consequence readout the UI shows under the answer (trade/shipping/logistics
+    # exposure), personalised client-side against the user's sectors/region.
+    top_sectors = [s["key"] for s in (exposure.get("sectors") or [])[:6]] if exposure else []
+    top_regions = [r["key"] for r in (exposure.get("regions") or [])[:6]] if exposure else []
 
     if not await cost_guard.llm_allowed(db):
         return {
             "answer": _templated_answer(events, exposure),
             "sources": events,
             "pressure": exposure.get("pressure") if exposure else None,
+            "sectors": top_sectors,
+            "regions": top_regions,
             "degraded": True,
         }
 
@@ -195,5 +201,7 @@ async def answer_question(db, question: str) -> dict:
         "answer": answer,
         "sources": events,  # [n] citations in the answer map to this 1-indexed list
         "pressure": exposure.get("pressure") if exposure else None,
+        "sectors": top_sectors,
+        "regions": top_regions,
         "degraded": degraded,
     }

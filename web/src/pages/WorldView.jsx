@@ -393,6 +393,21 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
   const { getVessels, vesselCount, live } = useVesselFeed(maritime);
   const { getAircraft, aircraftCount, live: airLive } = useAircraftFeed(air);
   const [exposureLayer, setExposureLayer] = useState(false);
+  const [eventCat, setEventCat] = useState(null); // filter globe by event type (conflict/climate/…)
+
+  // Event-type filter: derive the category list from what's mapped, then filter
+  // nodes (and prune edges to surviving endpoints) so the globe shows one type.
+  const categories = useMemo(
+    () => [...new Set(nodes.map((n) => n.category).filter(Boolean))].sort(),
+    [nodes]);
+  const shownNodes = useMemo(
+    () => (eventCat ? nodes.filter((n) => (n.category || "").toLowerCase() === eventCat) : nodes),
+    [nodes, eventCat]);
+  const shownEdges = useMemo(() => {
+    if (!eventCat) return edges;
+    const ids = new Set(shownNodes.map((n) => n.id));
+    return edges.filter((e) => ids.has(e.source ?? e.from) && ids.has(e.target ?? e.to));
+  }, [edges, shownNodes, eventCat]);
 
   // Live traffic→event association, refreshed gently; feeds the CPE disruption term.
   const [trafficByEvent, setTrafficByEvent] = useState({});
@@ -491,8 +506,25 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
         {!loading && nodes.length > 0 && (
           <div className="ml-auto flex items-center gap-2 text-[10px] text-ink/35 tracking-wide">
             <span className="w-1.5 h-1.5 rounded-full bg-crimson" style={{ boxShadow: "0 0 4px #C80028" }} />
-            {nodes.length} events mapped
+            {shownNodes.length} events mapped
           </div>
+        )}
+
+        {/* Event-type filter */}
+        {categories.length > 1 && (
+          <select
+            value={eventCat || "all"}
+            onChange={(e) => setEventCat(e.target.value === "all" ? null : e.target.value)}
+            className="flex-shrink-0 ml-3 mr-1 px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest border bg-transparent outline-none cursor-pointer"
+            style={{
+              color: eventCat ? "#E8E4DC" : tabInactiveColor,
+              borderColor: eventCat ? "rgba(200,0,40,0.5)" : (isDark ? "rgba(232,228,220,0.12)" : "rgba(26,26,26,0.12)"),
+            }}
+            title="Filter events by type"
+          >
+            <option value="all">All events</option>
+            {categories.map((c) => <option key={c} value={c.toLowerCase()}>{c}</option>)}
+          </select>
         )}
 
         {/* Maritime layer toggle */}
@@ -587,8 +619,8 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
           </div>
         ) : (
           <WorldMap
-            nodes={nodes}
-            edges={edges}
+            nodes={shownNodes}
+            edges={shownEdges}
             selectedNodeId={selectedEventId}
             onNodeClick={handleNodeClick}
             region={region}

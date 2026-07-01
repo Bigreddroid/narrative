@@ -74,7 +74,10 @@ function ToolPill({ t }) {
   );
 }
 
-export default function OsintInvestigate({ value, kind, compact = false }) {
+// geoOnly: drop the templated site-scoped searches (email/WHOIS junk that the
+// catalog maps onto locations) and keep only native tools + live enrichment —
+// the genuinely useful map/geo lookups. maxTools: cap the pill count.
+export default function OsintInvestigate({ value, kind, compact = false, geoOnly = false, maxTools }) {
   const [tools, setTools] = useState([]);
   const [facts, setFacts] = useState([]);
   const [resolvedKind, setResolvedKind] = useState(kind);
@@ -110,6 +113,10 @@ export default function OsintInvestigate({ value, kind, compact = false }) {
     return () => { alive = false; };
   }, [value, kind]);
 
+  const shownTools = tools
+    .filter((t) => !geoOnly || t.native || t.capability === "live")
+    .slice(0, maxTools ?? tools.length);
+
   return (
     <div className={compact ? "" : "mb-8 border border-crimson/30 bg-crimson/[0.03] p-4"}>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -120,7 +127,7 @@ export default function OsintInvestigate({ value, kind, compact = false }) {
             {KIND_LABELS[resolvedKind] || resolvedKind}
           </span>
         )}
-        {caps && (
+        {caps && !geoOnly && (
           <span className="text-[9px] font-mono text-ink/35 ml-auto">
             {caps.live ? `${caps.live} live · ` : ""}{caps.pivot || 0} 1-click{caps.launch ? ` · ${caps.launch} launch` : ""}
           </span>
@@ -142,11 +149,11 @@ export default function OsintInvestigate({ value, kind, compact = false }) {
             </div>
           )}
 
-          {tools.length === 0 ? (
+          {shownTools.length === 0 ? (
             <p className="text-[11px] font-mono text-ink/30 py-2">No lookups for this entity kind.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {tools.map((t, i) => <ToolPill key={`${t.name}-${i}`} t={t} />)}
+              {shownTools.map((t, i) => <ToolPill key={`${t.name}-${i}`} t={t} />)}
             </div>
           )}
         </>
