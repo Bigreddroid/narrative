@@ -43,6 +43,8 @@ function specificPlaces(sources, cap = 3) {
   return out;
 }
 
+const titleCase = (s) => String(s).replace(/\b\w/g, (c) => c.toUpperCase());
+
 // ── personalised consequence readout ─────────────────────────────────────────
 function ImpactReadout({ pressure, sectors = [], regions = [], user }) {
   if (pressure == null && sectors.length === 0 && regions.length === 0) return null;
@@ -74,13 +76,13 @@ function ImpactReadout({ pressure, sectors = [], regions = [], user }) {
       {sectors.length > 0 && (
         <div className="flex flex-wrap gap-1.5 items-center">
           <span className="text-[9px] font-mono uppercase tracking-wider text-ink/30 w-14">Sectors</span>
-          {sectors.map((s) => <Chip key={s} label={s} mine={sectorMine(s)} />)}
+          {sectors.map((s) => <Chip key={s} label={titleCase(s)} mine={sectorMine(s)} />)}
         </div>
       )}
       {regions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 items-center">
           <span className="text-[9px] font-mono uppercase tracking-wider text-ink/30 w-14">Regions</span>
-          {regions.map((r) => <Chip key={r} label={r} mine={regionMine(r)} />)}
+          {regions.map((r) => <Chip key={r} label={titleCase(r)} mine={regionMine(r)} />)}
         </div>
       )}
       {hasProfile ? (

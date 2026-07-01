@@ -15,6 +15,7 @@ import { MOCK_EVENTS, MOCK_EDGES } from "../lib/mockData.js";
 import { DEMO_MODE } from "../lib/demoMode.js";
 import { associate, trafficByEvent as buildTrafficByEvent, detectAnomaly } from "../lib/geoAssoc.js";
 import { useSearch } from "../hooks/useSearch.js";
+import { createPortal } from "react-dom";
 import { useFollowing } from "../hooks/useFollowing.js";
 import { getCategoryColor } from "../lib/colors.js";
 import { biasLabel, BIAS_COLORS } from "../lib/bias.js";
@@ -394,6 +395,8 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
   const { getAircraft, aircraftCount, live: airLive } = useAircraftFeed(air);
   const [exposureLayer, setExposureLayer] = useState(false);
   const [eventCat, setEventCat] = useState(null); // filter globe by event type (conflict/climate/…)
+  const [catOpen, setCatOpen] = useState(false);
+  const [catPos, setCatPos] = useState({ top: 0, left: 0 });
 
   // Event-type filter: derive the category list from what's mapped, then filter
   // nodes (and prune edges to surviving endpoints) so the globe shows one type.
@@ -510,21 +513,25 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
           </div>
         )}
 
-        {/* Event-type filter */}
+        {/* Event-type filter — button only; the menu is portalled to <body> below so
+            the overflow-x scroll container and the globe can't clip or cover it. */}
         {categories.length > 1 && (
-          <select
-            value={eventCat || "all"}
-            onChange={(e) => setEventCat(e.target.value === "all" ? null : e.target.value)}
-            className="flex-shrink-0 ml-3 mr-1 px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest border bg-transparent outline-none cursor-pointer"
+          <button
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setCatPos({ top: r.bottom + 4, left: r.left });
+              setCatOpen((o) => !o);
+            }}
+            className="flex-shrink-0 ml-3 mr-1 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-widest border flex items-center gap-1.5 whitespace-nowrap"
             style={{
               color: eventCat ? "#E8E4DC" : tabInactiveColor,
               borderColor: eventCat ? "rgba(200,0,40,0.5)" : (isDark ? "rgba(232,228,220,0.12)" : "rgba(26,26,26,0.12)"),
             }}
             title="Filter events by type"
           >
-            <option value="all">All events</option>
-            {categories.map((c) => <option key={c} value={c.toLowerCase()}>{c}</option>)}
-          </select>
+            {eventCat || "All events"}
+            <span style={{ fontSize: 8, opacity: 0.6 }}>▼</span>
+          </button>
         )}
 
         {/* Maritime layer toggle */}
@@ -651,6 +658,32 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
           )}
         </AnimatePresence>
       </div>
+
+      {catOpen && categories.length > 1 && createPortal(
+        <>
+          <div className="fixed inset-0 z-[90]" onClick={() => setCatOpen(false)} />
+          <div
+            className="fixed z-[100] min-w-[150px] max-h-[320px] overflow-y-auto border shadow-2xl"
+            style={{ top: catPos.top, left: catPos.left, backgroundColor: isDark ? "#161616" : "#FFFFFF", borderColor: isDark ? "rgba(232,228,220,0.18)" : "rgba(26,26,26,0.18)" }}
+          >
+            {["all", ...categories].map((c) => {
+              const val = c === "all" ? null : c.toLowerCase();
+              const active = eventCat === val;
+              return (
+                <button
+                  key={c}
+                  onClick={() => { setEventCat(val); setCatOpen(false); }}
+                  className="block w-full text-left px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors hover:bg-crimson/15"
+                  style={{ color: active ? "#C80028" : (isDark ? "#E8E4DC" : "#1A1A1A") }}
+                >
+                  {c === "all" ? "All events" : c}
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body,
+      )}
     </div>
   );
 }
