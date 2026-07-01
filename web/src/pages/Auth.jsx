@@ -8,7 +8,7 @@ import { setStoredUser } from "../hooks/useUser.js";
 export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
-  const from     = location.state?.from?.pathname || "/osint";
+  const from     = location.state?.from?.pathname || "/analyst";
 
   const [mode,     setMode]     = useState("signin"); // "signin" | "signup"
   const [name,     setName]     = useState("");

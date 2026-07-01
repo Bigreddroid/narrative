@@ -15,7 +15,6 @@ const EventDetail = lazy(() => import("./pages/EventDetail.jsx"));
 const Following = lazy(() => import("./pages/Following.jsx"));
 const Settings = lazy(() => import("./pages/Settings.jsx"));
 const Analyst = lazy(() => import("./pages/Analyst.jsx"));
-const Osint = lazy(() => import("./pages/Osint.jsx"));
 const DisinfoThreat = lazy(() => import("./pages/DisinfoThreat.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
 const Dashboard = lazy(() => import("./admin/Dashboard.jsx"));
@@ -28,6 +27,13 @@ const UserStats = lazy(() => import("./admin/UserStats.jsx"));
 const HallucinationFlags = lazy(() => import("./admin/HallucinationFlags.jsx"));
 
 const DEV_BYPASS = import.meta.env.DEV;
+
+// The OSINT Framework folded into the Analyst tab. Keep /osint (and its
+// ?value=&kind= deep-links from event chips) working by forwarding to /analyst.
+function OsintRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/analyst${search}`} replace />;
+}
 
 function RouteFallback() {
   return (
@@ -74,7 +80,7 @@ export default function App() {
         <Route path="/event/:eventId"  element={<PrivateRoute><EventDetail /></PrivateRoute>} />
         <Route path="/following"       element={<PrivateRoute><Following /></PrivateRoute>} />
         <Route path="/analyst"         element={<PrivateRoute><Analyst /></PrivateRoute>} />
-        <Route path="/osint"           element={<PrivateRoute><Osint /></PrivateRoute>} />
+        <Route path="/osint"           element={<OsintRedirect />} />
         <Route path="/threats"         element={<PrivateRoute><DisinfoThreat /></PrivateRoute>} />
         <Route path="/settings"        element={<PrivateRoute><Settings /></PrivateRoute>} />
 

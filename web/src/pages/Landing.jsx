@@ -185,7 +185,7 @@ export default function Landing() {
             Pricing
           </button>
           <button
-            onClick={() => navigate(isLoggedIn ? "/osint" : "/auth")}
+            onClick={() => navigate(isLoggedIn ? "/analyst" : "/auth")}
             className="text-[11px] font-bold uppercase tracking-widest border border-ink/20 px-5 py-2 hover:border-crimson hover:text-crimson transition-colors"
           >
             {isLoggedIn ? "Open App →" : "Sign In"}
@@ -219,7 +219,7 @@ export default function Landing() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
-              onClick={() => navigate(isLoggedIn ? "/osint" : "/auth")}
+              onClick={() => navigate(isLoggedIn ? "/analyst" : "/auth")}
               className="px-8 py-3.5 bg-ink text-paper text-[12px] font-bold uppercase tracking-widest hover:bg-crimson transition-colors"
             >
               Start Investigating →

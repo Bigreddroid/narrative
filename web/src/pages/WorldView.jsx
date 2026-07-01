@@ -646,6 +646,7 @@ export default function WorldView() {
   const handleClose   = useCallback(() => setSelectedEventId(null), []);
   const handleTabChange = useCallback((tab) => {
     if (tab === "following") { navigate("/following"); return; }
+    if (tab === "analyst") { navigate("/analyst"); return; }
     setActiveTab(tab);
     setSelectedEventId(null);
   }, [navigate]);
