@@ -259,10 +259,16 @@ async def answer_question(db, question: str) -> dict:
     # while still preferring the question-scoped model whenever it has real signal.
     if event_ids and (not exposure or (not exposure.get("sectors") and not exposure.get("pressure"))):
         exposure = await exposure_summary(db)
+    # Strip US zone/county noise from the exposure regions ONCE, at the source, so every
+    # downstream consumer — the LLM context, the templated fallback, and the returned
+    # readout — sees clean regions instead of "albemarle sound, allen ks" leaking through.
+    if exposure and exposure.get("regions"):
+        _keep = set(clean_regions([r["key"] for r in exposure["regions"]]))
+        exposure["regions"] = [r for r in exposure["regions"] if r["key"] in _keep]
     # Consequence readout the UI shows under the answer (trade/shipping/logistics
     # exposure), personalised client-side against the user's sectors/region.
     top_sectors = [s["key"] for s in (exposure.get("sectors") or [])[:6]] if exposure else []
-    top_regions = clean_regions([r["key"] for r in (exposure.get("regions") or [])])[:6] if exposure else []
+    top_regions = [r["key"] for r in (exposure.get("regions") or [])][:6] if exposure else []
 
     if not await cost_guard.llm_allowed(db):
         return {
