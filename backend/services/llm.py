@@ -52,9 +52,13 @@ def estimate_anthropic_cost(input_tokens: int, output_tokens: int) -> float:
 
 
 def active_provider() -> str:
-    """The provider actually used right now. Paid 'anthropic' downgrades to local
-    when the master switch is off, so a stray config can never start spending."""
-    p = settings.llm_provider
+    """The provider actually used right now. Reads the runtime override (set via the
+    admin Settings panel) falling back to the env default. Paid 'anthropic' still
+    downgrades to local when the master switch is off, so neither a stray config NOR a
+    runtime flip can start spending unless the deploy explicitly enabled paid APIs."""
+    from backend.services import runtime_config  # lazy: avoids a model import at load
+
+    p = runtime_config.llm_provider()
     if p == "anthropic" and not settings.paid_apis_enabled:
         return "ollama"
     return p

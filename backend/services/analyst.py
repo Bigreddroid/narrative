@@ -10,10 +10,11 @@ are unit-tested without an LLM call.
 
 import asyncio
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 
 from backend.config import get_settings
 from backend.models.narrative_event import NarrativeEvent
@@ -35,26 +36,28 @@ Rules:
 
 
 # ── retrieval ────────────────────────────────────────────────────────────────
-async def retrieve_events(db, query: str | None, limit: int = MAX_CONTEXT_EVENTS) -> list[dict]:
-    """Relevant mapped events: text-matched when a query is given, else top importance."""
-    stmt = select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
-    if query:
-        pat = f"%{query}%"
-        stmt = stmt.where(or_(
-            NarrativeEvent.canonical_title.ilike(pat),
-            NarrativeEvent.canonical_summary.ilike(pat),
-            NarrativeEvent.category.ilike(pat),
-        ))
-    stmt = stmt.order_by(NarrativeEvent.global_importance_score.desc()).limit(limit)
-    events = (await db.execute(stmt)).scalars().all()
-    # Fallback: if a text query matched nothing, ground on the top headline events
-    # so the model still has real context instead of guessing.
-    if query and not events:
-        events = (await db.execute(
-            select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
-            .order_by(NarrativeEvent.global_importance_score.desc()).limit(limit)
-        )).scalars().all()
-    return [{
+async def _semantic_event_ids(db, query: str, limit: int) -> list:
+    """Top mapped-event ids by embedding similarity to the question (pgvector).
+
+    This is what makes retrieval question-specific: "how does the war affect India"
+    lands on the Iran/India/Gulf events instead of the generic top-importance ones.
+    Returns [] (→ caller falls back) if embeddings are unavailable."""
+    from backend.consequence_engine.embedder import embed_texts
+    vec = (await asyncio.to_thread(embed_texts, [query]))[0]
+    if not vec or not any(vec):  # zero vector ⇒ embedder failed; don't rank on noise
+        return []
+    emb = "[" + ",".join(str(float(v)) for v in vec) + "]"
+    rows = (await db.execute(
+        text("SELECT id FROM narrative_events "
+             "WHERE is_mapped = true AND embedding IS NOT NULL "
+             "ORDER BY embedding <=> CAST(:emb AS vector(1024)) LIMIT :lim"),
+        {"emb": emb, "lim": limit},
+    )).all()
+    return [r[0] for r in rows]
+
+
+def _event_dict(e) -> dict:
+    return {
         "id": str(e.id),
         "title": e.canonical_title,
         "summary": e.canonical_summary,
@@ -62,7 +65,79 @@ async def retrieve_events(db, query: str | None, limit: int = MAX_CONTEXT_EVENTS
         "status": e.current_status,
         "importance": e.global_importance_score,
         "geography": e.geographic_relevance or [],
-    } for e in events]
+    }
+
+
+async def retrieve_events(db, query: str | None, limit: int = MAX_CONTEXT_EVENTS) -> list[dict]:
+    """Question-specific mapped events: semantic (pgvector) → keyword → top importance."""
+    events = []
+    if query:
+        try:
+            ids = await _semantic_event_ids(db, query, limit)
+        except Exception as exc:  # noqa: BLE001 — never fail the answer on retrieval
+            logger.warning("semantic retrieval failed (%s) — falling back", exc)
+            ids = []
+        if ids:
+            rows = (await db.execute(
+                select(NarrativeEvent).where(NarrativeEvent.id.in_(ids))
+            )).scalars().all()
+            rank = {i: n for n, i in enumerate(ids)}
+            events = sorted(rows, key=lambda e: rank.get(e.id, 10_000))
+        else:
+            # No semantic hits (embedder off, or no events carry embeddings). This is
+            # the usual cause of "same answer every question" in prod — log it so the
+            # fallback is visible instead of silent.
+            logger.info("analyst retrieval: semantic ranking unavailable for %r — "
+                        "using keyword/importance fallback", query[:60])
+        if not events:  # keyword fallback
+            pat = f"%{query}%"
+            events = (await db.execute(
+                select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
+                .where(or_(
+                    NarrativeEvent.canonical_title.ilike(pat),
+                    NarrativeEvent.canonical_summary.ilike(pat),
+                    NarrativeEvent.category.ilike(pat),
+                ))
+                .order_by(NarrativeEvent.global_importance_score.desc()).limit(limit)
+            )).scalars().all()
+    if not events:  # no query, or nothing matched → top headline events
+        events = (await db.execute(
+            select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
+            .order_by(NarrativeEvent.global_importance_score.desc()).limit(limit)
+        )).scalars().all()
+    return [_event_dict(e) for e in events]
+
+
+# Sub-national / NWS-zone water & county words that pollute the exposure "regions"
+# list. Keep countries, chokepoints and blocs; drop US zone names ("albemarle sound",
+# "croatan and roanoke sounds", "lake pontchartrain", "los angeles county") so the
+# readout reads like a geopolitics desk, not a weather bulletin. Matched as whole
+# tokens ANYWHERE in the name (not just the tail) so plurals and "lake X" prefixes go.
+_REGION_NOISE_WORDS = {
+    "sound", "sounds", "river", "rivers", "inlet", "inlets", "creek", "creeks",
+    "bay", "bayou", "lake", "lakes", "county", "parish", "channel", "harbor",
+    "harbour", "reservoir", "slough", "marsh", "lagoon",
+}
+
+
+def clean_regions(regions: list[str]) -> list[str]:
+    """Drop sub-national US zone/county noise from an exposure region list.
+
+    Removes: names containing a noise word (any token), "City, Country" pairs (comma),
+    and names whose last token is a 2-letter state/zone code ("allen ks").
+    """
+    out = []
+    for r in regions or []:
+        s = (r or "").strip()
+        if not s or "," in s:
+            continue
+        toks = re.findall(r"[a-z]+", s.lower())
+        if any(t in _REGION_NOISE_WORDS for t in toks):
+            continue
+        if toks and len(toks[-1]) == 2:  # trailing state/zone code
+            continue
+        out.append(s)
+    return out
 
 
 # ── pure helpers (unit-tested, no DB/LLM) ────────────────────────────────────
@@ -108,12 +183,17 @@ def aggregate_country_risk(rows: list[dict], now: datetime | None = None, top: i
 
 
 # ── orchestration ────────────────────────────────────────────────────────────
-async def exposure_summary(db) -> dict | None:
-    """Compact CPE summary {pressure, sectors, regions} reusing the exposure route's helpers."""
+async def exposure_summary(db, event_ids: list | None = None) -> dict | None:
+    """Compact CPE summary {pressure, sectors, regions} reusing the exposure route's helpers.
+
+    When ``event_ids`` is given (the events retrieved for a specific question), the
+    exposure is computed over just those events so the readout is question-specific,
+    not the same global top-importance list under every answer. Falls back to the
+    global graph when no ids are supplied."""
     try:
         from backend.api.routes.exposure import _load_graph, _combined_stress, PAID_TIER_EVENT_LIMIT
         from backend.consequence_engine import corroboration, propagation
-        events, edges = await _load_graph(db, PAID_TIER_EVENT_LIMIT)
+        events, edges = await _load_graph(db, PAID_TIER_EVENT_LIMIT, event_ids=event_ids)
         if not events:
             return None
         model = propagation.compute_exposure_model(
@@ -133,8 +213,14 @@ async def country_risk(db, top: int = 20) -> list[dict]:
         .where(NarrativeEvent.is_mapped == True)  # noqa: E712
         .order_by(NarrativeEvent.global_importance_score.desc()).limit(500)
     )).all()
-    return aggregate_country_risk(
-        [{"geography": g, "importance": imp, "last_updated_at": ts} for g, imp, ts in rows], top=top)
+    # Over-fetch, then drop US NWS-zone/county noise ("Pamlico Sound", "S of Currituck
+    # Beach Light NC…") through the canonical filter before capping, so the risk-hotspots
+    # readout shows real countries/regions rather than sub-national marine-zone strings.
+    ranked = aggregate_country_risk(
+        [{"geography": g, "importance": imp, "last_updated_at": ts} for g, imp, ts in rows],
+        top=top * 4)
+    keep = set(clean_regions([r["country"] for r in ranked]))
+    return [r for r in ranked if r["country"] in keep][:top]
 
 
 def _templated_answer(events: list[dict], exposure: dict | None) -> str:
@@ -168,13 +254,35 @@ async def answer_question(db, question: str) -> dict:
     Free/local LLM by default. When no LLM is available (or a paid provider has hit
     its hard cap), degrade to a templated, grounded answer instead of erroring."""
     events = await retrieve_events(db, question)
-    exposure = await exposure_summary(db)
+    # Question-scoped exposure: compute the CPE over the events retrieved for THIS
+    # question, so the pressure/sectors/regions readout differs per question instead
+    # of showing the same global top list under every answer.
+    event_ids = [e["id"] for e in events] or None
+    exposure = await exposure_summary(db, event_ids=event_ids)
+    # The question's events may not carry consequence maps yet (e.g. OSINT/news events
+    # that haven't been mapped) — then the scoped model is blank (pressure 0, no sectors).
+    # Fall back to the global exposure so the readout stays meaningful rather than empty,
+    # while still preferring the question-scoped model whenever it has real signal.
+    if event_ids and (not exposure or (not exposure.get("sectors") and not exposure.get("pressure"))):
+        exposure = await exposure_summary(db)
+    # Strip US zone/county noise from the exposure regions ONCE, at the source, so every
+    # downstream consumer — the LLM context, the templated fallback, and the returned
+    # readout — sees clean regions instead of "albemarle sound, allen ks" leaking through.
+    if exposure and exposure.get("regions"):
+        _keep = set(clean_regions([r["key"] for r in exposure["regions"]]))
+        exposure["regions"] = [r for r in exposure["regions"] if r["key"] in _keep]
+    # Consequence readout the UI shows under the answer (trade/shipping/logistics
+    # exposure), personalised client-side against the user's sectors/region.
+    top_sectors = [s["key"] for s in (exposure.get("sectors") or [])[:6]] if exposure else []
+    top_regions = [r["key"] for r in (exposure.get("regions") or [])][:6] if exposure else []
 
     if not await cost_guard.llm_allowed(db):
         return {
             "answer": _templated_answer(events, exposure),
             "sources": events,
             "pressure": exposure.get("pressure") if exposure else None,
+            "sectors": top_sectors,
+            "regions": top_regions,
             "degraded": True,
         }
 
@@ -195,5 +303,7 @@ async def answer_question(db, question: str) -> dict:
         "answer": answer,
         "sources": events,  # [n] citations in the answer map to this 1-indexed list
         "pressure": exposure.get("pressure") if exposure else None,
+        "sectors": top_sectors,
+        "regions": top_regions,
         "degraded": degraded,
     }

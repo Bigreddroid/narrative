@@ -126,8 +126,12 @@ def _signal(post: dict, category: str, title: str, summary: str,
     }
 
 
-def _heuristic_triage(post: dict, source: str = SOURCE) -> dict | None:
-    """No-LLM fallback: keyword category match → Signal, else drop. Low confidence."""
+def _heuristic_triage(post: dict, source: str = SOURCE) -> tuple[dict | None, str]:
+    """No-LLM fallback: keyword category match → (Signal, reason), else (None, reason).
+
+    Returns a (signal, reason) pair so the caller can log *why* a post was kept or
+    dropped — the flywheel. Reasons: 'heuristic_match' | 'no_keyword'.
+    """
     text = f"{post.get('title', '')} {post.get('selftext', '')}".lower()
     # Word-boundary match so a keyword can't fire mid-word (e.g. 'war' inside
     # 'ransomware', which otherwise mis-tags cyber items as conflict). Keyword
@@ -137,15 +141,19 @@ def _heuristic_triage(post: dict, source: str = SOURCE) -> dict | None:
         None,
     )
     if not category:
-        return None  # no event keyword ⇒ assume noise, don't pollute the feed
+        return None, "no_keyword"  # no event keyword ⇒ assume noise, don't pollute the feed
     location = next((c for c in _COUNTRY_CENTROIDS if c in text), "")
     importance = min(70, 45 + post.get("score", 0) // 200)
-    return _signal(post, category, post["title"], post.get("title", ""),
-                   importance, 0.3, location, source=source)
+    signal = _signal(post, category, post["title"], post.get("title", ""),
+                     importance, 0.3, location, source=source)
+    return signal, "heuristic_match"
 
 
-def _llm_triage(post: dict, source: str = SOURCE) -> dict | None:
-    """LLM-driven triage via the free local model. Returns a Signal or None."""
+def _llm_triage(post: dict, source: str = SOURCE) -> tuple[dict | None, str]:
+    """LLM-driven triage via the free local model. Returns (Signal, reason) or (None, reason).
+
+    Reasons: 'llm_relevant' | 'llm_irrelevant' | 'llm_low_confidence' | 'llm_unparseable'.
+    """
     from backend.services import llm
 
     user = (f"SOURCE: {post.get('subreddit', '')}\n"
@@ -158,18 +166,18 @@ def _llm_triage(post: dict, source: str = SOURCE) -> dict | None:
         # Some local models wrap JSON in prose — salvage the first {...} block.
         m = re.search(r"\{.*\}", res.text or "", re.DOTALL)
         if not m:
-            return None
+            return None, "llm_unparseable"
         data = json.loads(m.group(0))
 
     if not data.get("relevant"):
-        return None
+        return None, "llm_irrelevant"
     confidence = float(data.get("confidence") or 0.0)
     if confidence < _MIN_CONFIDENCE:
-        return None
+        return None, "llm_low_confidence"
     category = str(data.get("category") or "").strip().lower()
     if category not in ALLOWED_CATEGORIES:
         category = _DEFAULT_CATEGORY
-    return _signal(
+    signal = _signal(
         post,
         category,
         str(data.get("title") or post["title"]),
@@ -179,20 +187,42 @@ def _llm_triage(post: dict, source: str = SOURCE) -> dict | None:
         str(data.get("location_name") or "").strip(),
         source=source,
     )
+    return signal, "llm_relevant"
 
 
-def triage(post: dict, allow_llm: bool = True, source: str = SOURCE) -> dict | None:
-    """Raw post → Signal dict, or None to drop. Synchronous (worker offloads via to_thread).
+def _decision(post: dict, source: str, signal: dict | None, reason: str, method: str) -> dict:
+    """Flatten a triage outcome into a loggable decision record (one row → one judged post)."""
+    return {
+        "external_id": str(post.get("external_id") or ""),
+        "source": source,
+        "kept": signal is not None,
+        "reason": reason,
+        "method": method,
+        "category": signal["category"] if signal else None,
+        "confidence": signal["confidence"] if signal else None,
+        "importance": signal["importance"] if signal else None,
+        "title": (signal["title"] if signal else post.get("title")) or None,
+    }
 
-    Uses the LLM when allowed/available; on any LLM failure, or when disallowed, falls
-    back to the keyword heuristic so OSINT ingest never hard-fails. `source` tags the
-    emitted Signal (e.g. 'osint_gdelt', 'osint_reddit') so the UI can badge it.
-    """
+
+def triage_with_decision(post: dict, allow_llm: bool = True,
+                         source: str = SOURCE) -> tuple[dict | None, dict]:
+    """Raw post → (Signal-or-None, decision record). The decision captures *why* — kept
+    or dropped, the reason, and the method — so the rejection funnel becomes learnable
+    data instead of vanishing. Synchronous (the worker offloads via to_thread)."""
     from backend.services import llm
 
     if allow_llm and llm.available():
         try:
-            return _llm_triage(post, source=source)
+            signal, reason = _llm_triage(post, source=source)
+            return signal, _decision(post, source, signal, reason, "llm")
         except Exception as exc:  # noqa: BLE001 — degrade to heuristic, never crash ingest
             logger.warning("OSINT LLM triage failed (%s); using heuristic", exc)
-    return _heuristic_triage(post, source=source)
+    signal, reason = _heuristic_triage(post, source=source)
+    return signal, _decision(post, source, signal, reason, "heuristic")
+
+
+def triage(post: dict, allow_llm: bool = True, source: str = SOURCE) -> dict | None:
+    """Raw post → Signal dict, or None to drop. Backward-compatible thin wrapper over
+    triage_with_decision (drops the decision record). Synchronous."""
+    return triage_with_decision(post, allow_llm, source)[0]

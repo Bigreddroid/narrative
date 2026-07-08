@@ -15,6 +15,7 @@ import { MOCK_EVENTS, MOCK_EDGES } from "../lib/mockData.js";
 import { DEMO_MODE } from "../lib/demoMode.js";
 import { associate, trafficByEvent as buildTrafficByEvent, detectAnomaly } from "../lib/geoAssoc.js";
 import { useSearch } from "../hooks/useSearch.js";
+import { createPortal } from "react-dom";
 import { useFollowing } from "../hooks/useFollowing.js";
 import { getCategoryColor } from "../lib/colors.js";
 import { biasLabel, BIAS_COLORS } from "../lib/bias.js";
@@ -383,6 +384,25 @@ const MAP_REGIONS = [
   { id: "africa",   label: "Africa"   },
 ];
 
+// Lat/lng bounding boxes per region so a region tab FILTERS events to that region
+// (not just flies the camera there). "world" = no bound. Boxes are generous on
+// purpose — a tab should show everything plausibly in-region, not clip the edges.
+const REGION_BOUNDS = {
+  americas: { lat: [-56,  72], lng: [-170, -30] },
+  europe:   { lat: [ 34,  72], lng: [ -25,  45] },
+  asia:     { lat: [  5,  78], lng: [  40, 150] },
+  india:    { lat: [  5,  37], lng: [  66,  92] },
+  africa:   { lat: [-36,  38], lng: [ -20,  52] },
+};
+
+function inRegion(node, region) {
+  const b = REGION_BOUNDS[region];
+  if (!b) return true;  // "world" or unknown ⇒ no geographic filter
+  const { lat, lng } = node;
+  if (lat == null || lng == null) return false;
+  return lat >= b.lat[0] && lat <= b.lat[1] && lng >= b.lng[0] && lng <= b.lng[1];
+}
+
 function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
   const { nodes, edges, loading } = useWorldGraph();
   const [region, setRegion]       = useState("world");
@@ -393,6 +413,24 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
   const { getVessels, vesselCount, live } = useVesselFeed(maritime);
   const { getAircraft, aircraftCount, live: airLive } = useAircraftFeed(air);
   const [exposureLayer, setExposureLayer] = useState(false);
+  const [eventCat, setEventCat] = useState(null); // filter globe by event type (conflict/climate/…)
+  const [catOpen, setCatOpen] = useState(false);
+  const [catPos, setCatPos] = useState({ top: 0, left: 0 });
+
+  // Event-type filter: derive the category list from what's mapped, then filter
+  // nodes (and prune edges to surviving endpoints) so the globe shows one type.
+  const categories = useMemo(
+    () => [...new Set(nodes.map((n) => n.category).filter(Boolean))].sort(),
+    [nodes]);
+  const shownNodes = useMemo(
+    () => nodes.filter((n) =>
+      (!eventCat || (n.category || "").toLowerCase() === eventCat) && inRegion(n, region)),
+    [nodes, eventCat, region]);
+  const shownEdges = useMemo(() => {
+    if (!eventCat && region === "world") return edges;
+    const ids = new Set(shownNodes.map((n) => n.id));
+    return edges.filter((e) => ids.has(e.source ?? e.from) && ids.has(e.target ?? e.to));
+  }, [edges, shownNodes, eventCat, region]);
 
   // Live traffic→event association, refreshed gently; feeds the CPE disruption term.
   const [trafficByEvent, setTrafficByEvent] = useState({});
@@ -491,8 +529,29 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
         {!loading && nodes.length > 0 && (
           <div className="ml-auto flex items-center gap-2 text-[10px] text-ink/35 tracking-wide">
             <span className="w-1.5 h-1.5 rounded-full bg-crimson" style={{ boxShadow: "0 0 4px #C80028" }} />
-            {nodes.length} events mapped
+            {shownNodes.length} events mapped
           </div>
+        )}
+
+        {/* Event-type filter — button only; the menu is portalled to <body> below so
+            the overflow-x scroll container and the globe can't clip or cover it. */}
+        {categories.length > 1 && (
+          <button
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setCatPos({ top: r.bottom + 4, left: r.left });
+              setCatOpen((o) => !o);
+            }}
+            className="flex-shrink-0 ml-3 mr-1 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-widest border flex items-center gap-1.5 whitespace-nowrap"
+            style={{
+              color: eventCat ? "#E8E4DC" : tabInactiveColor,
+              borderColor: eventCat ? "rgba(200,0,40,0.5)" : (isDark ? "rgba(232,228,220,0.12)" : "rgba(26,26,26,0.12)"),
+            }}
+            title="Filter events by type"
+          >
+            {eventCat || "All events"}
+            <span style={{ fontSize: 8, opacity: 0.6 }}>▼</span>
+          </button>
         )}
 
         {/* Maritime layer toggle */}
@@ -587,8 +646,8 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
           </div>
         ) : (
           <WorldMap
-            nodes={nodes}
-            edges={edges}
+            nodes={shownNodes}
+            edges={shownEdges}
             selectedNodeId={selectedEventId}
             onNodeClick={handleNodeClick}
             region={region}
@@ -619,6 +678,32 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
           )}
         </AnimatePresence>
       </div>
+
+      {catOpen && categories.length > 1 && createPortal(
+        <>
+          <div className="fixed inset-0 z-[90]" onClick={() => setCatOpen(false)} />
+          <div
+            className="fixed z-[100] min-w-[150px] max-h-[320px] overflow-y-auto border shadow-2xl"
+            style={{ top: catPos.top, left: catPos.left, backgroundColor: isDark ? "#161616" : "#FFFFFF", borderColor: isDark ? "rgba(232,228,220,0.18)" : "rgba(26,26,26,0.18)" }}
+          >
+            {["all", ...categories].map((c) => {
+              const val = c === "all" ? null : c.toLowerCase();
+              const active = eventCat === val;
+              return (
+                <button
+                  key={c}
+                  onClick={() => { setEventCat(val); setCatOpen(false); }}
+                  className="block w-full text-left px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors hover:bg-crimson/15"
+                  style={{ color: active ? "#C80028" : (isDark ? "#E8E4DC" : "#1A1A1A") }}
+                >
+                  {c === "all" ? "All events" : c}
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -646,6 +731,7 @@ export default function WorldView() {
   const handleClose   = useCallback(() => setSelectedEventId(null), []);
   const handleTabChange = useCallback((tab) => {
     if (tab === "following") { navigate("/following"); return; }
+    if (tab === "analyst") { navigate("/analyst"); return; }
     setActiveTab(tab);
     setSelectedEventId(null);
   }, [navigate]);

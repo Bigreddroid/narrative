@@ -169,7 +169,7 @@ ok("gdelt-doc seendate → epoch seconds",
    isinstance(gd[0]["created_utc"], float) and gd[0]["created_utc"] > 1_700_000_000)
 ok("gdelt-doc empty payload ⇒ []", gdelt_osint.parse_gdelt_doc({}) == [])
 # candidate flows through the SAME triage pipeline, tagged with the gdelt source
-gd_sig = osint_agent._heuristic_triage(gd[0], source=gdelt_osint.SOURCE)
+gd_sig = osint_agent._heuristic_triage(gd[0], source=gdelt_osint.SOURCE)[0]
 ok("gdelt-doc candidate triages to disaster + osint_gdelt source",
    gd_sig and gd_sig["category"] == "disaster" and gd_sig["source"] == "osint_gdelt")
 ok("gdelt-doc triaged signal synthesizes", len(S.synthesize(gd_sig)["direct_impact"]) >= 1)
@@ -321,7 +321,7 @@ ok("reddit url falls back to permalink", rp[0]["url"].endswith("/r/worldnews/com
 ok("reddit empty listing ⇒ []", reddit_osint.parse_reddit({}, "x") == [])
 
 # ── OSINT: triage agent heuristic + geocode (pure, no live LLM) ──────────────
-quake_sig = osint_agent._heuristic_triage(rp[0])
+quake_sig = osint_agent._heuristic_triage(rp[0])[0]
 ok("heuristic categorizes quake ⇒ disaster", quake_sig and quake_sig["category"] == "disaster")
 ok("heuristic geocodes Iran via centroid", quake_sig and quake_sig["lat"] is not None)
 ok("heuristic sets source + confidence", quake_sig["source"] == "osint_reddit" and quake_sig["confidence"] == 0.3)
@@ -329,16 +329,31 @@ ok("heuristic Signal synthesizes (category in SECTOR_MAP)",
    len(S.synthesize(quake_sig)["direct_impact"]) >= 1)
 
 noise = osint_agent._heuristic_triage({"external_id": "reddit-z", "title": "my opinion on politics",
-                                       "selftext": "", "score": 5, "created_utc": 1718000000})
+                                       "selftext": "", "score": 5, "created_utc": 1718000000})[0]
 ok("heuristic drops keyword-less noise", noise is None)
 
 war_sig = osint_agent._heuristic_triage({"external_id": "reddit-w", "title": "Missile strike on Kyiv, Ukraine",
-                                         "selftext": "", "score": 9000, "created_utc": 1718000000})
+                                         "selftext": "", "score": 9000, "created_utc": 1718000000})[0]
 ok("heuristic conflict ⇒ category conflict", war_sig["category"] == "conflict")
 ok("heuristic constrains category to SECTOR_MAP", war_sig["category"] in osint_agent.ALLOWED_CATEGORIES)
 
 ok("geocode known country ⇒ centroid", osint_agent.geocode("Ukraine")[0] is not None)
 ok("geocode empty ⇒ (None, None)", osint_agent.geocode("") == (None, None))
+
+# ── OSINT: triage-decision flywheel — every judgement is logged with a reason ──
+# (allow_llm=False forces the heuristic path: pure, no LLM/network.)
+kept_sig, kept_dec = osint_agent.triage_with_decision(
+    {"external_id": "reddit-w2", "title": "Missile strike on Kyiv, Ukraine", "selftext": "",
+     "score": 9000, "created_utc": 1718000000}, allow_llm=False, source="osint_gdelt")
+ok("kept decision flags kept=True + reason", kept_sig and kept_dec["kept"] and kept_dec["reason"] == "heuristic_match")
+ok("kept decision carries source/method/category",
+   kept_dec["source"] == "osint_gdelt" and kept_dec["method"] == "heuristic" and kept_dec["category"] == "conflict")
+drop_sig, drop_dec = osint_agent.triage_with_decision(
+    {"external_id": "reddit-z2", "title": "my opinion on politics", "selftext": "",
+     "score": 5, "created_utc": 1718000000}, allow_llm=False)
+ok("dropped decision flags kept=False + no_keyword reason",
+   drop_sig is None and not drop_dec["kept"] and drop_dec["reason"] == "no_keyword")
+ok("dropped decision still records external_id + title", drop_dec["external_id"] == "reddit-z2" and drop_dec["title"])
 
 # ── OSINT: Reddit OAuth wiring + keyless fallback (pure + mocked client) ──────
 import asyncio as _asyncio
@@ -435,7 +450,7 @@ try:
         ' "summary": "Missiles hit the capital.", "location_name": "Ukraine",'
         ' "importance": 82, "confidence": 0.9}')
     _llm_sig = osint_agent._llm_triage({"external_id": "reddit-l1", "title": "raw", "selftext": "",
-                                        "subreddit": "worldnews", "created_utc": 1718000000})
+                                        "subreddit": "worldnews", "created_utc": 1718000000})[0]
     ok("llm triage maps category", _llm_sig and _llm_sig["category"] == "conflict")
     ok("llm triage maps importance + escalating status",
        _llm_sig["importance"] == 82 and _llm_sig["status"] == "escalating")
@@ -445,11 +460,11 @@ try:
     _llm.complete = lambda system, user, max_tokens, json_mode=False: _LLMRes(
         '{"relevant": true, "category": "conflict", "importance": 50, "confidence": 0.2}')
     ok("llm triage drops below confidence floor (0.4)", osint_agent._llm_triage(
-        {"external_id": "reddit-l2", "title": "rumor", "selftext": "", "subreddit": "x"}) is None)
+        {"external_id": "reddit-l2", "title": "rumor", "selftext": "", "subreddit": "x"})[0] is None)
 
     _llm.complete = lambda system, user, max_tokens, json_mode=False: _LLMRes('{"relevant": false}')
     ok("llm triage drops not-relevant", osint_agent._llm_triage(
-        {"external_id": "reddit-l3", "title": "opinion", "selftext": "", "subreddit": "x"}) is None)
+        {"external_id": "reddit-l3", "title": "opinion", "selftext": "", "subreddit": "x"})[0] is None)
 finally:
     _llm.complete = _saved_complete
 
@@ -489,7 +504,7 @@ ok("threatintel attackdate → epoch seconds",
    isinstance(ti[0]["created_utc"], float) and ti[0]["created_utc"] > 1_700_000_000)
 ok("threatintel empty payload ⇒ []", osint_threatintel.parse_threatintel(None) == [])
 # candidate flows through the SAME triage pipeline, tagged with the threatintel source
-ti_sig = osint_agent._heuristic_triage(ti[0], source=osint_threatintel.SOURCE)
+ti_sig = osint_agent._heuristic_triage(ti[0], source=osint_threatintel.SOURCE)[0]
 ok("threatintel candidate triages to cyber + osint_threatintel source",
    ti_sig and ti_sig["category"] == "cyber" and ti_sig["source"] == "osint_threatintel")
 ok("threatintel triaged signal synthesizes", len(S.synthesize(ti_sig)["direct_impact"]) >= 1)
@@ -545,7 +560,7 @@ ok("rss & atom date parsers agree on the same instant",
    rss_osint._parse_date("Wed, 10 Jun 2026 14:30:00 GMT") == rss_osint._parse_date("2026-06-10T14:30:00Z"))
 ok("rss garbage XML ⇒ []", rss_osint.parse_rss("<not xml", "x") == [] and rss_osint.parse_rss("", "x") == [])
 # RSS candidate flows through the SAME triage pipeline as the other OSINT sources
-rss_sig = osint_agent._heuristic_triage(rss[0], source=rss_osint.SOURCE)
+rss_sig = osint_agent._heuristic_triage(rss[0], source=rss_osint.SOURCE)[0]
 ok("rss candidate triages to conflict + osint_rss source",
    rss_sig and rss_sig["category"] == "conflict" and rss_sig["source"] == "osint_rss")
 ok("rss triaged signal synthesizes", len(S.synthesize(rss_sig)["direct_impact"]) >= 1)

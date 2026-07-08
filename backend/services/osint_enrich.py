@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -268,6 +269,69 @@ PROVIDERS: list[Provider] = [
 ENRICHABLE_KINDS = {k for p in PROVIDERS for k in p.kinds}
 
 
+# ── entity → consequence projection ─────────────────────────────────────────────
+# Closes the loop: an enriched entity shouldn't dead-end at a fact list. Each
+# investigatable kind maps to a consequence category, and the entity + its live facts
+# are run through the SAME deterministic CPE (backend/feeds/synthesize) that maps real
+# events — so the analyst sees "what could this entity cause" (sector impacts, severity,
+# escalation prediction), explainable and grounded in the actual enrichment.
+_KIND_CATEGORY = {"cve": "cyber", "hash": "cyber", "ip": "cyber",
+                  "domain": "cyber", "crypto": "sanction"}
+_BASE_IMPORTANCE = {"cve": 55, "hash": 60, "ip": 45, "domain": 45, "crypto": 50}
+
+
+def _cvss_importance(facts: list[dict]) -> int | None:
+    """A CVE's CVSS base score (0–10) → importance (0–100), grounding severity in the
+    real vulnerability metric rather than a flat default."""
+    for f in facts:
+        if str(f.get("label", "")).startswith("CVSS"):
+            m = re.match(r"\s*([\d.]+)", str(f.get("value", "")))
+            if m:
+                try:
+                    return round(min(10.0, float(m.group(1))) * 10)
+                except ValueError:
+                    pass
+    return None
+
+
+def project_consequence(value: str, kind: str, facts: list[dict]) -> dict | None:
+    """Entity + its live facts → a deterministic consequence projection (sector impacts +
+    escalation prediction), via the same engine that maps events. Returns None for kinds
+    without a defensible mapping, or when there are no facts to ground the projection."""
+    category = _KIND_CATEGORY.get(kind)
+    if not category or not facts:
+        return None
+    from backend.feeds import synthesize as S
+
+    importance = _BASE_IMPORTANCE.get(kind, 45)
+    if kind == "cve":
+        cvss = _cvss_importance(facts)
+        if cvss is not None:
+            importance = cvss
+    labels = {str(f.get("label", "")).lower() for f in facts}
+    blob = " ".join(str(f.get("value", "")).lower() for f in facts)
+    if kind == "hash" and "malware family" in labels:
+        importance = min(100, importance + 15)        # a named family ⇒ live threat
+    if kind == "ip" and ("malicious" in blob or "flags" in labels):
+        importance = min(100, importance + 20)        # flagged proxy/hosting/known-bad
+
+    signal = {
+        "category": category,
+        "importance": importance,
+        "title": f"{kind.upper()} {value}",
+        "summary": f"OSINT-enriched {kind} {value}: " + "; ".join(
+            f"{f.get('label')}: {f.get('value')}" for f in facts[:3]),
+        "geography": [],
+        "source": "osint_enrich",
+    }
+    return {
+        "category": category,
+        "importance": importance,
+        "severity": S.severity_from(importance),
+        "map": S.synthesize(signal),
+    }
+
+
 def live_host_kinds() -> dict[str, set[str]]:
     """Single source of truth for which catalog hosts have a live enricher → used by
     osint_catalog to classify a tool as 'live'."""
@@ -306,7 +370,8 @@ async def enrich(value: str, kind: str) -> dict:
     when the kind isn't enrichable or every provider failed."""
     value = (value or "").strip()
     if not value or kind not in ENRICHABLE_KINDS:
-        return {"value": value, "kind": kind, "facts": [], "sources": [], "limited": False}
+        return {"value": value, "kind": kind, "facts": [], "sources": [],
+                "consequence": None, "limited": False}
 
     cached = await _cache_get(kind, value)
     if cached is not None:
@@ -330,7 +395,8 @@ async def enrich(value: str, kind: str) -> dict:
         facts = []
 
     result = {"value": value, "kind": kind, "facts": facts,
-              "sources": sorted({f["source"] for f in facts}), "limited": False}
+              "sources": sorted({f["source"] for f in facts}),
+              "consequence": project_consequence(value, kind, facts), "limited": False}
     if facts:
         await _cache_set(kind, value, result)
     return result

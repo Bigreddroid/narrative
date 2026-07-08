@@ -29,7 +29,7 @@ const CHAIN_EXAMPLES = [
 const TIERS_PREVIEW = [
   {
     name: "Free",
-    price: "$0",
+    price: "Contact us",
     period: "",
     features: [
       "Top 10 events per day",
@@ -43,8 +43,8 @@ const TIERS_PREVIEW = [
   },
   {
     name: "Pro",
-    price: "$12",
-    period: "/mo",
+    price: "Contact us",
+    period: "",
     features: [
       "Unlimited intelligence feed",
       "Full consequence chain explorer",
@@ -57,8 +57,8 @@ const TIERS_PREVIEW = [
   },
   {
     name: "Intelligence",
-    price: "$29",
-    period: "/mo",
+    price: "Contact us",
+    period: "",
     features: [
       "Everything in Pro",
       "Real-time push alerts",
@@ -72,7 +72,7 @@ const TIERS_PREVIEW = [
   },
   {
     name: "Enterprise",
-    price: "Custom",
+    price: "Contact us",
     period: "",
     features: [
       "Everything in Intelligence",
@@ -185,7 +185,7 @@ export default function Landing() {
             Pricing
           </button>
           <button
-            onClick={() => navigate(isLoggedIn ? "/osint" : "/auth")}
+            onClick={() => navigate(isLoggedIn ? "/analyst" : "/auth")}
             className="text-[11px] font-bold uppercase tracking-widest border border-ink/20 px-5 py-2 hover:border-crimson hover:text-crimson transition-colors"
           >
             {isLoggedIn ? "Open App →" : "Sign In"}
@@ -219,7 +219,7 @@ export default function Landing() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
-              onClick={() => navigate(isLoggedIn ? "/osint" : "/auth")}
+              onClick={() => navigate(isLoggedIn ? "/analyst" : "/auth")}
               className="px-8 py-3.5 bg-ink text-paper text-[12px] font-bold uppercase tracking-widest hover:bg-crimson transition-colors"
             >
               Start Investigating →

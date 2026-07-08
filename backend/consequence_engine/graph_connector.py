@@ -44,8 +44,13 @@ def compute_connection_weight(
     geo_score, shared_geo = graph_scoring.weighted_overlap(event_a.geographic_relevance, event_b.geographic_relevance, idf["geo"])
     keyword_score, _ = graph_scoring.weighted_overlap(event_a.follow_keywords, event_b.follow_keywords, idf["keyword"])
 
-    weight = graph_scoring.blended_weight(sector_score, geo_score, keyword_score)
-    if weight < settings.graph_connection_threshold:
+    tag_blend = graph_scoring.blended_weight(sector_score, geo_score, keyword_score)
+    # Semantic gate: shared tags only count when the two events are actually about the
+    # same situation (embedding cosine ≥ SEMANTIC_FLOOR). Drops coincidental tag matches
+    # (e.g. two unrelated Energy+US events) instead of asserting a causal edge from tags.
+    cos = graph_scoring.cosine(event_a.embedding, event_b.embedding)
+    weight = graph_scoring.semantic_adjust(tag_blend, cos)
+    if weight is None or weight < settings.graph_connection_threshold:
         return None
 
     connection_type = "shared_geography" if geo_score > sector_score else "shared_sector"
@@ -68,6 +73,7 @@ def compute_connection_weight(
             "sector": round(sector_score, 3),
             "geo": round(geo_score, 3),
             "keyword": round(keyword_score, 3),
+            "cosine": round(cos, 3) if cos is not None else None,
             "blend": round(weight, 3),
         },
     }

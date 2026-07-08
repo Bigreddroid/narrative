@@ -46,6 +46,20 @@ ok("blend weights sum to 1", abs(sum(G.DIM_WEIGHTS.values()) - 1.0) < 1e-9)
 ok("blended_weight math", abs(G.blended_weight(1.0, 0.0, 0.0) - 0.5) < 1e-9)
 ok("sector outweighs keyword", G.blended_weight(1.0, 0, 0) > G.blended_weight(0, 0, 1.0))
 
+# cosine — identical vectors ⇒ 1, orthogonal ⇒ 0, missing ⇒ None.
+ok("cosine identical ⇒ 1.0", abs(G.cosine([1.0, 0.0], [1.0, 0.0]) - 1.0) < 1e-9)
+ok("cosine orthogonal ⇒ 0.0", abs(G.cosine([1.0, 0.0], [0.0, 1.0])) < 1e-9)
+ok("cosine missing embedding ⇒ None", G.cosine(None, [1.0]) is None and G.cosine([1.0], []) is None)
+ok("cosine zero vector ⇒ 0.0", G.cosine([0.0, 0.0], [1.0, 1.0]) == 0.0)
+
+# semantic_adjust — the gate that kills coincidental tag links.
+ok("no embedding ⇒ tag weight unchanged (degrade safe)", G.semantic_adjust(0.8, None) == 0.8)
+ok("below floor ⇒ dropped (None)", G.semantic_adjust(0.8, G.SEMANTIC_FLOOR - 0.01) is None)
+ok("at floor ⇒ half tag weight", abs(G.semantic_adjust(0.8, G.SEMANTIC_FLOOR) - 0.4) < 1e-9)
+ok("cos=1 ⇒ full tag weight", abs(G.semantic_adjust(0.8, 1.0) - 0.8) < 1e-9)
+ok("closer events outrank tag-only near-misses",
+   G.semantic_adjust(0.5, 0.9) > G.semantic_adjust(0.5, 0.4))
+
 # causal_direction — earlier event is the cause.
 ok("a earlier ⇒ a_to_b", G.causal_direction(1, 2) == "a_to_b")
 ok("b earlier ⇒ b_to_a", G.causal_direction(2, 1) == "b_to_a")

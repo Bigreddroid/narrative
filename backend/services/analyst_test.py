@@ -9,7 +9,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from datetime import datetime, timezone, timedelta
 
-from backend.services.analyst import _format_context, aggregate_country_risk
+from backend.services.analyst import _format_context, aggregate_country_risk, clean_regions
 
 passed = failed = 0
 
@@ -58,6 +58,18 @@ ok("multi-country event counts for both", by["Taiwan"]["events"] == 1 and by["Ch
 ok("empty geography ignored", all(r["country"] for r in risk))
 ok("zero-importance country has 0 risk", by["Peru"]["risk"] == 0.0)
 ok("top= caps results", len(aggregate_country_risk(rows, now=now, top=1)) == 1)
+
+# ── clean_regions ────────────────────────────────────────────────────────────
+cleaned = clean_regions(
+    ["India", "Strait of Hormuz", "Persian Gulf", "allen ks", "albemarle sound",
+     "Pamlico River", "Los Angeles County", "Tokyo, Japan"])
+ok("keeps countries/chokepoints", cleaned == ["India", "Strait of Hormuz", "Persian Gulf"])
+ok("drops NWS-zone code (2-letter tail)", "allen ks" not in cleaned)
+ok("drops sub-national water/land noise",
+   all(x not in cleaned for x in ("albemarle sound", "Pamlico River")))
+ok("drops county names", "Los Angeles County" not in cleaned)
+ok("drops 'City, Country' pairs (comma)", "Tokyo, Japan" not in cleaned)
+ok("handles empty/None", clean_regions([]) == [] and clean_regions(None) == [])
 
 print(f"\nanalyst: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

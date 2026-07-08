@@ -4,6 +4,11 @@ Property test for the server-side CPE. Run from repo root:
 Mirrors the JS harness (web/src/lib/propagation.test.mjs) to confirm parity.
 """
 
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
+
 from datetime import datetime, timezone, timedelta
 
 from backend.consequence_engine import propagation as P

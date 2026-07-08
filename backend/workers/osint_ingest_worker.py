@@ -16,22 +16,45 @@ import time
 from backend.config import get_settings
 from backend.database import AsyncSessionLocal
 from backend.feeds import gdelt_osint, osint_disinfo, osint_threatintel, reddit_osint, rss_osint
-from backend.services import cost_guard, osint_agent
+from backend.models.osint_triage_decision import OsintTriageDecision
+from backend.services import cost_guard, osint_agent, runtime_config
 from backend.workers.hazard_ingest_worker import _upsert
 
 logger = logging.getLogger(__name__)
 
 
+async def _log_decisions(decisions: list[dict]) -> None:
+    """Persist triage decisions (the flywheel) in their OWN session, so a logging
+    failure can never roll back the events already committed by the run. Best-effort:
+    decision telemetry is valuable but must never block ingest."""
+    if not decisions:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            db.add_all([OsintTriageDecision(**d) for d in decisions])
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 — telemetry only; never sink the run
+        logger.warning("OSINT decision logging failed (%d rows): %s", len(decisions), exc)
+
+
 def _osint_source():
     """(fetch_fn, source_tag) for the configured OSINT source. Default = keyless GDELT;
     Reddit stays available behind OSINT_SOURCE=reddit (uses OAuth when creds are set)."""
-    if (get_settings().osint_source or "gdelt").lower() == "reddit":
+    if (runtime_config.osint_source() or "gdelt").lower() == "reddit":
         return reddit_osint.fetch_reddit_osint, reddit_osint.SOURCE
     return gdelt_osint.fetch_gdelt_osint, gdelt_osint.SOURCE
 
 
 async def run_osint_ingest_worker() -> dict:
     start = time.perf_counter()
+    # Pick up any live admin overrides (osint_source / osint_rss_enabled) before we
+    # select sources. Best-effort: if the override table is unreachable we run on the
+    # env defaults, exactly as before this layer existed.
+    try:
+        async with AsyncSessionLocal() as db:
+            await runtime_config.load(db)
+    except Exception as exc:  # noqa: BLE001 — overrides are optional; env is the fallback
+        logger.debug("runtime_config load skipped: %s", exc)
     fetch, source = _osint_source()
     # Source batches: the configured news source (GDELT/Reddit) + the additive,
     # keyless cyber threat-intel feed + the OSINT v2 multi-source RSS/Atom portfolio.
@@ -41,9 +64,10 @@ async def run_osint_ingest_worker() -> dict:
         (await fetch(), source),
         (await osint_threatintel.fetch_threatintel(), osint_threatintel.SOURCE),
     ]
-    if (get_settings().osint_rss_enabled):
+    if runtime_config.osint_rss_enabled():
         batches.append((await rss_osint.fetch_rss_osint(), rss_osint.SOURCE))
     total_posts = created = ingested = 0
+    decisions: list[dict] = []  # one record per judged post — the triage flywheel
     async with AsyncSessionLocal() as db:
         # One budget check per run: respects the paid hard cap AND that Ollama is up.
         allow_llm = await cost_guard.llm_allowed(db)
@@ -52,10 +76,15 @@ async def run_osint_ingest_worker() -> dict:
             for post in posts:
                 try:
                     # triage is synchronous (LLM + geocode HTTP) — offload off the loop.
-                    signal = await asyncio.to_thread(osint_agent.triage, post, allow_llm, src)
+                    # triage_with_decision returns (signal, decision): the decision is
+                    # logged whether the post is kept or dropped, so the rejection funnel
+                    # becomes learnable data instead of vanishing.
+                    signal, decision = await asyncio.to_thread(
+                        osint_agent.triage_with_decision, post, allow_llm, src)
                 except Exception as exc:  # noqa: BLE001 — one bad post must not sink the run
                     logger.warning("OSINT triage failed (%s): %s", post.get("external_id"), exc)
                     continue
+                decisions.append(decision)
                 if not signal:
                     continue
                 ingested += 1
@@ -66,21 +95,32 @@ async def run_osint_ingest_worker() -> dict:
                     logger.error("OSINT upsert failed: %s", exc)
 
         # Curated disinfo feed: editorial fact-check sources are pre-vetted, so they
-        # skip relevance triage and upsert directly as 'disinfo' Signals.
+        # skip relevance triage and upsert directly as 'disinfo' Signals. Logged as
+        # curated keeps so the flywheel funnel stays complete.
         disinfo_signals = await osint_disinfo.fetch_disinfo()
         total_posts += len(disinfo_signals)
         for signal in disinfo_signals:
             ingested += 1
+            decisions.append({
+                "external_id": str(signal.get("external_id") or ""),
+                "source": signal.get("source") or osint_disinfo.SOURCE,
+                "kept": True, "reason": "curated_bypass", "method": "curated",
+                "category": signal.get("category"), "confidence": signal.get("confidence"),
+                "importance": signal.get("importance"), "title": signal.get("title"),
+            })
             try:
                 if await _upsert(signal, db, require_geo=False):
                     created += 1
             except Exception as exc:  # noqa: BLE001
                 logger.error("OSINT disinfo upsert failed: %s", exc)
         await db.commit()
-    logger.info("OSINT ingest [%s + threatintel + disinfo]: %d posts, %d triaged-in, %d new (llm=%s, %.1fs)",
-                source, total_posts, ingested, created, allow_llm, time.perf_counter() - start)
+    # Decisions persist in their own session AFTER events commit, so telemetry can't
+    # roll back ingest.
+    await _log_decisions(decisions)
+    logger.info("OSINT ingest [%s + threatintel + disinfo]: %d posts, %d triaged-in, %d new, %d logged (llm=%s, %.1fs)",
+                source, total_posts, ingested, created, len(decisions), allow_llm, time.perf_counter() - start)
     return {"posts": total_posts, "ingested": ingested, "created": created,
-            "llm": allow_llm, "source": source}
+            "llm": allow_llm, "source": source, "logged": len(decisions)}
 
 
 if __name__ == "__main__":
