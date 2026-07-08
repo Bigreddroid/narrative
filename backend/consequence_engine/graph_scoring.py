@@ -20,6 +20,13 @@ DIM_WEIGHTS = {"sector": 0.5, "geo": 0.3, "keyword": 0.2}
 # edges purely from shared tags — the core "linking is inaccurate" problem.
 SEMANTIC_FLOOR = 0.30
 
+# When an event has no embedding we can't verify the link semantically, so we fall
+# back to tag overlap alone. Only assert such a link when the tag overlap is strong on
+# its own — a single shared broad sector (a low tag_blend) with no semantic check is
+# exactly the coincidental edge we want to avoid. Strong overlaps (near-dup sectors +
+# geography) still link. Tuned so a full-strength tag_blend stays unchanged.
+TAG_ONLY_FLOOR = 0.35
+
 
 def build_idf(token_lists: list[list[str]]) -> dict[str, float]:
     """Smoothed IDF over a corpus of per-event token lists for one dimension."""
@@ -84,7 +91,7 @@ def semantic_adjust(tag_blend: float, cos: float | None) -> float | None:
       above the floor so related events aren't over-pruned.
     """
     if cos is None:
-        return tag_blend
+        return tag_blend if tag_blend >= TAG_ONLY_FLOOR else None
     if cos < SEMANTIC_FLOOR:
         return None
     factor = (cos - SEMANTIC_FLOOR) / (1.0 - SEMANTIC_FLOOR)  # 0 at floor → 1 at cos=1
