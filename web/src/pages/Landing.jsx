@@ -29,7 +29,7 @@ const CHAIN_EXAMPLES = [
 const TIERS_PREVIEW = [
   {
     name: "Free",
-    price: "$0",
+    price: "Contact us",
     period: "",
     features: [
       "Top 10 events per day",
@@ -43,8 +43,8 @@ const TIERS_PREVIEW = [
   },
   {
     name: "Pro",
-    price: "$12",
-    period: "/mo",
+    price: "Contact us",
+    period: "",
     features: [
       "Unlimited intelligence feed",
       "Full consequence chain explorer",
@@ -57,8 +57,8 @@ const TIERS_PREVIEW = [
   },
   {
     name: "Intelligence",
-    price: "$29",
-    period: "/mo",
+    price: "Contact us",
+    period: "",
     features: [
       "Everything in Pro",
       "Real-time push alerts",
@@ -72,7 +72,7 @@ const TIERS_PREVIEW = [
   },
   {
     name: "Enterprise",
-    price: "Custom",
+    price: "Contact us",
     period: "",
     features: [
       "Everything in Intelligence",
