@@ -17,7 +17,7 @@ from backend.config import get_settings
 from backend.database import AsyncSessionLocal
 from backend.feeds import gdelt_osint, osint_disinfo, osint_threatintel, reddit_osint, rss_osint
 from backend.models.osint_triage_decision import OsintTriageDecision
-from backend.services import cost_guard, osint_agent
+from backend.services import cost_guard, osint_agent, runtime_config
 from backend.workers.hazard_ingest_worker import _upsert
 
 logger = logging.getLogger(__name__)
@@ -40,13 +40,21 @@ async def _log_decisions(decisions: list[dict]) -> None:
 def _osint_source():
     """(fetch_fn, source_tag) for the configured OSINT source. Default = keyless GDELT;
     Reddit stays available behind OSINT_SOURCE=reddit (uses OAuth when creds are set)."""
-    if (get_settings().osint_source or "gdelt").lower() == "reddit":
+    if (runtime_config.osint_source() or "gdelt").lower() == "reddit":
         return reddit_osint.fetch_reddit_osint, reddit_osint.SOURCE
     return gdelt_osint.fetch_gdelt_osint, gdelt_osint.SOURCE
 
 
 async def run_osint_ingest_worker() -> dict:
     start = time.perf_counter()
+    # Pick up any live admin overrides (osint_source / osint_rss_enabled) before we
+    # select sources. Best-effort: if the override table is unreachable we run on the
+    # env defaults, exactly as before this layer existed.
+    try:
+        async with AsyncSessionLocal() as db:
+            await runtime_config.load(db)
+    except Exception as exc:  # noqa: BLE001 — overrides are optional; env is the fallback
+        logger.debug("runtime_config load skipped: %s", exc)
     fetch, source = _osint_source()
     # Source batches: the configured news source (GDELT/Reddit) + the additive,
     # keyless cyber threat-intel feed + the OSINT v2 multi-source RSS/Atom portfolio.
@@ -56,7 +64,7 @@ async def run_osint_ingest_worker() -> dict:
         (await fetch(), source),
         (await osint_threatintel.fetch_threatintel(), osint_threatintel.SOURCE),
     ]
-    if (get_settings().osint_rss_enabled):
+    if runtime_config.osint_rss_enabled():
         batches.append((await rss_osint.fetch_rss_osint(), rss_osint.SOURCE))
     total_posts = created = ingested = 0
     decisions: list[dict] = []  # one record per judged post — the triage flywheel

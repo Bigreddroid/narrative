@@ -12,12 +12,14 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
 from backend.api.dependencies import AdminDep, DbDep
+from backend.config import get_settings
 from backend.models.admin_log import AdminLog
 from backend.models.narrative_event import NarrativeEvent
 from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.pipeline_metrics import PipelineMetric
 from backend.models.source import Source
 from backend.models.user import User
+from backend.services import llm, runtime_config
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -322,4 +324,44 @@ async def get_user_stats(db: DbDep, admin: AdminDep) -> dict:
             "week": row.new_week or 0,
             "month": row.new_month or 0,
         },
+    }
+
+
+# ─── RUNTIME CONFIG (AI engine + OSINT source toggles) ───────────────────────
+
+@router.get("/config")
+async def get_config(db: DbDep, admin: AdminDep) -> dict:
+    """Effective runtime config the Settings panel renders. Refreshes this process's
+    cache from the DB first so the panel reflects a change made by another instance."""
+    await runtime_config.load(db)
+    return {
+        "config": runtime_config.snapshot(),
+        # active_provider reflects the *effective* provider — paid 'anthropic' shows as
+        # 'ollama' here when paid APIs are disabled, so the panel can't imply spend.
+        "active_llm_provider": llm.active_provider(),
+        "paid_apis_enabled": get_settings().paid_apis_enabled,
+    }
+
+
+class ConfigUpdate(BaseModel):
+    key: str
+    value: object | None = None  # null reverts the key to its env default
+
+
+@router.patch("/config")
+async def update_config(body: ConfigUpdate, db: DbDep, admin: AdminDep) -> dict:
+    try:
+        stored = await runtime_config.upsert(db, body.key, body.value, updated_by=admin.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await _log_action(admin.id, "set_config", "config", None, f"{body.key}={stored}", db)
+    await db.commit()
+    # Resync this process's cache from the committed state so the change takes effect
+    # immediately for on-demand paths (e.g. the analyst chat) in this instance.
+    await runtime_config.load(db)
+    return {
+        "updated": True,
+        "config": runtime_config.snapshot(),
+        "active_llm_provider": llm.active_provider(),
     }

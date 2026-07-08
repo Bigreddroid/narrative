@@ -12,6 +12,7 @@ from backend.models.segment_feed_cache import SegmentFeedCache
 from backend.models.exposure_snapshot import ExposureSnapshot
 from backend.models.market_snapshot import MarketSnapshot
 from backend.models.osint_triage_decision import OsintTriageDecision
+from backend.models.app_config import AppConfig
 
 __all__ = [
     "Source",
@@ -30,4 +31,5 @@ __all__ = [
     "ExposureSnapshot",
     "MarketSnapshot",
     "OsintTriageDecision",
+    "AppConfig",
 ]
