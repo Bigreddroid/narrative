@@ -294,7 +294,18 @@ export default function WorldMap({
     rebuildArcs();
 
     // ── Render loop ──
-    const render = () => {
+    // Cap the auto-spin/idle render to ~30fps: reprojecting all country geometry +
+    // every dot through geoPath each frame is the dominant cost, and 30fps is visually
+    // indistinguishable for a slow spin while roughly halving CPU on weaker machines
+    // (and when hundreds of events are on screen). Dragging bypasses the cap so
+    // interaction stays at full framerate.
+    let lastFrameT = 0;
+    const render = (t) => {
+      if (!draggingRef.current && t && t - lastFrameT < 33) {
+        rafRef.current = requestAnimationFrame(render);
+        return;
+      }
+      lastFrameT = t || 0;
       // Ease toward targets + auto-spin
       if (!draggingRef.current) {
         const r = rotateRef.current, tr = targetRotateRef.current;
