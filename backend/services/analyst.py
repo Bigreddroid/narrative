@@ -213,8 +213,14 @@ async def country_risk(db, top: int = 20) -> list[dict]:
         .where(NarrativeEvent.is_mapped == True)  # noqa: E712
         .order_by(NarrativeEvent.global_importance_score.desc()).limit(500)
     )).all()
-    return aggregate_country_risk(
-        [{"geography": g, "importance": imp, "last_updated_at": ts} for g, imp, ts in rows], top=top)
+    # Over-fetch, then drop US NWS-zone/county noise ("Pamlico Sound", "S of Currituck
+    # Beach Light NC…") through the canonical filter before capping, so the risk-hotspots
+    # readout shows real countries/regions rather than sub-national marine-zone strings.
+    ranked = aggregate_country_risk(
+        [{"geography": g, "importance": imp, "last_updated_at": ts} for g, imp, ts in rows],
+        top=top * 4)
+    keep = set(clean_regions([r["country"] for r in ranked]))
+    return [r for r in ranked if r["country"] in keep][:top]
 
 
 def _templated_answer(events: list[dict], exposure: dict | None) -> str:
