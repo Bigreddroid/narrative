@@ -384,6 +384,25 @@ const MAP_REGIONS = [
   { id: "africa",   label: "Africa"   },
 ];
 
+// Lat/lng bounding boxes per region so a region tab FILTERS events to that region
+// (not just flies the camera there). "world" = no bound. Boxes are generous on
+// purpose — a tab should show everything plausibly in-region, not clip the edges.
+const REGION_BOUNDS = {
+  americas: { lat: [-56,  72], lng: [-170, -30] },
+  europe:   { lat: [ 34,  72], lng: [ -25,  45] },
+  asia:     { lat: [  5,  78], lng: [  40, 150] },
+  india:    { lat: [  5,  37], lng: [  66,  92] },
+  africa:   { lat: [-36,  38], lng: [ -20,  52] },
+};
+
+function inRegion(node, region) {
+  const b = REGION_BOUNDS[region];
+  if (!b) return true;  // "world" or unknown ⇒ no geographic filter
+  const { lat, lng } = node;
+  if (lat == null || lng == null) return false;
+  return lat >= b.lat[0] && lat <= b.lat[1] && lng >= b.lng[0] && lng <= b.lng[1];
+}
+
 function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
   const { nodes, edges, loading } = useWorldGraph();
   const [region, setRegion]       = useState("world");
@@ -404,13 +423,14 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
     () => [...new Set(nodes.map((n) => n.category).filter(Boolean))].sort(),
     [nodes]);
   const shownNodes = useMemo(
-    () => (eventCat ? nodes.filter((n) => (n.category || "").toLowerCase() === eventCat) : nodes),
-    [nodes, eventCat]);
+    () => nodes.filter((n) =>
+      (!eventCat || (n.category || "").toLowerCase() === eventCat) && inRegion(n, region)),
+    [nodes, eventCat, region]);
   const shownEdges = useMemo(() => {
-    if (!eventCat) return edges;
+    if (!eventCat && region === "world") return edges;
     const ids = new Set(shownNodes.map((n) => n.id));
     return edges.filter((e) => ids.has(e.source ?? e.from) && ids.has(e.target ?? e.to));
-  }, [edges, shownNodes, eventCat]);
+  }, [edges, shownNodes, eventCat, region]);
 
   // Live traffic→event association, refreshed gently; feeds the CPE disruption term.
   const [trafficByEvent, setTrafficByEvent] = useState({});
