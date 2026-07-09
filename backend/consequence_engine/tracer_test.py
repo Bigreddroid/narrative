@@ -108,5 +108,50 @@ t = trace_consequences("A", EVENTS, [edge("A", "B", 0.9), edge("B", "C", 0.05)],
 ok("floor: weak deep hop pruned (C dropped)", all(n["id"] != "C" for n in t["nodes"]))
 ok("floor: above-floor node kept (B present)", any(n["id"] == "B" for n in t["nodes"]))
 
+# ── hop grounding classification (Phase 2) ───────────────────────────────────
+# semantic: edge carries an embedding cosine above the floor
+t = trace_consequences("A", EVENTS, [edge("A", "B", 0.8, cosine=0.55)])
+h = t["hops"][0]
+ok("kind: cosine ≥ floor → semantic + grounded", h["kind"] == "semantic" and h["grounded"] is True)
+
+# geographic: no cosine but a shared region
+t = trace_consequences("A", EVENTS, [edge("A", "B", 0.8, shared_geography=["Strait of Hormuz"])])
+h = t["hops"][0]
+ok("kind: shared geography → geographic + grounded", h["kind"] == "geographic" and h["grounded"] is True)
+
+# sectoral: a SPECIFIC (non-ubiquitous) shared sector
+t = trace_consequences("A", EVENTS, [edge("A", "B", 0.8, shared_sectors=["semiconductors"])])
+h = t["hops"][0]
+ok("kind: specific sector → sectoral + grounded", h["kind"] == "sectoral" and h["grounded"] is True)
+
+# co-occurrence: only generic sectors, no geo, no cosine → weak coincidence
+t = trace_consequences("A", EVENTS, [edge("A", "B", 0.8, shared_sectors=["defense", "energy"])])
+h = t["hops"][0]
+ok("kind: generic-sector only → co_occurrence + not grounded",
+   h["kind"] == "co_occurrence" and h["grounded"] is False)
+ok("kind: co-occurrence node carries grounded=False", t["nodes"][0]["grounded"] is False)
+
+# grounded ranks above a stronger co-occurrence
+t = trace_consequences(
+    "A", EVENTS,
+    [edge("A", "B", 0.4, shared_geography=["Gulf"]), edge("A", "C", 0.95)],  # C stronger but coincidental
+)
+order = [n["id"] for n in t["nodes"]]
+ok("ranking: grounded hop outranks a stronger coincidence", order.index("B") < order.index("C"))
+
+# grounded_only drops coincidental hops
+t = trace_consequences(
+    "A", EVENTS,
+    [edge("A", "B", 0.9, shared_geography=["Gulf"]), edge("A", "C", 0.9, shared_sectors=["energy"])],
+    grounded_only=True,
+)
+ids = {n["id"] for n in t["nodes"]}
+ok("grounded_only: keeps grounded B", "B" in ids)
+ok("grounded_only: drops coincidental C", "C" not in ids)
+
+# grounded_only on an all-coincidence root → honest empty
+t = trace_consequences("A", EVENTS, [edge("A", "B", 0.9, shared_sectors=["defense"])], grounded_only=True)
+ok("grounded_only: all-coincidence root → limited", t["limited"] is True and t["nodes"] == [])
+
 print(f"\ntracer: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -144,6 +144,8 @@ async def get_event_graph(
                 "weight": c.connection_weight,
                 "type": c.connection_type,
                 "shared_context": c.shared_context,
+                # cause→effect label relative to (source, target): a_to_b | b_to_a | null
+                "direction": c.direction,
             }
             for c in connections
         ],
@@ -157,13 +159,17 @@ async def get_consequence_trace(
     user: UserDep,
     depth: int = Query(3, ge=1, le=4),
     max_nodes: int = Query(25, ge=1, le=60),
+    grounded_only: bool = Query(False),
 ) -> dict:
     """Directed, multi-hop consequence chain FROM this event.
 
     Walks the event graph forward (cause→effect) to surface how the event's
-    consequences cascade to other events, each hop labelled with the mechanism
-    (shared sectors/regions) that links it. Deterministic — no LLM. Returns an
-    honest empty trace (limited=True) when the event has no outgoing links."""
+    consequences cascade to other events. Each hop is labelled with its mechanism
+    (shared sectors/regions) and its ``kind``/``grounded`` flag: grounded hops are
+    real consequence links (semantic / geographic / specific-sector); co-occurrence
+    hops rest only on generic shared tags. ``grounded_only=true`` drops the weak
+    coincidences. Deterministic — no LLM. Returns an honest empty trace
+    (limited=True) when the event has no outgoing links."""
     from backend.api.routes.exposure import _load_graph
     from backend.consequence_engine.tracer import trace_consequences
 
@@ -186,6 +192,7 @@ async def get_consequence_trace(
         ids.add(b)
 
     events, edges = await _load_graph(db, len(ids), event_ids=[str(i) for i in ids])
-    trace = trace_consequences(str(event_id), events, edges, depth=depth, max_nodes=max_nodes)
+    trace = trace_consequences(str(event_id), events, edges, depth=depth,
+                               max_nodes=max_nodes, grounded_only=grounded_only)
     trace["depth"] = depth
     return trace
