@@ -38,8 +38,12 @@ def compute_connection_weight(
     event_a: NarrativeEvent,
     event_b: NarrativeEvent,
     idf: dict[str, dict[str, float]],
+    cos: float | None = None,
 ) -> dict[str, Any] | None:
-    """IDF-weighted, directed connection between two events. None if below threshold."""
+    """IDF-weighted, directed connection between two events. None if below threshold.
+
+    ``cos`` may be supplied precomputed (e.g. a batch recompute that derives the whole
+    cosine matrix with numpy); when omitted it is computed from the two embeddings."""
     sector_score, shared_sectors = graph_scoring.weighted_overlap(event_a.affected_sectors, event_b.affected_sectors, idf["sector"])
     geo_score, shared_geo = graph_scoring.weighted_overlap(event_a.geographic_relevance, event_b.geographic_relevance, idf["geo"])
     keyword_score, _ = graph_scoring.weighted_overlap(event_a.follow_keywords, event_b.follow_keywords, idf["keyword"])
@@ -48,7 +52,8 @@ def compute_connection_weight(
     # Semantic gate: shared tags only count when the two events are actually about the
     # same situation (embedding cosine ≥ SEMANTIC_FLOOR). Drops coincidental tag matches
     # (e.g. two unrelated Energy+US events) instead of asserting a causal edge from tags.
-    cos = graph_scoring.cosine(event_a.embedding, event_b.embedding)
+    if cos is None:
+        cos = graph_scoring.cosine(event_a.embedding, event_b.embedding)
     weight = graph_scoring.semantic_adjust(tag_blend, cos)
     if weight is None or weight < settings.graph_connection_threshold:
         return None
