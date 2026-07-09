@@ -109,6 +109,7 @@ async def _fetch_opensky(lamin, lamax, lomin, lomax) -> list[dict]:
 async def get_aircraft(
     lamin: float = Query(-90), lamax: float = Query(90),
     lomin: float = Query(-180), lomax: float = Query(180),
+    debug: bool = Query(False),
 ) -> dict:
     """Return live aircraft positions from OpenSky (cached 15s)."""
     global _last_fetch
@@ -133,4 +134,12 @@ async def get_aircraft(
         logger.warning("OpenSky fetch failed: %s", exc)
         if cached:
             return {"aircraft": cached[1], "source": "opensky", "live": True}
-        return {"aircraft": [], "source": "none", "live": False}
+        resp = {"aircraft": [], "source": "none", "live": False}
+        if debug:
+            # Ops diagnosis via ?debug=1 — surface the failure reason and whether
+            # the client creds are actually visible to the app, without ever 500ing.
+            resp["error"] = f"{type(exc).__name__}: {exc}"
+            resp["has_client_creds"] = bool(
+                settings.opensky_client_id and settings.opensky_client_secret
+            )
+        return resp
