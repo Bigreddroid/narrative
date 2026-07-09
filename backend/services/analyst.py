@@ -28,10 +28,14 @@ MAX_CONTEXT_EVENTS = 12
 ANALYST_SYSTEM = """You are the analyst for The Narrative, a world consequence-intelligence platform.
 Answer the user's question USING ONLY the numbered EVENTS and the EXPOSURE summary provided.
 Rules:
+- Lead with a direct exposure verdict. The EXPOSURE line (overall pressure, top sectors,
+  top regions) is real computed data — treat it as first-class evidence and translate it
+  into concrete consequences: name which sectors and regions are exposed and why, even
+  when the individual EVENTS touch the topic only indirectly.
 - Cite the events you use inline as [1], [2], etc. matching the numbers given.
 - Be concise and concrete: lead with the answer, then the consequence reasoning.
-- If the provided context cannot answer the question, say so plainly — do NOT invent
-  events, numbers, or outcomes. Never use outside knowledge as if it were our data.
+- Only say the data can't answer when there are NO events AND no exposure figures at all.
+  Never invent events, numbers, or outcomes, and never use outside knowledge as our data.
 """
 
 
@@ -56,6 +60,57 @@ async def _semantic_event_ids(db, query: str, limit: int) -> list:
     return [r[0] for r in rows]
 
 
+# Generic question words that carry no retrieval signal — dropped before keyword match
+# so "what is my exposure to X" ranks on X, not on "exposure"/"impact".
+_STOPWORDS = {
+    "the", "and", "for", "with", "about", "does", "will", "would", "that", "this",
+    "what", "which", "when", "where", "whom", "your", "yours", "mine", "have", "from",
+    "into", "over", "under", "exposure", "exposed", "impact", "impacts", "affect",
+    "affects", "affected", "risk", "risks", "happening", "going", "should", "could",
+}
+
+
+def _salient_terms(query: str) -> list[str]:
+    """Meaningful ≥4-letter words from the question, de-duped, order preserved."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in re.findall(r"[a-z]{4,}", (query or "").lower()):
+        if t not in _STOPWORDS and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out[:8]
+
+
+async def _keyword_events(db, query: str, limit: int):
+    """Literal term matches over mapped events, split by strength.
+
+    Returns (strong, weak): ``strong`` events match ≥2 distinct salient terms in the
+    title/summary — a reliable sign this is the very event the question names — and
+    are surfaced even when they carry NO embedding (≈⅔ of the graph), which the
+    semantic-only path silently drops."""
+    terms = _salient_terms(query)
+    if not terms:
+        return [], []
+    conds = []
+    for t in terms:
+        pat = f"%{t}%"
+        conds.append(NarrativeEvent.canonical_title.ilike(pat))
+        conds.append(NarrativeEvent.canonical_summary.ilike(pat))
+    rows = (await db.execute(
+        select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
+        .where(or_(*conds))
+        .order_by(NarrativeEvent.global_importance_score.desc()).limit(limit * 2)
+    )).scalars().all()
+
+    def _hits(e) -> int:
+        blob = f"{e.canonical_title or ''} {e.canonical_summary or ''}".lower()
+        return sum(1 for t in terms if t in blob)
+
+    strong = [e for e in rows if _hits(e) >= 2]
+    weak = [e for e in rows if _hits(e) < 2]
+    return strong, weak
+
+
 def _event_dict(e) -> dict:
     return {
         "id": str(e.id),
@@ -69,9 +124,26 @@ def _event_dict(e) -> dict:
 
 
 async def retrieve_events(db, query: str | None, limit: int = MAX_CONTEXT_EVENTS) -> list[dict]:
-    """Question-specific mapped events: semantic (pgvector) → keyword → top importance."""
-    events = []
+    """Question-specific mapped events, blending literal + semantic signals.
+
+    Order: strong keyword matches (≥2 salient terms — the event the question actually
+    names) → semantic (pgvector) neighbours → weak keyword matches → top-importance
+    headlines. Blending the keyword pass is what lets an on-topic event that carries no
+    embedding still surface; semantic-only silently drops ~⅔ of the graph and is the
+    usual cause of the analyst "missing" the very event asked about."""
+    events: list = []
+    seen: set = set()
+
+    def _extend(rows) -> None:
+        for e in rows:
+            if e.id not in seen:
+                seen.add(e.id)
+                events.append(e)
+
     if query:
+        strong_kw, weak_kw = await _keyword_events(db, query, limit)
+        _extend(strong_kw)  # multi-term literal hits lead — includes unembedded events
+
         try:
             ids = await _semantic_event_ids(db, query, limit)
         except Exception as exc:  # noqa: BLE001 — never fail the answer on retrieval
@@ -82,30 +154,21 @@ async def retrieve_events(db, query: str | None, limit: int = MAX_CONTEXT_EVENTS
                 select(NarrativeEvent).where(NarrativeEvent.id.in_(ids))
             )).scalars().all()
             rank = {i: n for n, i in enumerate(ids)}
-            events = sorted(rows, key=lambda e: rank.get(e.id, 10_000))
-        else:
-            # No semantic hits (embedder off, or no events carry embeddings). This is
-            # the usual cause of "same answer every question" in prod — log it so the
-            # fallback is visible instead of silent.
+            _extend(sorted(rows, key=lambda e: rank.get(e.id, 10_000)))
+        elif not strong_kw:
+            # No semantic ranking AND no strong literal hit — log so the degraded
+            # (importance-only) retrieval is visible rather than silent.
             logger.info("analyst retrieval: semantic ranking unavailable for %r — "
                         "using keyword/importance fallback", query[:60])
-        if not events:  # keyword fallback
-            pat = f"%{query}%"
-            events = (await db.execute(
-                select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
-                .where(or_(
-                    NarrativeEvent.canonical_title.ilike(pat),
-                    NarrativeEvent.canonical_summary.ilike(pat),
-                    NarrativeEvent.category.ilike(pat),
-                ))
-                .order_by(NarrativeEvent.global_importance_score.desc()).limit(limit)
-            )).scalars().all()
+
+        _extend(weak_kw)  # single-term literal hits fill remaining slots
+
     if not events:  # no query, or nothing matched → top headline events
         events = (await db.execute(
             select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
             .order_by(NarrativeEvent.global_importance_score.desc()).limit(limit)
         )).scalars().all()
-    return [_event_dict(e) for e in events]
+    return [_event_dict(e) for e in events[:limit]]
 
 
 # Sub-national / NWS-zone water & county words that pollute the exposure "regions"
