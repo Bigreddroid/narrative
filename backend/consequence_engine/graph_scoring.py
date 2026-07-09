@@ -66,8 +66,11 @@ def blended_weight(sector: float, geo: float, keyword: float) -> float:
 
 def cosine(a: list[float] | None, b: list[float] | None) -> float | None:
     """Cosine similarity of two event embeddings. None if either is absent (so the
-    caller can degrade to tag-only linking); 0.0 for a degenerate/zero vector."""
-    if not a or not b or len(a) != len(b):
+    caller can degrade to tag-only linking); 0.0 for a degenerate/zero vector.
+
+    Uses explicit None/length checks (not truthiness) so numpy-array embeddings —
+    which pgvector returns from the ORM — don't raise 'ambiguous truth value'."""
+    if a is None or b is None or len(a) == 0 or len(b) == 0 or len(a) != len(b):
         return None
     dot = na = nb = 0.0
     for x, y in zip(a, b):
