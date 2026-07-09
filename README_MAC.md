@@ -155,6 +155,17 @@ Restart `npm run dev` (Vite bakes this in at start-up).
 
 ---
 
+## Note on the air-traffic layer ✈️
+
+Live aircraft come from OpenSky, which **blocks requests coming from the hosted site's
+datacenter IP**. So the air layer is blank on the live narrative-beta.vercel.app, but
+works fine when you run the backend yourself (**Path B**) — the call goes out from your
+own home network, which OpenSky allows. Air is the one layer that needs Path B; every
+other layer (events, graph, maritime, analyst) works on both paths. For a full-experience
+local beta, use **Path B**.
+
+---
+
 ## Troubleshooting
 
 - **`docker: command not found` / containers won't start** — Docker Desktop isn't
