@@ -8,6 +8,7 @@ import { useUser } from "../../hooks/useUser.js";
 import HlsPlayer from "../livenews/HlsPlayer.jsx";
 import { useLiveStreams } from "../../hooks/useLiveStreams.js";
 import { COUNTRY_NAMES } from "../../lib/countries.js";
+import ConsequenceTrace from "./ConsequenceTrace.jsx";
 
 // ─── Source article card ───────────────────────────────────────────────────────
 
@@ -396,7 +397,7 @@ function LiveCoverageInline({ event }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-const TABS = ["Intelligence", "Watch", "Predictions", "Effects"];
+const TABS = ["Intelligence", "Trace", "Watch", "Predictions", "Effects"];
 
 export default function EventGraph({ eventId, onClose }) {
   const [event,     setEvent]     = useState(null);
@@ -576,6 +577,9 @@ export default function EventGraph({ eventId, onClose }) {
                 <LiveCoverageInline event={event} />
               </div>
             )}
+
+            {/* Trace — computed directed consequence chain to other events */}
+            {activeTab === "Trace" && <ConsequenceTrace eventId={event.id} />}
 
             {/* Watch — live TV coverage, region-matched to the event */}
             {activeTab === "Watch" && <WatchTab event={event} />}
