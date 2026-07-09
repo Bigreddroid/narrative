@@ -107,6 +107,10 @@ async def _load_graph(db, limit: int, event_ids: list | None = None) -> tuple[li
             "target": str(tgt),
             "weight": c.connection_weight,
             "directed": c.direction is not None,
+            # carried for the consequence tracer's hop mechanism (ignored by the CPE)
+            "shared_sectors": c.shared_sectors or [],
+            "shared_geography": c.shared_geography or [],
+            "cosine": (c.weight_breakdown or {}).get("cosine"),
         })
     return engine_events, edges
 

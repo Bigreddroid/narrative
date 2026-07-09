@@ -5,8 +5,8 @@ Returns all nodes and edges for the D3 world map.
 
 import uuid
 
-from fastapi import APIRouter, Query
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import or_, select
 
 from backend.api.dependencies import DbDep, UserDep
 from backend.models.event_connection import EventConnection
@@ -15,6 +15,7 @@ from backend.models.narrative_event import NarrativeEvent
 router = APIRouter(prefix="/graph", tags=["graph"])
 
 FREE_TIER_NODE_LIMIT = 10
+TRACE_FANOUT = 60  # strongest connections pulled around the root to form the trace neighborhood
 
 
 @router.get("/world")
@@ -143,7 +144,55 @@ async def get_event_graph(
                 "weight": c.connection_weight,
                 "type": c.connection_type,
                 "shared_context": c.shared_context,
+                # cause→effect label relative to (source, target): a_to_b | b_to_a | null
+                "direction": c.direction,
             }
             for c in connections
         ],
     }
+
+
+@router.get("/event/{event_id}/trace")
+async def get_consequence_trace(
+    event_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    depth: int = Query(3, ge=1, le=4),
+    max_nodes: int = Query(25, ge=1, le=60),
+    grounded_only: bool = Query(False),
+) -> dict:
+    """Directed, multi-hop consequence chain FROM this event.
+
+    Walks the event graph forward (cause→effect) to surface how the event's
+    consequences cascade to other events. Each hop is labelled with its mechanism
+    (shared sectors/regions) and its ``kind``/``grounded`` flag: grounded hops are
+    real consequence links (semantic / geographic / specific-sector); co-occurrence
+    hops rest only on generic shared tags. ``grounded_only=true`` drops the weak
+    coincidences. Deterministic — no LLM. Returns an honest empty trace
+    (limited=True) when the event has no outgoing links."""
+    from backend.api.routes.exposure import _load_graph
+    from backend.consequence_engine.tracer import trace_consequences
+
+    root = await db.get(NarrativeEvent, event_id)
+    if not root:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    # Bounded neighbourhood: the root plus the events on its strongest connections,
+    # so the tracer can walk 2–3 hops among them without loading the whole graph.
+    neigh = (await db.execute(
+        select(EventConnection.event_a_id, EventConnection.event_b_id)
+        .where(or_(EventConnection.event_a_id == event_id,
+                   EventConnection.event_b_id == event_id))
+        .order_by(EventConnection.connection_weight.desc())
+        .limit(TRACE_FANOUT)
+    )).all()
+    ids = {event_id}
+    for a, b in neigh:
+        ids.add(a)
+        ids.add(b)
+
+    events, edges = await _load_graph(db, len(ids), event_ids=[str(i) for i in ids])
+    trace = trace_consequences(str(event_id), events, edges, depth=depth,
+                               max_nodes=max_nodes, grounded_only=grounded_only)
+    trace["depth"] = depth
+    return trace
