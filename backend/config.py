@@ -74,9 +74,14 @@ class Settings(BaseSettings):
     # Maritime / AIS (optional — server-side vessel source for the maritime overlay)
     aishub_username: str = ""
 
-    # Air traffic / OpenSky (optional — anonymous works; creds raise rate limits)
+    # Air traffic / OpenSky. Anonymous works (tight limits, often blocked from
+    # datacenter IPs). OAuth2 client-credentials is the current supported auth
+    # (basic username/password is deprecated); create an API client in your
+    # OpenSky account to get a client id/secret.
     opensky_username: str = ""
     opensky_password: str = ""
+    opensky_client_id: str = ""
+    opensky_client_secret: str = ""
 
     # Storage
     cloudflare_r2_access_key: str = ""
