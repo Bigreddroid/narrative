@@ -17,5 +17,10 @@
 *.mjs  text eol=lf
 *.ts   text eol=lf
 *.sh   text eol=lf
+*.command text eol=lf
 *.yml  text eol=lf
 *.yaml text eol=lf
+
+# Windows launchers must keep CRLF so cmd.exe/PowerShell parse them correctly.
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
