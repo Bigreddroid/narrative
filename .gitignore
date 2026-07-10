@@ -37,6 +37,8 @@ npm-debug.log*
 *.sqlite
 *.db
 *.dump
+# Exception: the curated demo seed IS shipped so Path B installers can restore it.
+!scripts/narrative.dump
 *.sql.gz
 
 # ─── OS / editor ─────────────────────────────────────────────────────────────
