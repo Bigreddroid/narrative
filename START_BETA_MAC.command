@@ -36,6 +36,10 @@ else
   echo "[1/5] Docker is running."
 fi
 
+# --- 1b) Root .env — the api service references it via `env_file: .env`, so it
+#         must exist before any `docker compose` call or compose errors out. ---
+[ -f .env ] || cp .env.example .env
+
 # --- 2) Database + cache ---
 echo "[2/5] Starting Postgres + Redis..."
 docker compose up -d postgres redis

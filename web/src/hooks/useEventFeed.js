@@ -11,40 +11,58 @@ function normalizeEvent(e) {
   };
 }
 
+// The backend scheduler produces fresh events continuously. Re-poll so an
+// open tab surfaces new events on its own instead of needing a manual reload.
+const POLL_MS = 90000;
+
 export function useEventFeed({ category = null, status = null, limit = 50 } = {}) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const q = new URLSearchParams();
-    if (category) q.set("category", category);
-    if (status)   q.set("status", status);
-    q.set("limit", limit);
+    let cancelled = false;
 
-    setLoading(true);
-    // Trailing slash is required: `/events` 307-redirects to `/events/`, and
-    // FastAPI emits an absolute Location (the API origin). Cross-origin
-    // redirects (dev proxy :5173→:8000, prod Vercel→Railway) strip the
-    // Authorization header per the fetch spec, yielding a 401.
-    api.get(`/events/?${q}`)
-      .then((data) => {
-        const raw = Array.isArray(data) ? data : data.events || [];
-        setEvents(raw.map(normalizeEvent));
-      })
-      .catch((err) => {
-        if (DEMO_MODE) {
-          let mock = MOCK_EVENTS;
-          if (category) mock = mock.filter(e => e.category === category);
-          if (status)   mock = mock.filter(e => e.current_status === status);
-          setEvents(mock.slice(0, limit).map(normalizeEvent));
-          return;
-        }
-        // Real-only: surface an honest error instead of fabricated events.
-        setEvents([]);
-        setError(err);
-      })
-      .finally(() => setLoading(false));
+    // `background` refreshes (the poll) must not flip the UI back to a loading
+    // spinner or blank the list — only the first fetch for these filters does.
+    const fetchEvents = (background = false) => {
+      const q = new URLSearchParams();
+      if (category) q.set("category", category);
+      if (status)   q.set("status", status);
+      q.set("limit", limit);
+
+      if (!background) setLoading(true);
+      // Trailing slash is required: `/events` 307-redirects to `/events/`, and
+      // FastAPI emits an absolute Location (the API origin). Cross-origin
+      // redirects (dev proxy :5173→:8000, prod Vercel→Railway) strip the
+      // Authorization header per the fetch spec, yielding a 401.
+      return api.get(`/events/?${q}`)
+        .then((data) => {
+          if (cancelled) return;
+          const raw = Array.isArray(data) ? data : data.events || [];
+          setEvents(raw.map(normalizeEvent));
+          setError(null);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          if (DEMO_MODE) {
+            let mock = MOCK_EVENTS;
+            if (category) mock = mock.filter(e => e.category === category);
+            if (status)   mock = mock.filter(e => e.current_status === status);
+            setEvents(mock.slice(0, limit).map(normalizeEvent));
+            return;
+          }
+          // On a background refresh, keep the events already on screen rather
+          // than blanking them on a transient error; only surface the error.
+          if (!background) setEvents([]);
+          setError(err);
+        })
+        .finally(() => { if (!background && !cancelled) setLoading(false); });
+    };
+
+    fetchEvents(false);
+    const id = setInterval(() => fetchEvents(true), POLL_MS);
+    return () => { cancelled = true; clearInterval(id); };
   }, [category, status, limit]);
 
   return { events, loading, error };

@@ -2,7 +2,9 @@ version: "3.9"
 
 services:
   postgres:
-    image: pgvector/pgvector:pg15
+    # pg18 to match the pg_dump that produced scripts/narrative.dump (archive
+    # v1.16); an older server's pg_restore cannot read a newer archive header.
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: narrative
       POSTGRES_PASSWORD: narrative
