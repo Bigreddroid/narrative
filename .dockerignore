@@ -1,0 +1,20 @@
+# Keep the api build context small + the image lean. The api source is also
+# bind-mounted at runtime (.:/app), so none of this is needed at build time.
+.git
+.gitignore
+node_modules
+web/node_modules
+web/dist
+web/.env
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.dump
+*.sql.gz
+.venv
+venv
+.claude
+*.log
+.DS_Store

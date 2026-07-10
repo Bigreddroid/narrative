@@ -12,7 +12,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # pg18 image relocated PGDATA; the volume must mount at
+      # /var/lib/postgresql (not /data) or the container exits on startup.
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U narrative"]
       interval: 10s
