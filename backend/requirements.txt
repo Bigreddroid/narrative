@@ -40,7 +40,6 @@ anthropic==0.28.0
 voyageai==0.2.3
 
 # Auth
-supabase==2.4.6
 
 # Payments
 stripe==9.9.0
