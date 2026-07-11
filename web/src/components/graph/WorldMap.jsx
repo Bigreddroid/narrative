@@ -44,6 +44,7 @@ export default function WorldMap({
   region = "world", isDark = false, getVessels = null, showVessels = false,
   getAircraft = null, showAircraft = false,
   eventScores = null, exposureLayer = false, anomalies = null,
+  focus = null,
 }) {
   const wrapRef  = useRef(null);
   const svgRef   = useRef(null);
@@ -151,6 +152,16 @@ export default function WorldMap({
     // NB: intentionally not keyed on `dims` — re-flying on resize would reset
     // the user's zoom. baseScaleRef is recomputed by the scene effect on resize.
   }, [region, ready]);
+
+  // Fly to an arbitrary coordinate (e.g. a geolocation result pin). Overrides the
+  // region preset: centers on [lng,lat], zooms in, and stops the auto-spin.
+  useEffect(() => {
+    if (!focus || focus.lat == null || focus.lng == null) return;
+    targetRotateRef.current = [-focus.lng, -focus.lat];
+    if (baseScaleRef.current) targetScaleRef.current = baseScaleRef.current * (focus.scale || 3);
+    spinRef.current = false;
+    setSpinning(false);
+  }, [focus, ready]);
 
   // ── Build the scene + interaction + render loop ──────────────────────────────
   useEffect(() => {

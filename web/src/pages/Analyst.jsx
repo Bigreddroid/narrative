@@ -1,47 +1,14 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api.js";
 import { useUser } from "../hooks/useUser.js";
-import { useLiveStreams } from "../hooks/useLiveStreams.js";
 import FeedHeader from "../components/layout/FeedHeader.jsx";
-import OsintInvestigate from "../components/OsintInvestigate.jsx";
-import OsintFrameworkBrowser from "../components/OsintFrameworkBrowser.jsx";
-import { extractEntities } from "../lib/osintEntities.js";
 
 // The Analyst tab — ask a question, the analyst answers grounded in the live event
 // graph, and below the answer it shows the consequence readout an enterprise
 // geopolitics / trade / shipping desk actually needs: exposure (pressure, affected
-// sectors + regions, personalised to the user's profile), the real source articles,
-// region-matched live coverage, then trimmed OSINT lookups for concrete entities.
-
-// ── place selection ──────────────────────────────────────────────────────────
-// Broad blocs / non-geocodable phrases that aren't worth a map/OSINT lookup.
-const BROAD_PLACES = new Set([
-  "global", "worldwide", "world", "european union", "eu", "nato",
-  "gulf cooperation council states", "small island developing states",
-  "sub-saharan africa", "south and southeast asia", "north america",
-  "south america", "latin america", "africa", "asia", "europe", "oceania",
-  "middle east", "western europe", "eastern europe", "central asia", "southeast asia",
-]);
-function specificPlaces(sources, cap = 3) {
-  const seen = new Set();
-  const out = [];
-  for (const ev of sources || []) {
-    for (const g of ev.geography || []) {
-      const k = (g || "").trim();
-      const lk = k.toLowerCase();
-      if (!k || seen.has(lk)) continue;
-      if (BROAD_PLACES.has(lk)) continue;
-      if (k.includes(",") || k.includes("—")) continue;   // sub-region / descriptive noise
-      if (k.split(/\s+/).length > 3) continue;             // long descriptive phrases
-      seen.add(lk);
-      out.push(k);
-      if (out.length >= cap) return out;
-    }
-  }
-  return out;
-}
+// sectors + regions, personalised to the user's profile) and the real source articles.
 
 const titleCase = (s) => String(s).replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -105,72 +72,15 @@ function ImpactReadout({ pressure, sectors = [], regions = [], user }) {
   );
 }
 
-// ── region-matched live coverage ─────────────────────────────────────────────
-const CHANNEL_KEYWORDS = {
-  QA: ["iran", "israel", "gulf", "hormuz", "middle east", "lebanon", "saudi", "yemen", "syria", "gaza", "qatar", "persian", "iraq"],
-  DE: ["europe", "european", "germany", "ukraine", "russia", "eu", "baltic"],
-  US: ["united states", "u.s", "america", "washington", "mexico"],
-  GB: ["britain", "uk", "united kingdom", "london"],
-};
-function AnalystLiveCoverage({ geographies }) {
-  const { channels } = useLiveStreams();
-  const navigate = useNavigate();
-  const blob = (geographies || []).join(" ").toLowerCase();
-  const shown = useMemo(() => {
-    if (!channels.length) return [];
-    const matched = channels.filter((c) => (CHANNEL_KEYWORDS[c.region] || []).some((k) => blob.includes(k)));
-    return (matched.length ? matched : channels).slice(0, 4);
-  }, [channels, blob]);
-  if (shown.length === 0) return null;
-  return (
-    <div className="border-t border-ink/10 pt-3 mt-1 space-y-2">
-      <div className="text-[10px] uppercase tracking-widest text-ink/35">Live coverage</div>
-      <div className="flex flex-wrap gap-2">
-        {shown.map((c) => (
-          <button key={c.id} onClick={() => navigate("/world?tab=live-news")}
-            className="inline-flex items-center gap-1.5 text-[11px] border border-ink/15 px-2.5 py-1.5 hover:border-crimson hover:text-crimson transition-colors text-ink/70">
-            <span className="text-crimson">▶</span> {c.name}
-            {c.region && <span className="text-[8px] font-mono text-ink/30 uppercase">{c.region}</span>}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── trimmed OSINT lookups ────────────────────────────────────────────────────
-// Concrete entities named in the question (IP/CVE/crypto/vessel — vessel matters
-// for shipping) get a full investigate; specific places get map/geo-only lookups.
-function OsintForTurn({ question, sources }) {
-  const entities = useMemo(() => extractEntities(question), [question]);
-  const places = useMemo(() => specificPlaces(sources, 2), [sources]);
-  if (entities.length === 0 && places.length === 0) return null;
-  return (
-    <div className="border-t border-ink/10 pt-3 mt-1 space-y-2">
-      <div className="text-[10px] uppercase tracking-widest text-ink/35">OSINT lookups</div>
-      {entities.map((t, i) => (
-        <OsintInvestigate key={`e-${t.value}-${i}`} value={t.value} kind={t.kind} compact />
-      ))}
-      {places.map((p, i) => (
-        <OsintInvestigate key={`p-${p}-${i}`} value={p} kind="location" compact geoOnly maxTools={6} />
-      ))}
-    </div>
-  );
-}
-
 export default function Analyst() {
   const navigate = useNavigate();
   const { user } = useUser();
-  const [params] = useSearchParams();
-  const seedValue = params.get("value") || "";
-  const seedKind = params.get("kind") || "";
 
   const [turns, setTurns] = useState([]); // {q, answer, sources, pressure, sectors, regions}
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [hotspots, setHotspots] = useState([]);
-  const [showFramework, setShowFramework] = useState(false);
   const endRef = useRef(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
@@ -233,12 +143,6 @@ export default function Analyst() {
             </div>
           </div>
 
-          {seedValue && (
-            <div className="mb-6">
-              <OsintInvestigate value={seedValue} kind={seedKind} />
-            </div>
-          )}
-
           {turns.length === 0 && !loading && (
             <div className="space-y-5">
               <div className="text-xs text-ink/40 leading-relaxed">
@@ -283,10 +187,6 @@ export default function Analyst() {
                     ))}
                   </div>
                 )}
-                {t.answer && Array.isArray(t.sources) && (
-                  <AnalystLiveCoverage geographies={t.sources.flatMap((s) => s.geography || [])} />
-                )}
-                {t.answer && <OsintForTurn question={t.q} sources={t.sources} />}
               </div>
             ))}
 
@@ -300,21 +200,6 @@ export default function Analyst() {
               )}
             </AnimatePresence>
             <div ref={endRef} />
-          </div>
-
-          <div className="mt-8 border-t border-ink/10 pt-5">
-            <button onClick={() => setShowFramework((s) => !s)}
-              className="w-full flex items-center justify-between text-left group">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-ink/70 group-hover:text-crimson transition-colors">
-                OSINT Framework
-              </span>
-              <span className="text-[10px] font-mono text-ink/35">{showFramework ? "− hide" : "+ explore all tools"}</span>
-            </button>
-            {showFramework && (
-              <div className="mt-4">
-                <OsintFrameworkBrowser />
-              </div>
-            )}
           </div>
         </div>
       </div>

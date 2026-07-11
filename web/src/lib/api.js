@@ -45,10 +45,38 @@ async function request(path, options = {}) {
   return safeJson(res);
 }
 
+// Multipart upload (e.g. image geolocation). Never set Content-Type — the browser
+// must add the multipart boundary itself. Long default timeout: a cold vision model
+// can take 20-60s. Auth header is attached like the JSON path.
+async function postForm(path, formData, { timeoutMs = 60000 } = {}) {
+  const token = getToken();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      body: formData,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: ctrl.signal,
+    });
+  } catch {
+    throw Object.assign(new Error("Network error — is the API server running?"), { status: 0 });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    const data = await safeJson(res);
+    throw Object.assign(new Error(data?.detail || res.statusText || "Upload failed"), { status: res.status });
+  }
+  return safeJson(res);
+}
+
 export const api = {
   get: (path) => request(path),
   post: (path, body, opts = {}) =>
     request(path, { method: "POST", body: JSON.stringify(body), ...opts }),
+  postForm,
   patch: (path, body) =>
     request(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: (path) => request(path, { method: "DELETE" }),

@@ -4,16 +4,6 @@ import { useFollowing } from "../../hooks/useFollowing.js";
 
 const TABS = [
   {
-    id: "threats",
-    path: "/threats",
-    label: "Threats",
-    icon: (active) => (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M10 2.5l6 2.2v4.6c0 4-2.7 6.6-6 8.2-3.3-1.6-6-4.2-6-8.2V4.7l6-2.2z" />
-      </svg>
-    ),
-  },
-  {
     id: "feed",
     path: "/world",
     label: "Feed",
@@ -58,6 +48,17 @@ const TABS = [
     ),
   },
   {
+    id: "locate",
+    path: "/geolocate",
+    label: "Locate",
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10 18s6-5.2 6-9.5A6 6 0 0 0 4 8.5C4 12.8 10 18 10 18z" />
+        <circle cx="10" cy="8.5" r="2" fill="none" />
+      </svg>
+    ),
+  },
+  {
     id: "tracked",
     path: "/following",
     label: "Tracked",
@@ -87,7 +88,7 @@ export default function MobileNav() {
 
   const activeId =
     location.pathname === "/analyst" ? "analyst"
-    : location.pathname === "/threats" ? "threats"
+    : location.pathname === "/geolocate" ? "locate"
     : location.pathname === "/following" ? "tracked"
     : location.pathname === "/settings" ? "profile"
     : location.search.includes("tab=exposure") ? "exposure"

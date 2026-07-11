@@ -6,7 +6,6 @@ import WorldMap from "../components/graph/WorldMap.jsx";
 import EventGraph from "../components/graph/EventGraph.jsx";
 import DeckView from "../components/DeckView.jsx";
 import ExposurePanel from "../components/ExposurePanel.jsx";
-import LiveNewsTab from "../components/livenews/LiveNewsTab.jsx";
 import { useWorldGraph } from "../hooks/useWorldGraph.js";
 import { useEventFeed } from "../hooks/useEventFeed.js";
 import { useVesselFeed } from "../hooks/useVesselFeed.js";
@@ -715,7 +714,7 @@ export default function WorldView() {
   const [searchParams]       = useSearchParams();
   const [activeTab,       setActiveTab]       = useState(() => {
     const t = searchParams.get("tab");
-    return t === "world" || t === "deck" || t === "exposure" || t === "live-news" ? t : "feed";
+    return t === "world" || t === "deck" || t === "exposure" ? t : "feed";
   });
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [category,        setCategory]        = useState(null);
@@ -765,8 +764,6 @@ export default function WorldView() {
           />
         ) : activeTab === "exposure" ? (
           <ExposurePanel />
-        ) : activeTab === "live-news" ? (
-          <LiveNewsTab />
         ) : (
           <WorldViewTab
             selectedEventId={selectedEventId}

@@ -93,6 +93,31 @@ def complete(system: str, user: str, max_tokens: int, json_mode: bool = False) -
     raise BudgetExceeded(f"unknown llm_provider: {p}")
 
 
+def complete_vision(
+    system: str,
+    user: str,
+    image_b64: str,
+    media_type: str = "image/jpeg",
+    max_tokens: int = 1024,
+    json_mode: bool = False,
+) -> LLMResult:
+    """Multimodal completion over a single base64-encoded image.
+
+    Every Claude model is vision-capable, so the anthropic path always works. The
+    ollama path only works if local_llm_model is a multimodal model (e.g. llava,
+    llama3.2-vision) — a text-only local model returns a provider error and the
+    caller degrades. Same budget posture as complete(): never spends unless the
+    active provider is paid AND the caller already confirmed it's allowed."""
+    p = active_provider()
+    if p == "off":
+        raise BudgetExceeded("LLM provider is 'off'")
+    if p == "ollama":
+        return _ollama_vision(system, user, image_b64, max_tokens, json_mode)
+    if p == "anthropic":
+        return _anthropic_vision(system, user, image_b64, media_type, max_tokens)
+    raise BudgetExceeded(f"unknown llm_provider: {p}")
+
+
 # ── Ollama (local, free) ──────────────────────────────────────────────────────
 def _ollama_up() -> bool:
     try:
@@ -134,6 +159,41 @@ def _ollama_complete(system: str, user: str, max_tokens: int, json_mode: bool) -
     )
 
 
+def _ollama_vision(system: str, user: str, image_b64: str, max_tokens: int, json_mode: bool) -> LLMResult:
+    # Ollama's chat API takes images as a base64 list on the user message. Only
+    # multimodal models (llava, llama3.2-vision, …) accept them; a text model
+    # errors, which the caller catches and degrades on.
+    payload: dict = {
+        "model": settings.local_llm_model,
+        "stream": False,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user, "images": [image_b64]},
+        ],
+        "options": {"num_predict": max_tokens},
+    }
+    if json_mode:
+        payload["format"] = "json"
+
+    r = httpx.post(
+        f"{settings.ollama_base_url}/api/chat",
+        json=payload,
+        timeout=settings.ollama_timeout_seconds,
+    )
+    r.raise_for_status()
+    data = r.json()
+    text = (data.get("message") or {}).get("content", "").strip()
+    if not text:
+        raise ValueError("Ollama returned an empty vision completion")
+    return LLMResult(
+        text=text,
+        input_tokens=data.get("prompt_eval_count", 0),
+        output_tokens=data.get("eval_count", 0),
+        cost_usd=0.0,
+        provider="ollama",
+    )
+
+
 # ── Anthropic (paid, opt-in, hard-capped by the caller) ───────────────────────
 def _anthropic_complete(system: str, user: str, max_tokens: int) -> LLMResult:
     import anthropic
@@ -144,6 +204,34 @@ def _anthropic_complete(system: str, user: str, max_tokens: int) -> LLMResult:
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": user}],
+    )
+    text = resp.content[0].text.strip()
+    in_tok = resp.usage.input_tokens
+    out_tok = resp.usage.output_tokens
+    return LLMResult(
+        text=text,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        cost_usd=estimate_anthropic_cost(in_tok, out_tok),
+        provider="anthropic",
+    )
+
+
+def _anthropic_vision(system: str, user: str, image_b64: str, media_type: str, max_tokens: int) -> LLMResult:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    resp = client.messages.create(
+        model=settings.consequence_engine_model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
+                {"type": "text", "text": user},
+            ],
+        }],
     )
     text = resp.content[0].text.strip()
     in_tok = resp.usage.input_tokens

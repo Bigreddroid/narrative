@@ -15,7 +15,7 @@ import time
 
 from backend.config import get_settings
 from backend.database import AsyncSessionLocal
-from backend.feeds import gdelt_osint, osint_disinfo, osint_threatintel, reddit_osint, rss_osint
+from backend.feeds import gdelt_osint, osint_threatintel, rss_osint
 from backend.models.osint_triage_decision import OsintTriageDecision
 from backend.services import cost_guard, osint_agent, runtime_config
 from backend.workers.hazard_ingest_worker import _upsert
@@ -38,10 +38,7 @@ async def _log_decisions(decisions: list[dict]) -> None:
 
 
 def _osint_source():
-    """(fetch_fn, source_tag) for the configured OSINT source. Default = keyless GDELT;
-    Reddit stays available behind OSINT_SOURCE=reddit (uses OAuth when creds are set)."""
-    if (runtime_config.osint_source() or "gdelt").lower() == "reddit":
-        return reddit_osint.fetch_reddit_osint, reddit_osint.SOURCE
+    """(fetch_fn, source_tag) for the OSINT news source — keyless GDELT DOC API."""
     return gdelt_osint.fetch_gdelt_osint, gdelt_osint.SOURCE
 
 
@@ -94,30 +91,11 @@ async def run_osint_ingest_worker() -> dict:
                 except Exception as exc:  # noqa: BLE001
                     logger.error("OSINT upsert failed: %s", exc)
 
-        # Curated disinfo feed: editorial fact-check sources are pre-vetted, so they
-        # skip relevance triage and upsert directly as 'disinfo' Signals. Logged as
-        # curated keeps so the flywheel funnel stays complete.
-        disinfo_signals = await osint_disinfo.fetch_disinfo()
-        total_posts += len(disinfo_signals)
-        for signal in disinfo_signals:
-            ingested += 1
-            decisions.append({
-                "external_id": str(signal.get("external_id") or ""),
-                "source": signal.get("source") or osint_disinfo.SOURCE,
-                "kept": True, "reason": "curated_bypass", "method": "curated",
-                "category": signal.get("category"), "confidence": signal.get("confidence"),
-                "importance": signal.get("importance"), "title": signal.get("title"),
-            })
-            try:
-                if await _upsert(signal, db, require_geo=False):
-                    created += 1
-            except Exception as exc:  # noqa: BLE001
-                logger.error("OSINT disinfo upsert failed: %s", exc)
         await db.commit()
     # Decisions persist in their own session AFTER events commit, so telemetry can't
     # roll back ingest.
     await _log_decisions(decisions)
-    logger.info("OSINT ingest [%s + threatintel + disinfo]: %d posts, %d triaged-in, %d new, %d logged (llm=%s, %.1fs)",
+    logger.info("OSINT ingest [%s + threatintel]: %d posts, %d triaged-in, %d new, %d logged (llm=%s, %.1fs)",
                 source, total_posts, ingested, created, len(decisions), allow_llm, time.perf_counter() - start)
     return {"posts": total_posts, "ingested": ingested, "created": created,
             "llm": allow_llm, "source": source, "logged": len(decisions)}

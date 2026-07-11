@@ -13,6 +13,16 @@ const NAV = [
     ),
   },
   {
+    to: "/geolocate",
+    label: "Image Geolocation",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M9 16s5-4.5 5-8A5 5 0 0 0 4 8c0 3.5 5 8 5 8z" />
+        <circle cx="9" cy="8" r="1.8" />
+      </svg>
+    ),
+  },
+  {
     to: "/following",
     label: "Following",
     icon: (
