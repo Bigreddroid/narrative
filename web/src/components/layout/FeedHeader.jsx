@@ -173,7 +173,6 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
             { id: "feed",      label: "Intelligence Feed" },
             { id: "deck",      label: "Deck"              },
             { id: "world",     label: "World View"        },
-            { id: "live-news", label: "Live News"         },
             { id: "exposure",  label: "Exposure"          },
             { id: "following", label: "Tracked"           },
             { id: "analyst",   label: "Analyst"           },

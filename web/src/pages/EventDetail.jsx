@@ -11,50 +11,8 @@ import { useTrafficNearEvent } from "../hooks/useTrafficNearEvent.js";
 import { findAnalogs, momentum, trendLabel } from "../lib/temporal.js";
 import { HISTORICAL_ANALOGS } from "../lib/analogs.js";
 import TierGate from "../components/TierGate.jsx";
-import { extractEntities } from "../lib/osintEntities.js";
-import OsintInvestigate from "../components/OsintInvestigate.jsx";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-// Entity chips that expand an inline OSINT investigate panel (live facts + every
-// catalog lookup for the value), instead of only navigating to the OSINT page.
-function OsintEntityChips({ entities }) {
-  const [active, setActive] = useState(null);
-  const keyOf = (e) => `${e.kind}:${e.value}`;
-  return (
-    <div className="mt-4 border-t border-ink/8 pt-3">
-      <p className="text-[9px] font-mono uppercase tracking-wider text-ink/35 mb-2">Investigate · OSINT</p>
-      <div className="flex flex-wrap gap-1.5">
-        {entities.map((e) => {
-          const k = keyOf(e);
-          const open = active === k;
-          return (
-            <button
-              key={k}
-              onClick={() => setActive(open ? null : k)}
-              aria-expanded={open}
-              className={`flex items-center gap-1.5 text-[10px] font-mono border px-2 py-1 transition-colors ${
-                open ? "border-crimson text-crimson" : "border-ink/12 text-ink/55 hover:border-crimson hover:text-crimson"}`}
-              title={`Investigate ${e.value} (${e.kind})`}
-            >
-              <span className="text-[8px] uppercase tracking-wider text-ink/30">{e.kind}</span>
-              <span className="max-w-[140px] truncate">{e.value}</span>
-            </button>
-          );
-        })}
-      </div>
-      {active && (
-        <div className="mt-3 border border-crimson/25 bg-crimson/[0.03] p-3">
-          <OsintInvestigate
-            value={entities.find((e) => keyOf(e) === active).value}
-            kind={entities.find((e) => keyOf(e) === active).kind}
-            compact
-          />
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ArticleCard({ article, index }) {
   const srcBias   = SOURCE_BIAS[article.source] || null;
@@ -381,28 +339,6 @@ export default function EventDetail() {
   const aggrBias = calcEventBias(articles);
   const isLive   = event.current_status === "escalating" || event.current_status === "developing";
 
-  // OSINT investigate pivots: derive entities from the event → /osint?value=&kind=.
-  // Locations from geography, source domains from article URLs, and typed entities
-  // (crypto wallets, file hashes, CVEs, IPs, vessel IMO/MMSI) mined from the text.
-  const osintEntities = (() => {
-    const out = [];
-    const seen = new Set();
-    const push = (value, kind) => {
-      const key = `${kind}:${String(value).toLowerCase()}`;
-      if (value && !seen.has(key)) { seen.add(key); out.push({ value, kind }); }
-    };
-    (event.geography || []).slice(0, 4).forEach(g => push(g, "location"));
-    const hosts = new Set();
-    (articles || []).forEach(a => {
-      try { const h = new URL(a.url).hostname.replace(/^www\./, ""); if (h) hosts.add(h); } catch { /* skip */ }
-    });
-    [...hosts].slice(0, 4).forEach(h => push(h, "domain"));
-    const blob = [event.canonical_title, event.title, event.canonical_summary,
-      ...(articles || []).map(a => a.title)].filter(Boolean).join("  ");
-    extractEntities(blob, { cap: 6 }).forEach(e => push(e.value, e.kind));
-    return out.slice(0, 10);
-  })();
-
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-paper">
       <PageHeader {...headerProps} />
@@ -465,10 +401,6 @@ export default function EventDetail() {
                   </span>
                 ))}
               </div>
-            )}
-
-            {can("osintInvestigate") && osintEntities.length > 0 && (
-              <OsintEntityChips entities={osintEntities} />
             )}
 
             {(traffic.vessels + traffic.aircraft) > 0 && (

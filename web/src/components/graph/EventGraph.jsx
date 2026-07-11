@@ -5,8 +5,6 @@ import { api } from "../../lib/api.js";
 import { biasLabel, BIAS_COLORS, SOURCE_BIAS } from "../../lib/bias.js";
 import TierGate from "../TierGate.jsx";
 import { useUser } from "../../hooks/useUser.js";
-import HlsPlayer from "../livenews/HlsPlayer.jsx";
-import { useLiveStreams } from "../../hooks/useLiveStreams.js";
 import { COUNTRY_NAMES } from "../../lib/countries.js";
 import ConsequenceTrace from "./ConsequenceTrace.jsx";
 
@@ -192,212 +190,9 @@ function ImpactCard({ impact, index }) {
   );
 }
 
-// ─── Watch (live TV coverage) ───────────────────────────────────────────────────
-
-// Pick the live channel whose region best matches the event's geography/title.
-// Falls back to channels[0] (the most-reliable default) when nothing matches.
-const REGION_HINTS = {
-  IN: ["india", "delhi", "mumbai", "kashmir", "pakistan", "bangladesh", "sri lanka"],
-  SG: ["singapore", "malaysia", "indonesia", "philippines", "vietnam", "thailand", "myanmar", "asean"],
-  QA: ["qatar", "gaza", "israel", "palestin", "lebanon", "syria", "iran", "iraq", "yemen", "saudi", "egypt", "middle east"],
-  FR: ["france", "paris", "europe", "ukrain", "russia", "germany", "italy", "spain", "poland"],
-  DE: ["germany", "berlin"],
-  GB: ["britain", "united kingdom", "london", "england", "scotland"],
-  US: ["united states", "u.s.", "america", "washington", "new york", "california"],
-  AU: ["australia", "sydney", "melbourne", "new zealand", "pacific"],
-  CA: ["canada", "ottawa", "toronto"],
-  TR: ["turkey", "türkiye", "ankara", "istanbul"],
-};
-
-function pickChannelForEvent(channels, event) {
-  if (!channels?.length) return null;
-  const hay = [...(event?.geography || []), event?.canonical_title || event?.title || ""]
-    .join(" ").toLowerCase();
-  for (const ch of channels) {
-    const hints = REGION_HINTS[ch.region];
-    if (hints && hints.some((k) => hay.includes(k))) return ch;
-  }
-  return channels[0];
-}
-
-function WatchTab({ event }) {
-  const { channels, loading, error } = useLiveStreams();
-  const auto = useMemo(() => pickChannelForEvent(channels, event), [channels, event]);
-  const [activeId, setActiveId] = useState(null);
-  useEffect(() => { if (auto && !activeId) setActiveId(auto.id); }, [auto, activeId]);
-  const active = channels.find((c) => c.id === activeId) || auto;
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="w-5 h-5 border-2 border-ink/10 border-t-crimson rounded-full animate-spin" />
-      </div>
-    );
-  }
-  if (!channels.length) {
-    return <p className="text-xs text-ink/30 text-center py-8 font-mono uppercase tracking-wider">No live coverage available.</p>;
-  }
-
-  return (
-    <div>
-      <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
-        <HlsPlayer channel={active} />
-      </div>
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-ink/10">
-        <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
-        <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-crimson">Live</span>
-        {active && <span className="text-[11px] font-semibold text-ink truncate">{active.name}</span>}
-        {error && <span className="ml-auto text-[9px] uppercase tracking-wider text-ink/35">official channels</span>}
-      </div>
-      <div className="flex gap-1.5 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-        {channels.map((c) => {
-          const isActive = c.id === (active && active.id);
-          return (
-            <button
-              key={c.id}
-              onClick={() => setActiveId(c.id)}
-              className="flex-shrink-0 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors"
-              style={{
-                color: isActive ? "#C80028" : "rgba(26,26,26,0.5)",
-                borderColor: isActive ? "rgba(200,0,40,0.5)" : "rgba(26,26,26,0.12)",
-                backgroundColor: isActive ? "rgba(200,0,40,0.08)" : "transparent",
-              }}
-            >
-              {c.name}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Rank channels by how well their region matches the event: region-matched first
-// (most hint hits first), then the rest. Returns the full ordered list plus the set
-// of region-matched ids so the UI can flag "covering this story".
-function rankChannelsForEvent(channels, event) {
-  if (!channels?.length) return { ordered: [], relevantIds: new Set() };
-  const hay = [...(event?.geography || []), event?.canonical_title || event?.title || ""]
-    .join(" ").toLowerCase();
-  const scored = channels.map((ch) => {
-    const code = (ch.region || "").toUpperCase();
-    // Strongest signal: the channel's OWN country appears in the event geography
-    // (iptv-org tags region as an ISO-2 code) -> local coverage.
-    const names = COUNTRY_NAMES[code] || [];
-    let hits = names.some((n) => hay.includes(n)) ? 3 : 0;
-    // Legacy curated-channel keyword hints (broader regions).
-    hits += (REGION_HINTS[code] || []).filter((k) => hay.includes(k)).length;
-    return { ch, hits };
-  });
-  const relevant = scored.filter((s) => s.hits > 0).sort((a, b) => b.hits - a.hits);
-  const rest = scored.filter((s) => s.hits === 0);
-  return {
-    ordered: [...relevant, ...rest].map((s) => s.ch),
-    relevantIds: new Set(relevant.map((s) => s.ch.id)),
-  };
-}
-
-// First ISO-2 country code whose name appears in the event's geography/title.
-function countryCodeForEvent(event) {
-  const hay = [...(event?.geography || []), event?.canonical_title || event?.title || ""].join(" ").toLowerCase();
-  for (const [code, names] of Object.entries(COUNTRY_NAMES)) {
-    if (names.some((n) => hay.includes(n))) return code.toLowerCase();
-  }
-  return null;
-}
-
-// Compact live-TV player shown inline in the Intelligence panel, beneath the
-// consequence chain. Prefers channels from the event's OWN country (iptv-org
-// per-country playlist), then region-matched curated channels, with a switcher.
-function LiveCoverageInline({ event }) {
-  const { channels } = useLiveStreams();
-  // Local channels for the event's country (keyless iptv-org), prepended so the
-  // most locally-relevant coverage ranks first.
-  const [localChannels, setLocalChannels] = useState([]);
-  useEffect(() => {
-    const code = countryCodeForEvent(event);
-    if (!code) { setLocalChannels([]); return; }
-    let alive = true;
-    api.get(`/live-news/local?country=${code}`)
-      .then((d) => { if (alive) setLocalChannels(Array.isArray(d?.channels) ? d.channels : []); })
-      .catch(() => { if (alive) setLocalChannels([]); });
-    return () => { alive = false; };
-  }, [event]);
-  const merged = useMemo(() => [...localChannels, ...channels], [localChannels, channels]);
-  const { ordered, relevantIds } = useMemo(() => rankChannelsForEvent(merged, event), [merged, event]);
-  const [activeId, setActiveId] = useState(null);
-  // Until the user picks a channel, the default follows the top-ranked one — so when
-  // the async local-country channels arrive and re-rank, the player switches to the
-  // local channel instead of staying on the initial curated default.
-  const userPicked = useRef(false);
-  useEffect(() => { userPicked.current = false; setActiveId(null); }, [event]);
-  useEffect(() => { if (!userPicked.current && ordered.length) setActiveId(ordered[0].id); }, [ordered]);
-  const active = ordered.find((c) => c.id === activeId) || ordered[0];
-  const hasChannels = ordered.length > 0;
-
-  // Event-specific clips: YouTube's keyless search-embed is deprecated (plays
-  // "unavailable"), so we open a YouTube search for the event in a new tab on
-  // demand. The inline player shows the working region-matched live channel.
-  const ytSearch = useMemo(() => {
-    const geo = (event?.geography || [])[0];
-    const q = [event?.canonical_title || event?.title || "", geo, "news"].filter(Boolean).join(" ");
-    return `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
-  }, [event]);
-
-  if (!hasChannels) return null;
-
-  return (
-    <div className="mt-4 pt-4 border-t border-ink/10">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
-        <span className="text-[9px] font-mono uppercase tracking-[0.3em] text-crimson">Live Coverage</span>
-        <a
-          href={ytSearch} target="_blank" rel="noopener noreferrer"
-          className="ml-auto px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border transition-colors text-ink/55 hover:text-crimson"
-          style={{ borderColor: "rgba(128,128,128,0.3)" }}
-          title="Open YouTube clips for this event"
-        >
-          Clips on this event ↗
-        </a>
-      </div>
-
-      <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
-        {active && <HlsPlayer channel={active} />}
-      </div>
-
-      <div className="flex gap-1.5 mt-2 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-        {ordered.map((c) => {
-          const isActive = c.id === active?.id;
-          const rel = relevantIds.has(c.id);
-          return (
-            <button
-              key={c.id}
-              onClick={() => { userPicked.current = true; setActiveId(c.id); }}
-              className={`flex-shrink-0 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider border transition-colors ${
-                isActive ? "" : rel ? "text-ink/70" : "text-ink/40"
-              }`}
-              style={{
-                color: isActive ? "#C80028" : undefined,
-                borderColor: isActive ? "rgba(200,0,40,0.5)" : "rgba(128,128,128,0.25)",
-                backgroundColor: isActive ? "rgba(200,0,40,0.08)" : "transparent",
-              }}
-            >
-              {rel && <span className="mr-1 text-crimson">●</span>}{c.name}
-            </button>
-          );
-        })}
-      </div>
-
-      <p className="text-[8px] font-mono text-ink/30 mt-1.5 uppercase tracking-wider">
-        {relevantIds.has(active?.id) ? "Region-matched live channel" : "Live channel"} · clips on this event ↗
-      </p>
-    </div>
-  );
-}
-
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-const TABS = ["Intelligence", "Trace", "Watch", "Predictions", "Effects"];
+const TABS = ["Intelligence", "Trace", "Predictions", "Effects"];
 
 export default function EventGraph({ eventId, onClose }) {
   const [event,     setEvent]     = useState(null);
@@ -573,16 +368,11 @@ export default function EventGraph({ eventId, onClose }) {
                     ))}
                   </div>
                 )}
-                {/* Live TV coverage as another source, inline under the chain */}
-                <LiveCoverageInline event={event} />
               </div>
             )}
 
             {/* Trace — computed directed consequence chain to other events */}
             {activeTab === "Trace" && <ConsequenceTrace eventId={event.id} />}
-
-            {/* Watch — live TV coverage, region-matched to the event */}
-            {activeTab === "Watch" && <WatchTab event={event} />}
 
             {/* Predictions */}
             {activeTab === "Predictions" && (

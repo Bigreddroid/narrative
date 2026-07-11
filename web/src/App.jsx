@@ -16,16 +16,9 @@ const Following = lazy(() => import("./pages/Following.jsx"));
 const Settings = lazy(() => import("./pages/Settings.jsx"));
 const Analyst = lazy(() => import("./pages/Analyst.jsx"));
 const GeoLocate = lazy(() => import("./pages/GeoLocate.jsx"));
-const DisinfoThreat = lazy(() => import("./pages/DisinfoThreat.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
-const Dashboard = lazy(() => import("./admin/Dashboard.jsx"));
 const PipelineMonitor = lazy(() => import("./admin/PipelineMonitor.jsx"));
-const WorkerControls = lazy(() => import("./admin/WorkerControls.jsx"));
 const CostDashboard = lazy(() => import("./admin/CostDashboard.jsx"));
-const SourceManager = lazy(() => import("./admin/SourceManager.jsx"));
-const EventReview = lazy(() => import("./admin/EventReview.jsx"));
-const UserStats = lazy(() => import("./admin/UserStats.jsx"));
-const HallucinationFlags = lazy(() => import("./admin/HallucinationFlags.jsx"));
 
 const DEV_BYPASS = import.meta.env.DEV;
 
@@ -83,19 +76,13 @@ export default function App() {
         <Route path="/analyst"         element={<PrivateRoute><Analyst /></PrivateRoute>} />
         <Route path="/geolocate"       element={<PrivateRoute><GeoLocate /></PrivateRoute>} />
         <Route path="/osint"           element={<OsintRedirect />} />
-        <Route path="/threats"         element={<PrivateRoute><DisinfoThreat /></PrivateRoute>} />
         <Route path="/settings"        element={<PrivateRoute><Settings /></PrivateRoute>} />
 
         {/* Admin */}
         <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-          <Route index                  element={<Dashboard />} />
+          <Route index                  element={<PipelineMonitor />} />
           <Route path="pipeline"        element={<PipelineMonitor />} />
-          <Route path="workers"         element={<WorkerControls />} />
           <Route path="costs"           element={<CostDashboard />} />
-          <Route path="sources"         element={<SourceManager />} />
-          <Route path="events"          element={<EventReview />} />
-          <Route path="users"           element={<UserStats />} />
-          <Route path="hallucinations"  element={<HallucinationFlags />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

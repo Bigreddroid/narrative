@@ -4,16 +4,6 @@ import { useFollowing } from "../../hooks/useFollowing.js";
 
 const TABS = [
   {
-    id: "threats",
-    path: "/threats",
-    label: "Threats",
-    icon: (active) => (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M10 2.5l6 2.2v4.6c0 4-2.7 6.6-6 8.2-3.3-1.6-6-4.2-6-8.2V4.7l6-2.2z" />
-      </svg>
-    ),
-  },
-  {
     id: "feed",
     path: "/world",
     label: "Feed",
@@ -99,7 +89,6 @@ export default function MobileNav() {
   const activeId =
     location.pathname === "/analyst" ? "analyst"
     : location.pathname === "/geolocate" ? "locate"
-    : location.pathname === "/threats" ? "threats"
     : location.pathname === "/following" ? "tracked"
     : location.pathname === "/settings" ? "profile"
     : location.search.includes("tab=exposure") ? "exposure"

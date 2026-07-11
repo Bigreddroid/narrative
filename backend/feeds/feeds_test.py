@@ -18,11 +18,8 @@ from backend.feeds import chokepoints
 from backend.feeds import spaceweather
 from backend.feeds import cyber
 from backend.feeds import sanctions
-from backend.feeds import reddit_osint
 from backend.feeds import osint_threatintel
-from backend.feeds import osint_disinfo
 from backend.feeds import rss_osint
-from backend.feeds import iptv_org
 from backend.services import osint_agent
 
 passed = failed = 0
@@ -304,21 +301,10 @@ stress = market.sector_stress([
 ok("sector_stress in [0,1]", all(0 <= v <= 1 for v in stress.values()))
 ok("bigger moves ⇒ more stress", stress["Energy"] > stress["FX"])
 
-# ── OSINT: Reddit parser (pure) ─────────────────────────────────────────────
-reddit_json = {"data": {"children": [
-    {"data": {"id": "abc1", "title": "M7 earthquake strikes Iran", "subreddit": "worldnews",
-              "selftext": "Tsunami warning issued.", "permalink": "/r/worldnews/comments/abc1/x",
-              "score": 4200, "num_comments": 800, "created_utc": 1718000000, "stickied": False, "over_18": False}},
-    {"data": {"id": "sticky", "title": "Weekly thread", "subreddit": "worldnews", "stickied": True}},  # skip
-    {"data": {"id": "nsfw1", "title": "graphic", "subreddit": "worldnews", "over_18": True}},  # skip
-    {"data": {"title": "no id", "subreddit": "worldnews"}},  # skip (no id)
-]}}
-rp = reddit_osint.parse_reddit(reddit_json, "worldnews")
-ok("reddit parser skips stickied/nsfw/idless", len(rp) == 1)
-ok("reddit external_id namespaced", rp[0]["external_id"] == "reddit-abc1")
-ok("reddit selftext truncated field present", rp[0]["selftext"] == "Tsunami warning issued." and rp[0]["score"] == 4200)
-ok("reddit url falls back to permalink", rp[0]["url"].endswith("/r/worldnews/comments/abc1/x"))
-ok("reddit empty listing ⇒ []", reddit_osint.parse_reddit({}, "x") == [])
+# ── OSINT triage fixture (a parsed OSINT candidate, reddit-shaped) ────────────
+rp = [{"external_id": "reddit-abc1", "title": "M7 earthquake strikes Iran",
+       "selftext": "Tsunami warning issued.", "url": "https://reddit.com/x",
+       "score": 4200, "created_utc": 1718000000}]
 
 # ── OSINT: triage agent heuristic + geocode (pure, no live LLM) ──────────────
 quake_sig = osint_agent._heuristic_triage(rp[0])[0]
@@ -355,85 +341,6 @@ ok("dropped decision flags kept=False + no_keyword reason",
    drop_sig is None and not drop_dec["kept"] and drop_dec["reason"] == "no_keyword")
 ok("dropped decision still records external_id + title", drop_dec["external_id"] == "reddit-z2" and drop_dec["title"])
 
-# ── OSINT: Reddit OAuth wiring + keyless fallback (pure + mocked client) ──────
-import asyncio as _asyncio
-
-
-class _Cfg:  # minimal settings stand-in for the reddit_osint helpers
-    def __init__(self, cid, sec):
-        self.reddit_client_id = cid
-        self.reddit_client_secret = sec
-        self.reddit_user_agent = "ua/test"
-
-
-# request target selection (pure): keyless vs authenticated host + headers
-_pub_url, _pub_h, _pub_p = reddit_osint._request_for("worldnews", None, "ua/1", 25)
-ok("reddit keyless → www.reddit.com/.json", _pub_url == "https://www.reddit.com/r/worldnews/hot.json")
-ok("reddit keyless sends Accept, no Authorization",
-   "Authorization" not in _pub_h and _pub_h["Accept"] == "application/json")
-ok("reddit params carry raw_json + limit", _pub_p["raw_json"] == 1 and _pub_p["limit"] == 25)
-
-_oa_url, _oa_h, _oa_p = reddit_osint._request_for("worldnews", "TKN", "ua/1", 25)
-ok("reddit oauth → oauth.reddit.com host", _oa_url == "https://oauth.reddit.com/r/worldnews/hot")
-ok("reddit oauth sends bearer header", _oa_h["Authorization"] == "bearer TKN")
-
-ok("oauth configured needs BOTH creds",
-   reddit_osint._oauth_configured(_Cfg("id", "sec")) is True
-   and reddit_osint._oauth_configured(_Cfg("id", "")) is False
-   and reddit_osint._oauth_configured(_Cfg("", "")) is False)
-
-# token cache validity (pure): valid before expiry, dropped after
-reddit_osint._token_cache.clear()
-ok("no cached token when empty", reddit_osint._cached_token(now=1000.0) is None)
-reddit_osint._token_cache.update({"token": "T1", "expires_at": 2000.0})
-ok("cached token returned before expiry", reddit_osint._cached_token(now=1500.0) == "T1")
-ok("cached token dropped after expiry", reddit_osint._cached_token(now=2500.0) is None)
-
-
-class _Resp:
-    def __init__(self, status, data):
-        self.status_code = status
-        self._d = data
-
-    def json(self):
-        return self._d
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
-
-
-class _BoomClient:  # must NOT be called when a valid token is cached
-    async def post(self, *a, **k):
-        raise AssertionError("should not POST when token cached")
-
-
-reddit_osint._token_cache.update({"token": "CACHED", "expires_at": 9_999_999_999.0})
-ok("get_oauth_token reuses cache (no network)",
-   _asyncio.run(reddit_osint._get_oauth_token(_BoomClient(), _Cfg("id", "sec"))) == "CACHED")
-
-
-class _OkClient:
-    async def post(self, *a, **k):
-        return _Resp(200, {"access_token": "NEW", "expires_in": 3600})
-
-
-reddit_osint._token_cache.clear()
-ok("get_oauth_token fetches + caches new token",
-   _asyncio.run(reddit_osint._get_oauth_token(_OkClient(), _Cfg("id", "sec"))) == "NEW"
-   and reddit_osint._cached_token() == "NEW")
-
-
-class _ForbiddenClient:  # 403 on the token call → None → keyless fallback
-    async def post(self, *a, **k):
-        return _Resp(403, {})
-
-
-reddit_osint._token_cache.clear()
-ok("get_oauth_token 403 → None (keyless fallback)",
-   _asyncio.run(reddit_osint._get_oauth_token(_ForbiddenClient(), _Cfg("id", "sec"))) is None)
-reddit_osint._token_cache.clear()  # leave the module cache clean
-
 # ── OSINT: LLM triage maps fields + respects confidence floor (mock LLM) ──────
 from backend.services import llm as _llm
 
@@ -468,23 +375,6 @@ try:
 finally:
     _llm.complete = _saved_complete
 
-# ── Live news: iptv-org M3U parser (pure) ────────────────────────────────────
-m3u = (
-    "#EXTM3U\n"
-    '#EXTINF:-1 tvg-id="AlJazeera.qa" tvg-logo="https://x/aj.png" tvg-country="QA" '
-    'tvg-language="English" group-title="News",Al Jazeera English\n'
-    "https://example.com/aje/index.m3u8\n"
-    '#EXTINF:-1 tvg-id="NoHls.us" group-title="News",Not HLS Channel\n'
-    "https://example.com/not-a-stream.mp4\n"
-)
-ch = iptv_org.parse_m3u(m3u)
-ok("iptv parser keeps only HLS (.m3u8) entries", len(ch) == 1)
-ok("iptv parser extracts name + id + src", ch[0]["name"] == "Al Jazeera English"
-   and ch[0]["id"] == "AlJazeera.qa" and ch[0]["src"].endswith(".m3u8"))
-ok("iptv parser carries logo + country + marks unofficial",
-   ch[0]["logo"].endswith("aj.png") and ch[0]["region"] == "QA" and ch[0]["official"] is False)
-ok("iptv parser empty text ⇒ []", iptv_org.parse_m3u("") == [])
-
 # ── OSINT: threat-intel (ransomware.live) candidate parser ───────────────────
 ti_raw = [
     {"victim": "Acme Mfg", "group": "safepay", "country": "DE", "activity": "Manufacturing",
@@ -508,23 +398,6 @@ ti_sig = osint_agent._heuristic_triage(ti[0], source=osint_threatintel.SOURCE)[0
 ok("threatintel candidate triages to cyber + osint_threatintel source",
    ti_sig and ti_sig["category"] == "cyber" and ti_sig["source"] == "osint_threatintel")
 ok("threatintel triaged signal synthesizes", len(S.synthesize(ti_sig)["direct_impact"]) >= 1)
-
-# ── OSINT disinfo (curated, pre-categorized fact-check feed) ──────────────────
-di_raw = [
-    {"title": "No, this photo does not show a 2026 flood", "summary": "Doctored image.",
-     "link": "https://politifact.com/x", "ts": 1_750_000_000.0},
-    {"title": "No, this photo does not show a 2026 flood", "link": "https://politifact.com/x"},  # dup link
-    {"summary": "headline-less", "link": "https://x/y"},  # no title → skipped
-]
-di = osint_disinfo.parse_disinfo(di_raw)
-ok("disinfo keeps unique items, skips dup + titleless", len(di) == 1)
-ok("disinfo external_id namespaced", di[0]["external_id"].startswith("disinfo-"))
-ok("disinfo category is disinfo + source set", di[0]["category"] == "disinfo" and di[0]["source"] == "osint_disinfo")
-ok("disinfo is non-geo", di[0]["lat"] is None and di[0]["lng"] is None)
-ok("disinfo ts → epoch ms", di[0]["ts"] == 1_750_000_000_000)
-ok("disinfo empty payload ⇒ []", osint_disinfo.parse_disinfo(None) == [])
-ok("disinfo signal synthesizes via SECTOR_MAP", len(S.synthesize(di[0])["direct_impact"]) >= 1)
-ok("disinfo category allowed by triage", "disinfo" in osint_agent.ALLOWED_CATEGORIES)
 
 # ── OSINT RSS/Atom v2 multi-source collector ─────────────────────────────────
 _RSS_XML = """<?xml version="1.0"?>

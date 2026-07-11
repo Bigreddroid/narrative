@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from backend.api.rate_limit import limiter
-from backend.api.routes import admin, aircraft, auth, chat, events, exposure, feed, follows, geolocate, graph, live_news, market, notifications, osint, search, stripe_routes, users, vessels
+from backend.api.routes import admin, aircraft, auth, chat, events, exposure, feed, follows, geolocate, graph, market, notifications, osint, search, stripe_routes, users, vessels
 from backend.config import get_settings
 from backend.database import engine
 
@@ -90,7 +90,6 @@ app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(search.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(geolocate.router, prefix="/api/v1")
-app.include_router(live_news.router, prefix="/api/v1")
 app.include_router(osint.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(stripe_routes.router, prefix="/api/v1")
