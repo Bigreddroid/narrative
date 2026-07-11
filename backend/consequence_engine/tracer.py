@@ -65,6 +65,9 @@ def _adjacency(events: list[dict], edges: list[dict]) -> dict[str, list[dict]]:
             "cosine": ed.get("cosine"),
             "shared_sectors": ed.get("shared_sectors") or [],
             "shared_geography": ed.get("shared_geography") or [],
+            # stored directed edge = time-ordered cause→effect (real causal orientation);
+            # undirected = symmetric co-occurrence. Carried onto the hop as `directed`.
+            "directed": ed.get("directed") is True,
         }
         adj[src].append({"to": tgt, **meta})
         if ed.get("directed") is not True:  # undirected → effect can flow back too
@@ -96,7 +99,11 @@ def trace_consequences(
     grounded-first, then by the strongest propagated path (score = round(100·Πhop
     DECAY·weight)); each carries its winning ``depth``, ``kind`` and ``grounded``.
     ``hops`` is the winning incoming edge per node (from, to, weight, depth,
-    shared_sectors, shared_geography, mechanism, kind, grounded).
+    magnitude, lag_hours, directed, shared_sectors, shared_geography, mechanism,
+    kind, grounded). ``magnitude`` is how much the link transmits, ``lag_hours``
+    is cause→effect delay (None when a timestamp is missing), ``directed`` marks a
+    time-ordered causal edge vs a symmetric co-occurrence. Nodes additionally carry
+    ``region``/``lat``/``lng``/``status`` — WHERE the consequence lands.
 
     Each hop is classified (see _classify): a *grounded* hop is a real consequence
     link (semantic / geographic / specific-sector); a *co_occurrence* hop rests only
@@ -109,8 +116,17 @@ def trace_consequences(
 
     def _node(i: str) -> dict:
         e = by_id.get(i) or {}
-        return {"id": i, "title": e.get("canonical_title") or e.get("title"),
-                "category": e.get("category")}
+        geo = e.get("geographic_relevance") or []
+        return {
+            "id": i,
+            "title": e.get("canonical_title") or e.get("title"),
+            "category": e.get("category"),
+            "status": e.get("current_status") or e.get("status"),
+            # WHERE this consequence lands — concrete place + coords when known (R1).
+            "region": geo[0] if geo else None,
+            "lat": e.get("lat"),
+            "lng": e.get("lng"),
+        }
 
     root = _node(root_id) if root_id in by_id else {"id": root_id, "title": None, "category": None}
 
@@ -143,11 +159,23 @@ def trace_consequences(
             if cand > best.get(v, 0.0):
                 best[v] = cand
                 best_depth[v] = d + 1
+                ts_u = (by_id.get(u) or {}).get("ts")
+                ts_v = (by_id.get(v) or {}).get("ts")
+                # WHEN — hours from cause to effect (positive = effect follows cause).
+                lag_hours = (
+                    round((ts_v - ts_u) / 3_600_000, 1)
+                    if ts_u is not None and ts_v is not None else None
+                )
                 hop_in[v] = {
                     "from": u,
                     "to": v,
                     "weight": round(e["weight"], 3),
                     "depth": d + 1,
+                    # HOW MUCH — strength this single link transmits (0–100).
+                    "magnitude": round(100 * DECAY * e["weight"]),
+                    "lag_hours": lag_hours,
+                    # real causal orientation (time-ordered) vs symmetric co-occurrence.
+                    "directed": e.get("directed", False),
                     "shared_sectors": e["shared_sectors"],
                     "shared_geography": e["shared_geography"],
                     "mechanism": _mechanism(e["shared_sectors"], e["shared_geography"]),

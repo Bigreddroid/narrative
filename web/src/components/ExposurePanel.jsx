@@ -178,7 +178,11 @@ export default function ExposurePanel() {
 
   const profile = useMemo(() => {
     const s = user?.spending_categories?.length ? user.spending_categories : DEFAULT_PROFILE.sectors;
-    const r = [user?.country, user?.city].filter(Boolean);
+    // Choosable lens (R2): named regions/routes/chokepoints picked at onboarding
+    // take precedence, then home country/city. This is what makes an EU-logistics
+    // profile (Rotterdam, Suez) and a Gulf-energy profile (Hormuz, Persian Gulf)
+    // resolve to different "Your Exposure" on the same events.
+    const r = [...(user?.regions || []), user?.country, user?.city].filter(Boolean);
     return { sectors: s, regions: r.length ? r : DEFAULT_PROFILE.regions };
   }, [user]);
   const personal = useMemo(() => (model ? profileExposure(profile, model) : { score: 0, drivers: [] }), [model, profile]);

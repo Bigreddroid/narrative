@@ -18,6 +18,10 @@ class User(Base):
     country: Mapped[str | None] = mapped_column(Text)
     profession: Mapped[str | None] = mapped_column(Text)
     spending_categories: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    # Choosable customer lens (Phase 3 / R2) — granular, user-selected profile.
+    purpose: Mapped[list[str] | None] = mapped_column(ARRAY(Text))          # protect supply chain / people / capital / sites
+    regions: Mapped[list[str] | None] = mapped_column(ARRAY(Text))          # named regions / routes / chokepoints
+    watched_assets: Mapped[list[str] | None] = mapped_column(ARRAY(Text))   # named suppliers / ports / counterparties / companies
     tier: Mapped[str] = mapped_column(Text, default="free")
     stripe_customer_id: Mapped[str | None] = mapped_column(Text)
     revenue_cat_id: Mapped[str | None] = mapped_column(Text)

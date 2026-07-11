@@ -216,9 +216,15 @@ async def get_my_exposure(db: DbDep, user: UserDep) -> dict:
     model = propagation.compute_exposure_model(
         events, edges, market_stress=await _combined_stress(db),
         corroboration=corroboration.corroborate(events))
+    # Choosable lens (R2): the profile is exactly what the user picked — named
+    # regions/routes/chokepoints take precedence, home city/country fill in. Exposure
+    # is computed strictly over this profile (profile_exposure returns empty when
+    # nothing matches — no generic/global fallback leaks into a personal view).
     profile = {
         "sectors": user.spending_categories or [],
-        "regions": [r for r in (user.country, user.city) if r],
+        "regions": (user.regions or []) + [r for r in (user.country, user.city) if r],
+        "purpose": user.purpose or [],
+        "watched_assets": user.watched_assets or [],
     }
     personal = propagation.profile_exposure(profile, model)
     return {"profile": profile, "exposure": personal, "pressure": model["pressure"], "meta": model["meta"]}

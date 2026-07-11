@@ -58,6 +58,13 @@ function TraceHop({ node }) {
   const label = KIND_LABEL[node.hop?.kind] || KIND_LABEL.co_occurrence;
   const mechanism = node.hop?.mechanism;
 
+  // R1 specifics: WHERE it lands, WHEN it hits, and whether the link is time-ordered causal.
+  const lag = node.hop?.lag_hours;
+  const metaBits = [];
+  if (node.region) metaBits.push(`📍 ${node.region}`);
+  if (lag != null) metaBits.push(lag >= 0 ? `+${lag}h` : `${lag}h`);
+  if (node.hop?.directed) metaBits.push("causal");
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
@@ -95,6 +102,12 @@ function TraceHop({ node }) {
 
           {mechanism && mechanism !== "related" && (
             <p className="text-[9px] font-mono text-ink/35 mt-0.5 leading-relaxed">{mechanism}</p>
+          )}
+
+          {metaBits.length > 0 && (
+            <p className="text-[9px] font-mono text-ink/45 mt-0.5 leading-relaxed">
+              {metaBits.join("  ·  ")}
+            </p>
           )}
 
           {node.children?.length > 0 && (
