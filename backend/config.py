@@ -51,9 +51,6 @@ class Settings(BaseSettings):
         return v
 
     # Auth
-    supabase_url: str = ""
-    supabase_anon_key: str = ""
-    supabase_service_key: str = ""
     secret_key: str = "dev-secret-key-change-in-production"
 
     # Payments
