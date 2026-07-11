@@ -54,7 +54,7 @@ function matchPreset(profileRegions) {
     p.patch.regions.some((r) => set.has(r.toLowerCase())))?.id || null;
 }
 
-export default function LensSwitcher({ dark = false }) {
+export default function LensSwitcher({ dark = false, compact = false }) {
   const profile = useProfile();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
@@ -90,19 +90,35 @@ export default function LensSwitcher({ dark = false }) {
 
   return (
     <>
-      <button
-        ref={btnRef}
-        onClick={toggle}
-        className="flex items-center gap-1.5 hover:text-crimson transition-colors cursor-pointer"
-        style={{ color: fg }}
-        title="Switch your lens — re-scopes the whole app"
-      >
-        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round">
-          <path d="M7 1.5L12.5 7 7 12.5 1.5 7z" />
-        </svg>
-        <span className="normal-case">Lens: <span className="font-semibold">{activeLabel}</span></span>
-        <span style={{ fontSize: 8, opacity: 0.6 }}>▼</span>
-      </button>
+      {compact ? (
+        // Mobile: icon-only pill matching the other top-bar buttons; a crimson
+        // dot signals an active lens is scoping the app.
+        <button
+          ref={btnRef}
+          onClick={toggle}
+          className="relative w-9 h-9 flex items-center justify-center rounded-full border border-ink/10 text-ink/40 hover:text-crimson transition-colors cursor-pointer"
+          title={`Lens: ${activeLabel} — re-scopes the whole app`}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round">
+            <path d="M7 1.5L12.5 7 7 12.5 1.5 7z" />
+          </svg>
+          {profile.active && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-crimson" />}
+        </button>
+      ) : (
+        <button
+          ref={btnRef}
+          onClick={toggle}
+          className="flex items-center gap-1.5 hover:text-crimson transition-colors cursor-pointer"
+          style={{ color: fg }}
+          title="Switch your lens — re-scopes the whole app"
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round">
+            <path d="M7 1.5L12.5 7 7 12.5 1.5 7z" />
+          </svg>
+          <span className="normal-case">Lens: <span className="font-semibold">{activeLabel}</span></span>
+          <span style={{ fontSize: 8, opacity: 0.6 }}>▼</span>
+        </button>
+      )}
 
       {open && createPortal(
         <>

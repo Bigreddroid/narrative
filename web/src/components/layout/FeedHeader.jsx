@@ -145,6 +145,7 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
           <button onClick={toggle} className="w-9 h-9 flex items-center justify-center rounded-full border border-ink/10 text-ink/40">
             {isDark ? <SunIcon /> : <MoonIcon />}
           </button>
+          <LensSwitcher compact />
         </div>
       </div>
 
