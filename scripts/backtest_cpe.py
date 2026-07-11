@@ -19,6 +19,7 @@ Env:  DATABASE_URL (asyncpg URL, same as the app).
 import asyncio
 import os
 import statistics
+from collections import Counter
 
 import asyncpg
 
@@ -60,6 +61,35 @@ async def load_pairs() -> list[tuple[float, float]]:
     return pairs
 
 
+async def load_pairs_pathb() -> list[tuple[float, float]]:
+    """Path B ($0, no LLM, no 30-day wait): pair every stored prediction_score with a
+    status-derived outcome label (resolved=1.0 / escalating=0.5 / stable=0.0) over all
+    events that have reached a terminal status. Uses the whole local backlog, so N is
+    large — but escalating→0.5 is a *soft* label, so watch the label distribution below:
+    a set dominated by 0.5 is only weakly decisive, however many rows it has.
+    """
+    conn = await asyncpg.connect(_asyncpg_dsn())
+    try:
+        rows = await conn.fetch(
+            """
+            select m.prediction_score, e.current_status
+            from event_consequence_maps m
+            join narrative_events e on e.id = m.narrative_event_id
+            where m.prediction_score is not null
+            """
+        )
+    finally:
+        await conn.close()
+
+    pairs: list[tuple[float, float]] = []
+    for score, status in rows:
+        o = calibration.outcome_label(status)
+        if o is None:
+            continue  # still developing — not terminal, not scorable
+        pairs.append((score / 100.0, float(o)))
+    return pairs
+
+
 def mean_brier(pairs, predict) -> float:
     return statistics.fmean(calibration.brier_score(predict(p, o), o) for p, o in pairs)
 
@@ -73,6 +103,11 @@ def report(pairs: list[tuple[float, float]]) -> None:
 
     base_rate = statistics.fmean(o for _, o in pairs)
     fails = sum(1 for _, o in pairs if o == 0.0)
+    dist = dict(sorted(Counter(round(o, 3) for _, o in pairs).items()))
+    decisive = sum(v for k, v in dist.items() if k in (0.0, 1.0))
+    print(f"label distribution (o→n)     : {dist}")
+    print(f"decisive labels (o∈{{0,1}})    : {decisive} of {n}   "
+          f"({'DEGENERATE — mostly soft 0.5' if decisive < n * 0.3 else 'ok'})")
 
     model_brier = mean_brier(pairs, lambda p, o: p)
     base_brier = mean_brier(pairs, lambda p, o: base_rate)
@@ -114,7 +149,10 @@ def report(pairs: list[tuple[float, float]]) -> None:
 
 
 async def main() -> None:
+    print("\n################  PATH A — real graded outcomes (prediction_outcomes)  ################")
     report(await load_pairs())
+    print("\n\n################  PATH B — status-derived labels ($0, whole backlog)  ################")
+    report(await load_pairs_pathb())
 
 
 if __name__ == "__main__":

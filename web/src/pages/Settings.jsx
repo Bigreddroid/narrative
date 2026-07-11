@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api.js";
 import { DEMO_MODE } from "../lib/demoMode.js";
+import { getStoredUser, setStoredUser } from "../hooks/useUser.js";
 
 const MOCK_USER = {
   email: "user@example.com",
@@ -11,6 +12,14 @@ const MOCK_USER = {
   profession: "",
   tier: "free",
 };
+
+// R2 lens vocab — kept in sync with Onboarding so Settings can re-edit the lens.
+const PURPOSES = ["Protect supply chain", "Protect people", "Protect capital", "Protect sites"];
+const REGIONS = [
+  "Strait of Hormuz", "Suez Canal", "Bab-el-Mandeb", "Panama Canal",
+  "South China Sea", "Rotterdam", "Singapore", "Persian Gulf",
+  "Black Sea", "Taiwan Strait", "Red Sea", "Gulf of Mexico",
+];
 
 // Friendly labels for the admin AI-engine selector. Values map to the backend
 // llm_provider choices; "self-trained" is a roadmap option, rendered disabled.
@@ -31,6 +40,7 @@ export default function Settings() {
   const [saving,        setSaving]        = useState(false);
   const [saved,         setSaved]         = useState(false);
   const [spendingText,  setSpendingText]  = useState("");
+  const [assetInput,    setAssetInput]    = useState("");
   const [searchParams]                    = useSearchParams();
 
   const upgraded  = searchParams.get("upgraded")  === "1";
@@ -83,23 +93,48 @@ export default function Settings() {
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
+    const patch = {
+      city:       user.city,
+      country:    user.country,
+      profession: user.profession,
+      spending_categories: spendingText.split(",").map(s => s.trim()).filter(Boolean),
+      purpose:        user.purpose || [],
+      regions:        user.regions || [],
+      watched_assets: user.watched_assets || [],
+      notification_preferences: user.notification_preferences || {},
+    };
     try {
-      await api.patch("/users/me", {
-        city:       user.city,
-        country:    user.country,
-        profession: user.profession,
-        spending_categories: spendingText.split(",").map(s => s.trim()).filter(Boolean),
-        notification_preferences: user.notification_preferences || {},
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      await api.patch("/users/me", patch);
     } catch {
+      // Non-fatal: still apply locally so the lens updates this session.
+    } finally {
+      // Merge the edited lens into the stored user so every screen re-scopes
+      // immediately (same-tab user event), matching Onboarding's behaviour.
+      const current = getStoredUser();
+      if (current) setStoredUser({ ...current, ...patch });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } finally {
       setSaving(false);
     }
   };
+
+  // Toggle a value in one of the user's array-valued lens fields.
+  const toggleArr = (key, v) =>
+    setUser((u) => {
+      const list = u[key] || [];
+      return { ...u, [key]: list.includes(v) ? list.filter((x) => x !== v) : [...list, v] };
+    });
+
+  const addAsset = () => {
+    const v = assetInput.trim();
+    if (v) toggleArrAdd("watched_assets", v);
+    setAssetInput("");
+  };
+  const toggleArrAdd = (key, v) =>
+    setUser((u) => {
+      const list = u[key] || [];
+      return list.includes(v) ? u : { ...u, [key]: [...list, v] };
+    });
 
   const saveConfig = async (key, value) => {
     setCfgBusy(key);
@@ -229,6 +264,102 @@ export default function Settings() {
                   <p className="text-[11px] text-ink/35 mt-1.5">
                     Comma-separated. Personalises your exposure readout.
                   </p>
+                </div>
+
+                {/* Routes & chokepoints — the geographic half of the lens */}
+                <div>
+                  <label className="text-[10px] font-mono uppercase tracking-widest text-ink/40 block mb-2">
+                    Routes &amp; Chokepoints
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {REGIONS.map((r) => {
+                      const on = (user.regions || []).includes(r);
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => toggleArr("regions", r)}
+                          className="px-2.5 py-1 text-[11px] border transition-colors"
+                          style={{
+                            borderColor: on ? "#C80028" : "rgba(26,26,26,0.15)",
+                            backgroundColor: on ? "#C8002810" : "transparent",
+                            color: on ? "#C80028" : "rgba(26,26,26,0.55)",
+                          }}
+                        >
+                          {r}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-ink/35 mt-1.5">
+                    The app scopes the feed, map heat &amp; exposure to these.
+                  </p>
+                </div>
+
+                {/* Purpose — WHY you watch, orders which consequences surface first */}
+                <div>
+                  <label className="text-[10px] font-mono uppercase tracking-widest text-ink/40 block mb-2">
+                    What you're protecting
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PURPOSES.map((p) => {
+                      const on = (user.purpose || []).includes(p);
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => toggleArr("purpose", p)}
+                          className="px-2.5 py-1 text-[11px] border transition-colors"
+                          style={{
+                            borderColor: on ? "#C80028" : "rgba(26,26,26,0.15)",
+                            backgroundColor: on ? "#C8002810" : "transparent",
+                            color: on ? "#C80028" : "rgba(26,26,26,0.55)",
+                          }}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Watched assets — named suppliers / ports / firms */}
+                <div>
+                  <label className="text-[10px] font-mono uppercase tracking-widest text-ink/40 block mb-2">
+                    Watched Assets
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      value={assetInput}
+                      onChange={(e) => setAssetInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAsset(); } }}
+                      placeholder="Add a supplier, port or company…"
+                      className="flex-1 bg-transparent border-b border-ink/15 py-2 text-sm text-ink placeholder:text-ink/20 focus:outline-none focus:border-ink/40 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={addAsset}
+                      className="px-3 text-[11px] font-mono uppercase tracking-widest border border-ink/15 text-ink/55 hover:border-crimson/40 hover:text-crimson transition-colors"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {(user.watched_assets || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                      {(user.watched_assets || []).map((a) => (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => toggleArr("watched_assets", a)}
+                          title="Remove"
+                          className="px-2 py-1 text-[11px] border"
+                          style={{ borderColor: "#C80028", backgroundColor: "#C8002810", color: "#C80028" }}
+                        >
+                          {a} ✕
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {[

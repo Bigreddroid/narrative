@@ -11,6 +11,10 @@ class UserProfileUpdate(BaseModel):
     country: str | None = None
     profession: str | None = None
     spending_categories: list[str] | None = None
+    # Choosable customer lens (Phase 3 / R2).
+    purpose: list[str] | None = None
+    regions: list[str] | None = None
+    watched_assets: list[str] | None = None
     fcm_token: str | None = None
     notification_preferences: dict | None = None
 
@@ -24,6 +28,9 @@ async def get_me(user: UserDep) -> dict:
         "country": user.country,
         "profession": user.profession,
         "spending_categories": user.spending_categories,
+        "purpose": user.purpose or [],
+        "regions": user.regions or [],
+        "watched_assets": user.watched_assets or [],
         "tier": user.tier,
         "notification_preferences": user.notification_preferences,
         "created_at": user.created_at.isoformat(),
@@ -40,6 +47,12 @@ async def update_me(body: UserProfileUpdate, db: DbDep, user: UserDep) -> dict:
         user.profession = body.profession
     if body.spending_categories is not None:
         user.spending_categories = body.spending_categories
+    if body.purpose is not None:
+        user.purpose = body.purpose
+    if body.regions is not None:
+        user.regions = body.regions
+    if body.watched_assets is not None:
+        user.watched_assets = body.watched_assets
     if body.fcm_token is not None:
         user.fcm_token = body.fcm_token
     if body.notification_preferences is not None:

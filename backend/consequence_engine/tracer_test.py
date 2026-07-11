@@ -153,5 +153,34 @@ ok("grounded_only: drops coincidental C", "C" not in ids)
 t = trace_consequences("A", EVENTS, [edge("A", "B", 0.9, shared_sectors=["defense"])], grounded_only=True)
 ok("grounded_only: all-coincidence root → limited", t["limited"] is True and t["nodes"] == [])
 
+# ── R1: hops carry magnitude / lag / direction; nodes carry WHERE ────────────
+DAY_MS = 86_400_000
+evts = [
+    {"id": "A", "title": "Strait closure", "category": "conflict",
+     "geographic_relevance": ["Strait of Hormuz"], "lat": 26.6, "lng": 56.3,
+     "current_status": "escalating", "ts": 1_000 * DAY_MS},
+    {"id": "B", "title": "Rotterdam inbound slips", "category": "economic",
+     "geographic_relevance": ["Rotterdam"], "lat": 51.9, "lng": 4.5,
+     "current_status": "developing", "ts": 1_000 * DAY_MS + 2 * DAY_MS},  # +48h
+]
+t = trace_consequences("A", evts, [edge("A", "B", 0.8, shared_geography=["Strait of Hormuz"])])
+h = t["hops"][0]
+ok("R1 magnitude: hop carries strength = round(100·DECAY·0.8)", h["magnitude"] == round(100 * DECAY * 0.8))
+ok("R1 lag: cause→effect delay computed in hours (48.0)", h["lag_hours"] == 48.0)
+ok("R1 direction: directed edge marked directed=True", h["directed"] is True)
+nb = next(n for n in t["nodes"] if n["id"] == "B")
+ok("R1 where: node carries region (Rotterdam)", nb["region"] == "Rotterdam")
+ok("R1 where: node carries coords", nb["lat"] == 51.9 and nb["lng"] == 4.5)
+ok("R1 where: node carries status", nb["status"] == "developing")
+
+# lag is None (not a crash) when a timestamp is missing
+t = trace_consequences("A", EVENTS, [edge("A", "B", 0.8)])  # EVENTS have no ts
+ok("R1 lag: missing timestamp → lag_hours None", t["hops"][0]["lag_hours"] is None)
+ok("R1 where: absent geo → region None (no fabrication)", t["nodes"][0]["region"] is None)
+
+# undirected edge is not reported as a time-ordered causal orientation
+t = trace_consequences("A", EVENTS, [edge("B", "A", 0.9, directed=False)])
+ok("R1 direction: undirected edge marked directed=False", t["hops"][0]["directed"] is False)
+
 print(f"\ntracer: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

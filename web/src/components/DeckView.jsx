@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEventFeed } from "../hooks/useEventFeed.js";
 import { useFollowing } from "../hooks/useFollowing.js";
 import { useMediaQuery } from "../hooks/useMediaQuery.js";
+import { useProfile } from "../hooks/useProfile.js";
+import { rankByLens, eventRelevance } from "../lib/lensRelevance.js";
 import EventGraph from "./graph/EventGraph.jsx";
 import { getCategoryColor } from "../lib/colors.js";
 import { biasLabel } from "../lib/bias.js";
@@ -48,6 +50,9 @@ function columnIcon(kind) {
   }
   if (kind === "status") {
     return <path d="M8 1.5l1.8 3.7 4.1.6-3 2.9.7 4.1L8 10.9 4.4 12.8l.7-4.1-3-2.9 4.1-.6z" />;
+  }
+  if (kind === "lens") {
+    return <path d="M8 1.5L14.5 8 8 14.5 1.5 8z" />;  // diamond — "for you"
   }
   return <><circle cx="8" cy="8" r="6" /><path d="M2 8h12M8 2c1.6 1.6 2.4 3.7 2.4 6S9.6 12.4 8 14M8 2C6.4 3.6 5.6 5.7 5.6 8S6.4 12.4 8 14" /></>;
 }
@@ -131,6 +136,7 @@ function DeckCard({ event, isSelected, onClick, following, onFollow }) {
 function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowing, onFollow }) {
   const accent = column.kind === "category" ? getCategoryColor(column.value)
     : column.kind === "status" ? C.crimson
+    : column.kind === "lens" ? C.crimson
     : C.fg50;
   // Narrower columns on phones so a column + its neighbour's edge stay visible
   // (the board still scrolls horizontally — classic TweetDeck UX).
@@ -154,18 +160,22 @@ function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowi
           style={{ color: C.fg50, backgroundColor: "rgba(240,237,232,0.06)" }}>
           {events.length}
         </span>
-        <button
-          onClick={() => onRemove(column.id)}
-          title="Remove column"
-          className="ml-auto transition-colors"
-          style={{ color: C.fg20 }}
-          onMouseEnter={e => e.currentTarget.style.color = C.crimson}
-          onMouseLeave={e => e.currentTarget.style.color = C.fg20}
-        >
-          <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5">
-            <line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" />
-          </svg>
-        </button>
+        {column.pinned ? (
+          <span className="ml-auto text-[8px] font-mono uppercase tracking-widest" style={{ color: C.crimson }}>◆ You</span>
+        ) : (
+          <button
+            onClick={() => onRemove(column.id)}
+            title="Remove column"
+            className="ml-auto transition-colors"
+            style={{ color: C.fg20 }}
+            onMouseEnter={e => e.currentTarget.style.color = C.crimson}
+            onMouseLeave={e => e.currentTarget.style.color = C.fg20}
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5">
+              <line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Column body */}
@@ -270,18 +280,31 @@ function AddColumn({ onAdd }) {
 export default function DeckView({ selectedEventId, onEventSelect, onEventClose }) {
   const { events, loading } = useEventFeed({ limit: 100 });
   const { follow, unfollow, isFollowing } = useFollowing();
+  const profile = useProfile();
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
 
   const filterFor = useCallback((col) => {
+    // The lens column ranks the SAME events by how hard they hit your profile, and
+    // drops the ones that don't touch it at all — the deck's "for you" wall.
+    if (col.kind === "lens") {
+      return rankByLens(events.filter(e => eventRelevance(e, profile).score > 0), profile);
+    }
     let list = events;
     if (col.kind === "category") list = events.filter(e => e.category === col.value);
     else if (col.kind === "status") list = events.filter(e => e.current_status === col.value);
     return [...list].sort((a, b) => (b.importance_score || 0) - (a.importance_score || 0));
-  }, [events]);
+  }, [events, profile]);
+
+  // Prepend a live "Your Lens" column when a lens is set — it isn't a stored column
+  // (no remove button); it always tracks the current profile.
+  const effectiveColumns = useMemo(
+    () => profile.active ? [{ id: "col-lens", title: "Your Lens", kind: "lens", pinned: true }, ...columns] : columns,
+    [profile.active, columns],
+  );
 
   const columnData = useMemo(
-    () => columns.map(col => ({ col, list: filterFor(col) })),
-    [columns, filterFor]
+    () => effectiveColumns.map(col => ({ col, list: filterFor(col) })),
+    [effectiveColumns, filterFor]
   );
 
   const addColumn    = useCallback((col) => setColumns(c => [...c, col]), []);
@@ -297,7 +320,7 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
         </span>
         <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: C.crimson }} />
         <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: C.fg35 }}>
-          {columns.length} columns · {events.length} signals live
+          {effectiveColumns.length} columns · {events.length} signals live
         </span>
       </div>
 
