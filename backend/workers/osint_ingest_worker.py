@@ -42,6 +42,18 @@ def _osint_source():
     return gdelt_osint.fetch_gdelt_osint, gdelt_osint.SOURCE
 
 
+async def _safe_fetch(coro, source: str) -> list[dict]:
+    """Await a feed fetch, downgrading ANY failure to an empty batch. Enforces the
+    'no single source can starve ingest' contract at the one place all feeds funnel
+    through, so a rate-limited or down source skips its cycle instead of crashing the
+    whole worker (which is what took osint_ingest down on a GDELT 429)."""
+    try:
+        return await coro
+    except Exception as exc:  # noqa: BLE001 — one bad feed must never sink the run
+        logger.warning("OSINT feed '%s' fetch failed — skipping this cycle: %s", source, exc)
+        return []
+
+
 async def run_osint_ingest_worker() -> dict:
     start = time.perf_counter()
     # Pick up any live admin overrides (osint_source / osint_rss_enabled) before we
@@ -58,11 +70,13 @@ async def run_osint_ingest_worker() -> dict:
     # Each batch is triaged under its own source tag so events badge correctly. A
     # failing feed returns [] (best-effort, no-op) — no single source can starve ingest.
     batches = [
-        (await fetch(), source),
-        (await osint_threatintel.fetch_threatintel(), osint_threatintel.SOURCE),
+        (await _safe_fetch(fetch(), source), source),
+        (await _safe_fetch(osint_threatintel.fetch_threatintel(), osint_threatintel.SOURCE),
+         osint_threatintel.SOURCE),
     ]
     if runtime_config.osint_rss_enabled():
-        batches.append((await rss_osint.fetch_rss_osint(), rss_osint.SOURCE))
+        batches.append((await _safe_fetch(rss_osint.fetch_rss_osint(), rss_osint.SOURCE),
+                        rss_osint.SOURCE))
     total_posts = created = ingested = 0
     decisions: list[dict] = []  # one record per judged post — the triage flywheel
     async with AsyncSessionLocal() as db:
