@@ -25,13 +25,19 @@ function words(phrase) {
   return canonicalize(phrase).split(" ").filter((w) => w.length > 2);
 }
 
-// Does `haystack` (already lowercased) contain the phrase, whole or word-wise?
+// Does `haystack` (already lowercased) contain the phrase? Multi-word phrases must
+// appear IN FULL. Matching them word-by-word made specific place names leak onto any
+// text containing a common component — "Red Sea" hit anything mentioning "sea",
+// "Persian Gulf" hit "gulf" — which floored every off-lens event near 54%. Only a
+// lone significant word may match on its own; sectors canonicalize to single words
+// ("Shipping & Logistics" → "shipping") so they still match, while multi-word region
+// names now require the whole phrase (structured geo overlap covers the rest).
 function phraseHits(haystack, phrase) {
   const c = canonicalize(phrase);
   if (!c) return false;
   if (haystack.includes(c)) return true;
   const ws = words(phrase);
-  return ws.length > 0 && ws.some((w) => haystack.includes(w));
+  return ws.length === 1 && haystack.includes(ws[0]);
 }
 
 /**
