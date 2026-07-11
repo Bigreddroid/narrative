@@ -2,12 +2,10 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useExposure } from "../hooks/useExposure.js";
-import { useUser } from "../hooks/useUser.js";
+import { useProfile } from "../hooks/useProfile.js";
 import { profileExposure } from "../lib/exposureProfile.js";
 import { exposureColor } from "../lib/exposureColor.js";
 import { getCategoryColor } from "../lib/colors.js";
-
-const DEFAULT_PROFILE = { sectors: ["Technology", "Energy", "Shipping & Logistics"], regions: ["United States"] };
 
 // ─── Exposure Index, visualised ─────────────────────────────────────────────
 // 0–100 risk per sector/region, decomposed into the source events driving it.
@@ -167,7 +165,7 @@ function Column({ title, entities, onDriver, corrob }) {
 
 export default function ExposurePanel() {
   const { model, loading, live, error } = useExposure();
-  const { user } = useUser();
+  const profile = useProfile();
   const navigate = useNavigate();
 
   const sectors = useMemo(() => (model?.sectors || []).slice(0, 8), [model]);
@@ -176,15 +174,6 @@ export default function ExposurePanel() {
   const corrobCount = Object.keys(corrob).length;
   const onDriver = (id) => navigate(`/event/${id}`);
 
-  const profile = useMemo(() => {
-    const s = user?.spending_categories?.length ? user.spending_categories : DEFAULT_PROFILE.sectors;
-    // Choosable lens (R2): named regions/routes/chokepoints picked at onboarding
-    // take precedence, then home country/city. This is what makes an EU-logistics
-    // profile (Rotterdam, Suez) and a Gulf-energy profile (Hormuz, Persian Gulf)
-    // resolve to different "Your Exposure" on the same events.
-    const r = [...(user?.regions || []), user?.country, user?.city].filter(Boolean);
-    return { sectors: s, regions: r.length ? r : DEFAULT_PROFILE.regions };
-  }, [user]);
   const personal = useMemo(() => (model ? profileExposure(profile, model) : { score: 0, drivers: [] }), [model, profile]);
 
   return (

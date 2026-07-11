@@ -6,6 +6,7 @@ import { useUser } from "../../hooks/useUser.js";
 import { setStoredUser } from "../../hooks/useUser.js";
 import { clearToken } from "../../lib/api.js";
 import { TIERS } from "../../lib/tiers.js";
+import LensSwitcher from "../LensSwitcher.jsx";
 
 const CATEGORIES = ["All", "Geopolitics", "Conflict", "Economics", "Climate", "Technology", "Health", "Policy", "Security"];
 
@@ -90,6 +91,7 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
           <button onClick={toggle} className="hover:text-crimson transition-colors cursor-pointer" title={isDark ? "Switch to day mode" : "Switch to night mode"}>
             {isDark ? <SunIcon /> : <MoonIcon />}
           </button>
+          <LensSwitcher />
           <button onClick={() => navigate("/settings")} className="hover:text-crimson transition-colors cursor-pointer">
             Settings
           </button>

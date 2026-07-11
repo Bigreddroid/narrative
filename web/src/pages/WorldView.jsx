@@ -20,6 +20,8 @@ import { getCategoryColor } from "../lib/colors.js";
 import { biasLabel, BIAS_COLORS } from "../lib/bias.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useUser } from "../hooks/useUser.js";
+import { useProfile } from "../hooks/useProfile.js";
+import { eventRelevance, rankByLens, relevanceScores } from "../lib/lensRelevance.js";
 import { useMediaQuery } from "../hooks/useMediaQuery.js";
 
 function Highlight({ text, query }) {
@@ -37,7 +39,7 @@ function Highlight({ text, query }) {
 
 // ─── Newspaper event card ─────────────────────────────────────────────────────
 
-function EventCard({ event, isSelected, onClick, onNavigate, following, onFollow, searchQuery = "" }) {
+function EventCard({ event, isSelected, onClick, onNavigate, following, onFollow, searchQuery = "", lens = null }) {
   const color      = getCategoryColor(event.category);
   const escalating = event.current_status === "escalating";
   const developing = event.current_status === "developing";
@@ -46,6 +48,8 @@ function EventCard({ event, isSelected, onClick, onNavigate, following, onFollow
   const geo        = (event.geography || []).slice(0, 3).join(" · ");
   const score      = Math.round(event.importance_score || event.importance || 0);
   const lean       = event.source_bias ? biasLabel(event.source_bias) : null;
+  // When the lens is on, off-lens events dim so the ones that hit your profile pop.
+  const offLens    = lens != null && lens.score === 0;
 
   return (
     <motion.article
@@ -54,6 +58,7 @@ function EventCard({ event, isSelected, onClick, onNavigate, following, onFollow
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
       className={`border-b border-ink/10 group transition-colors ${isSelected ? "bg-ink/[0.04]" : "bg-paper"}`}
+      style={offLens ? { opacity: 0.42 } : undefined}
     >
       {/* Main tap area */}
       <div
@@ -63,6 +68,15 @@ function EventCard({ event, isSelected, onClick, onNavigate, following, onFollow
         {/* Category + status row */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider" style={{ color }}>{event.category}</span>
+          {lens != null && lens.score > 0 && (
+            <span
+              className="text-[9px] md:text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm flex items-center gap-1"
+              style={{ color: "#C80028", border: "1px solid rgba(200,0,40,0.4)" }}
+              title={`Matches your lens — ${lens.reasons.join(", ")}`}
+            >
+              ◆ {lens.score}% you
+            </span>
+          )}
           {escalating && (
             <span className="flex items-center gap-1 text-[10px] md:text-[11px] font-medium text-crimson">
               <span className="w-1 h-1 rounded-full bg-crimson animate-pulse" /> Escalating
@@ -251,14 +265,24 @@ function SignalWidget({ events }) {
 
 function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCategoryChange, search }) {
   const [status, setStatus] = useState(null);
+  const [lensOn, setLensOn] = useState(false);
   const { events, loading: feedLoading } = useEventFeed({ category, status, limit: 60 });
   const { results: searchResults, loading: searchLoading } = useSearch(search);
   const { follow, unfollow, isFollowing } = useFollowing();
+  const profile = useProfile();
   const navigate = useNavigate();
 
   const isSearching = search.trim().length >= 2;
-  const displayEvents = isSearching ? searchResults : events;
+  const baseEvents = isSearching ? searchResults : events;
   const loading = isSearching ? searchLoading : feedLoading;
+
+  // The lens (R2): rank the same events by how hard they hit YOUR profile. Off by
+  // default (the feed stays a neutral wire); flip it on to make the feed "yours".
+  const lensActive = lensOn && profile.active;
+  const displayEvents = useMemo(
+    () => (lensActive ? rankByLens(baseEvents, profile) : baseEvents),
+    [lensActive, baseEvents, profile],
+  );
 
   const STATUSES = ["All", "Escalating", "Developing", "Stable"];
 
@@ -287,6 +311,30 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
                 </button>
               );
             })}
+
+            {/* Lens toggle — rank the feed by MY profile. Disabled (with a nudge to
+                Settings) until a lens has actually been chosen. */}
+            <button
+              type="button"
+              onClick={() => profile.active ? setLensOn(v => !v) : navigate("/settings")}
+              title={profile.active ? `Rank by your lens · ${profile.label}` : "Set your lens in Settings to personalise the feed"}
+              className={`ml-auto flex-shrink-0 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider py-3 border-b-2 transition-colors -mb-px ${
+                lensActive ? "border-crimson text-crimson" : "border-transparent text-ink/35 hover:text-crimson"
+              }`}
+            >
+              <span style={{ opacity: profile.active ? 1 : 0.5 }}>◆ For You</span>
+            </button>
+          </div>
+        )}
+
+        {/* Lens banner — makes it unmistakable the feed is now scoped to a lens */}
+        {!isSearching && lensActive && (
+          <div className="border-b border-ink/10 px-4 md:px-6 py-2 flex items-center gap-2 bg-crimson/[0.04]">
+            <span className="w-1.5 h-1.5 rounded-full bg-crimson" />
+            <span className="text-[10px] font-mono uppercase tracking-widest text-crimson">Lens · {profile.label}</span>
+            <span className="text-[10px] text-ink/40 truncate">
+              ranked by your sectors, routes &amp; watched assets
+            </span>
           </div>
         )}
 
@@ -333,6 +381,7 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
                 following={isFollowing(e.id)}
                 onFollow={(ev) => isFollowing(ev.id) ? unfollow(ev.id) : follow(ev)}
                 searchQuery={isSearching ? search : ""}
+                lens={lensActive ? eventRelevance(e, profile) : null}
               />
             ))
           )}
@@ -409,9 +458,11 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
   const [air, setAir]             = useState(false);
   const { isDark }                = useTheme();
   const { can }                   = useUser();
+  const profile                   = useProfile();
   const { getVessels, vesselCount, live } = useVesselFeed(maritime);
   const { getAircraft, aircraftCount, live: airLive } = useAircraftFeed(air);
   const [exposureLayer, setExposureLayer] = useState(false);
+  const [lensLayer, setLensLayer] = useState(false);
   const [eventCat, setEventCat] = useState(null); // filter globe by event type (conflict/climate/…)
   const [catOpen, setCatOpen] = useState(false);
   const [catPos, setCatPos] = useState({ top: 0, left: 0 });
@@ -474,6 +525,15 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
     }
     return out;
   }, [trafficByEvent]);
+  // Lens heat (R2): tint each event dot by how hard it hits YOUR profile, reusing
+  // the exposure heat plumbing. When on it overrides the generic exposure heat so
+  // the globe becomes "your" map — Gulf-energy lights up Hormuz, EU-logistics Rotterdam.
+  const lensActive = lensLayer && profile.active;
+  const lensScores = useMemo(
+    () => (lensActive ? relevanceScores(shownNodes, profile) : null),
+    [lensActive, shownNodes, profile],
+  );
+
   const handleNodeClick = useCallback((node) => onEventSelect(node.id), [onEventSelect]);
 
   const mapBg = isDark ? "#0E1520" : "#C8D8E4";
@@ -622,6 +682,26 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
           Exposure
         </button>
 
+        {/* Lens heat toggle — tint the globe by MY profile relevance. Only offered
+            once a lens is set. */}
+        {profile.active && (
+          <button
+            onClick={() => setLensLayer((x) => !x)}
+            className="flex-shrink-0 ml-1 mr-3 flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors border"
+            style={{
+              color: lensActive ? "#E8E4DC" : tabInactiveColor,
+              borderColor: lensActive ? "rgba(200,0,40,0.6)" : (isDark ? "rgba(232,228,220,0.12)" : "rgba(26,26,26,0.12)"),
+              backgroundColor: lensActive ? "rgba(200,0,40,0.14)" : "transparent",
+            }}
+            title={`Tint events by your lens · ${profile.label}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round">
+              <path d="M7 1.5L12.5 7 7 12.5 1.5 7z" />
+            </svg>
+            Lens
+          </button>
+        )}
+
         {/* Traffic anomaly indicator */}
         {Object.keys(anomalies).length > 0 && (
           <div className="flex-shrink-0 mr-3 flex items-center gap-1.5 text-[10px] tracking-wide" style={{ color: "#D9A227" }}>
@@ -655,8 +735,8 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
             showVessels={maritime}
             getAircraft={getAircraft}
             showAircraft={air}
-            eventScores={exposureModel.eventScores}
-            exposureLayer={exposureLayer}
+            eventScores={lensActive ? lensScores : exposureModel.eventScores}
+            exposureLayer={exposureLayer || lensActive}
             anomalies={anomalies}
           />
         )}

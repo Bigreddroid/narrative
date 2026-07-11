@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api.js";
 import { useUser } from "../hooks/useUser.js";
+import { useProfile } from "../hooks/useProfile.js";
+import { canonicalize } from "../lib/exposureProfile.js";
 import FeedHeader from "../components/layout/FeedHeader.jsx";
 
 // The Analyst tab — ask a question, the analyst answers grounded in the live event
@@ -13,18 +15,26 @@ import FeedHeader from "../components/layout/FeedHeader.jsx";
 const titleCase = (s) => String(s).replace(/\b\w/g, (c) => c.toUpperCase());
 
 // ── personalised consequence readout ─────────────────────────────────────────
-function ImpactReadout({ pressure, sectors = [], regions = [], user }) {
+// Scoped to the user's full lens (R2): sectors, named regions/routes AND home geo,
+// so switching EU-logistics ↔ Gulf-energy changes what the analyst calls "relevant
+// to you" on the very same answer.
+function ImpactReadout({ pressure, sectors = [], regions = [], profile, user }) {
   if (pressure == null && sectors.length === 0 && regions.length === 0) return null;
 
-  const mySectors = (user?.spending_categories || user?.sectors || []).map((s) => String(s).toLowerCase());
-  const myCountry = String(user?.country || "").toLowerCase();
+  const mySectors = (profile?.sectors || []).map(canonicalize).filter(Boolean);
+  const myRegions = (profile?.regions || []).map(canonicalize).filter(Boolean);
+  const myAssets  = profile?.assets || [];
   const myProfession = String(user?.profession || "");
-  const sectorMine = (s) => mySectors.some((m) => m && (s.toLowerCase().includes(m) || m.includes(s.toLowerCase())));
-  const regionMine = (r) => myCountry && (r.toLowerCase().includes(myCountry) || myCountry.includes(r.toLowerCase()));
+  const overlap = (tokens, v) => {
+    const c = canonicalize(v);
+    return c && tokens.some((m) => c.includes(m) || m.includes(c));
+  };
+  const sectorMine = (s) => overlap(mySectors, s);
+  const regionMine = (r) => overlap(myRegions, r);
 
   const hitSectors = sectors.filter(sectorMine);
   const hitRegions = regions.filter(regionMine);
-  const hasProfile = mySectors.length > 0 || myCountry || myProfession;
+  const hasProfile = profile?.active || mySectors.length > 0 || myProfession;
 
   const Chip = ({ label, mine }) => (
     <span className={`text-[11px] px-1.5 py-0.5 border ${mine ? "border-crimson/50 text-crimson bg-crimson/[0.05]" : "border-ink/15 text-ink/55"}`}>
@@ -55,11 +65,14 @@ function ImpactReadout({ pressure, sectors = [], regions = [], user }) {
       {hasProfile ? (
         (hitSectors.length > 0 || hitRegions.length > 0) ? (
           <p className="text-[11px] text-crimson/90 leading-snug">
-            Relevant to you{myProfession ? ` (${myProfession})` : ""}:{" "}
+            Relevant to your lens{profile?.label ? ` (${profile.label})` : ""}:{" "}
             {[...hitSectors, ...hitRegions].join(", ")} — in your exposure profile.
+            {myAssets.length > 0 && <span className="text-ink/40"> · watching {myAssets.slice(0, 3).join(", ")}</span>}
           </p>
         ) : (
-          <p className="text-[11px] text-ink/40 leading-snug">No direct hit on your profile’s sectors/region — monitoring for second-order effects.</p>
+          <p className="text-[11px] text-ink/40 leading-snug">
+            No direct hit on your lens{profile?.label ? ` (${profile.label})` : ""} — monitoring for second-order effects.
+          </p>
         )
       ) : (
         <p className="text-[11px] text-ink/40 leading-snug">
@@ -75,6 +88,7 @@ function ImpactReadout({ pressure, sectors = [], regions = [], user }) {
 export default function Analyst() {
   const navigate = useNavigate();
   const { user } = useUser();
+  const profile = useProfile();
 
   const [turns, setTurns] = useState([]); // {q, answer, sources, pressure, sectors, regions}
   const [input, setInput] = useState("");
@@ -175,7 +189,7 @@ export default function Analyst() {
                     {t.answer}
                   </motion.div>
                 )}
-                {t.answer && <ImpactReadout pressure={t.pressure} sectors={t.sectors} regions={t.regions} user={user} />}
+                {t.answer && <ImpactReadout pressure={t.pressure} sectors={t.sectors} regions={t.regions} profile={profile} user={user} />}
                 {Array.isArray(t.sources) && t.sources.length > 0 && (
                   <div className="border-t border-ink/10 pt-3 space-y-1.5">
                     <div className="text-[10px] uppercase tracking-widest text-ink/35">References & sources</div>
