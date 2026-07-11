@@ -91,12 +91,24 @@ async def fetch_gdelt_osint(query: str = DEFAULT_QUERY, maxrecords: int = 75,
     async with httpx.AsyncClient(timeout=30, follow_redirects=True,
                                  headers={"User-Agent": USER_AGENT}) as client:
         for attempt in (0, 1):
-            resp = await client.get(FEED_URL, params=params)
-            if resp.status_code == 429 and attempt == 0:
-                logger.warning("GDELT DOC 429 (rate-limited) — backing off %.0fs and retrying once",
-                               _RETRY_BACKOFF_SECONDS)
-                await asyncio.sleep(_RETRY_BACKOFF_SECONDS)
-                continue
-            resp.raise_for_status()
-            return parse_gdelt_doc(resp.json())
+            try:
+                resp = await client.get(FEED_URL, params=params)
+                if resp.status_code == 429 and attempt == 0:
+                    logger.warning("GDELT DOC 429 (rate-limited) — backing off %.0fs and retrying once",
+                                   _RETRY_BACKOFF_SECONDS)
+                    await asyncio.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                resp.raise_for_status()
+                return parse_gdelt_doc(resp.json())
+            except httpx.HTTPError as exc:
+                # A persistent GDELT failure (repeat 429, timeout, 5xx) must be a no-op,
+                # not a crash — the worker treats an empty run as a skipped cycle and the
+                # next run retries. Back off once, then give up gracefully.
+                if attempt == 0:
+                    logger.warning("GDELT DOC fetch failed (%s) — backing off %.0fs and retrying once",
+                                   exc, _RETRY_BACKOFF_SECONDS)
+                    await asyncio.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                logger.warning("GDELT DOC fetch failed after retry (%s) — skipping this cycle", exc)
+                return []
     return []

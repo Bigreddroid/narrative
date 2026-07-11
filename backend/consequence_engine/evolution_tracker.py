@@ -44,7 +44,9 @@ async def _embedding_drift(event: NarrativeEvent, db: AsyncSession) -> float:
         .where(Article.embedding.isnot(None))
         .limit(10)
     )).scalars().all()
-    embeddings = [a.embedding for a in rows if a.embedding]
+    # a.embedding is a numpy/pgvector array — test it with `is not None`, never a
+    # bare truthiness check (which raises "truth value of an array is ambiguous").
+    embeddings = [a.embedding for a in rows if a.embedding is not None]
     if not embeddings:
         return 0.0
     avg_new = np.mean([np.array(e) for e in embeddings], axis=0).tolist()
