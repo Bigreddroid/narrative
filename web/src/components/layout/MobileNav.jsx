@@ -58,6 +58,17 @@ const TABS = [
     ),
   },
   {
+    id: "locate",
+    path: "/geolocate",
+    label: "Locate",
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10 18s6-5.2 6-9.5A6 6 0 0 0 4 8.5C4 12.8 10 18 10 18z" />
+        <circle cx="10" cy="8.5" r="2" fill="none" />
+      </svg>
+    ),
+  },
+  {
     id: "tracked",
     path: "/following",
     label: "Tracked",
@@ -87,6 +98,7 @@ export default function MobileNav() {
 
   const activeId =
     location.pathname === "/analyst" ? "analyst"
+    : location.pathname === "/geolocate" ? "locate"
     : location.pathname === "/threats" ? "threats"
     : location.pathname === "/following" ? "tracked"
     : location.pathname === "/settings" ? "profile"
