@@ -26,7 +26,9 @@ export function useWorldGraph() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.get("/graph/world")
+    // Graph build runs server-side over the whole event graph — like /exposure
+    // it can exceed the default 3.5s fail-fast on a busy backend; give it room.
+    api.get("/graph/world", { timeoutMs: 20000 })
       .then((data) => {
         setNodes((data.nodes || []).map(normalizeNode));
         setEdges((data.edges || []).map(normalizeEdge));

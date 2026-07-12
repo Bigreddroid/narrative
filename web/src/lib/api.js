@@ -73,7 +73,7 @@ async function postForm(path, formData, { timeoutMs = 60000 } = {}) {
 }
 
 export const api = {
-  get: (path) => request(path),
+  get: (path, opts = {}) => request(path, opts),
   post: (path, body, opts = {}) =>
     request(path, { method: "POST", body: JSON.stringify(body), ...opts }),
   postForm,
