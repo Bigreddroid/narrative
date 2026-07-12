@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     # pg18 to match the pg_dump that produced scripts/narrative.dump (archive
@@ -55,15 +53,30 @@ services:
   # llava = vision for /geolocate. Re-running is a fast no-op once the ollama_data
   # volume is warm, so only the first boot pays the download cost. api/scheduler
   # wait for this to complete so a friend/investor never hits a half-loaded model.
+  #
+  # We drive the pull through ollama's HTTP /api/pull endpoint (via a plain curl
+  # image) instead of the `ollama` CLI: current ollama/ollama:latest launches a
+  # TUI on `ollama pull`, which aborts in a non-interactive container
+  # ("could not open a new TTY") yet exits 0 — silently pulling nothing. The API
+  # streams NDJSON and ends with {"status":"success"}, which we assert on so a
+  # failed pull actually fails this service (and blocks api/scheduler) instead of
+  # masking behind a 0 exit code.
   ollama-pull:
-    image: ollama/ollama:latest
+    image: curlimages/curl:latest
     depends_on:
       ollama:
         condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
+    # command is a single-element list (not a bare string) so the whole script
+    # reaches `sh -c` as one argument; a bare string is word-split by compose and
+    # only its first word becomes the script.
     entrypoint: ["/bin/sh", "-c"]
-    command: "ollama pull llama3.2 && ollama pull llava && echo 'ollama models ready'"
+    command:
+      - |
+        for m in llama3.2 llava; do
+          echo "pulling $$m ...";
+          curl -sf http://ollama:11434/api/pull -d "{\"name\":\"$$m\"}" | tail -n1 | grep -q '"status":"success"' || { echo "pull failed: $$m"; exit 1; };
+        done
+        echo 'ollama models ready'
     restart: "no"
 
   api:
@@ -116,7 +129,9 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@narrative.local
+      # pgadmin4 rejects reserved TLDs like .local as invalid emails and exits 1;
+      # use a normal domain so the container actually starts.
+      PGADMIN_DEFAULT_EMAIL: admin@narrative.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
       - "5050:80"
