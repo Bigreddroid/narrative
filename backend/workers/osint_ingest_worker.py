@@ -23,18 +23,54 @@ from backend.workers.hazard_ingest_worker import _upsert
 logger = logging.getLogger(__name__)
 
 
+_decisions_table_checked = False
+
+
+def _is_missing_table(exc: Exception) -> bool:
+    """True when the failure is the missing osint_triage_decisions table (asyncpg
+    UndefinedTableError, wrapped by SQLAlchemy) rather than a real write error."""
+    s = str(exc).lower()
+    return "undefinedtable" in s or ("does not exist" in s and "relation" in s)
+
+
+async def _ensure_decisions_table() -> None:
+    """Create osint_triage_decisions if prod's alembic_version drifted past migration
+    009 without the table ever being created (a known drift mode — see migration 009's
+    guarded, self-healing DDL). Idempotent (checkfirst); runs at most once per process.
+    The migration's read-path indexes aren't recreated here — this only heals the write
+    crash; a normal `alembic upgrade` remains the proper fix."""
+    global _decisions_table_checked
+    if _decisions_table_checked:
+        return
+    from backend.database import engine
+    async with engine.begin() as conn:
+        await conn.run_sync(OsintTriageDecision.__table__.create, checkfirst=True)
+    _decisions_table_checked = True
+
+
 async def _log_decisions(decisions: list[dict]) -> None:
     """Persist triage decisions (the flywheel) in their OWN session, so a logging
     failure can never roll back the events already committed by the run. Best-effort:
     decision telemetry is valuable but must never block ingest."""
     if not decisions:
         return
-    try:
-        async with AsyncSessionLocal() as db:
-            db.add_all([OsintTriageDecision(**d) for d in decisions])
-            await db.commit()
-    except Exception as exc:  # noqa: BLE001 — telemetry only; never sink the run
-        logger.warning("OSINT decision logging failed (%d rows): %s", len(decisions), exc)
+    for attempt in (1, 2):
+        try:
+            async with AsyncSessionLocal() as db:
+                db.add_all([OsintTriageDecision(**d) for d in decisions])
+                await db.commit()
+            return
+        except Exception as exc:  # noqa: BLE001 — telemetry only; never sink the run
+            # Self-heal the one known drift mode (table missing) then retry once; any
+            # other error, or a failed heal, is logged and swallowed as before.
+            if attempt == 1 and _is_missing_table(exc):
+                try:
+                    await _ensure_decisions_table()
+                    continue
+                except Exception as heal_exc:  # noqa: BLE001
+                    logger.warning("OSINT decision table self-heal failed: %s", heal_exc)
+            logger.warning("OSINT decision logging failed (%d rows): %s", len(decisions), exc)
+            return
 
 
 def _osint_source():

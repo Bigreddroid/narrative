@@ -16,10 +16,49 @@ so the deterministic consequence engine can map it unchanged.
 import json
 import logging
 import re
+import time
 
 from backend.feeds.synthesize import SECTOR_MAP
 
 logger = logging.getLogger(__name__)
+
+# ── LLM circuit breaker ───────────────────────────────────────────────────────
+# When the paid provider returns a PERSISTENT error (credits exhausted, bad/expired
+# key, permission), retrying it once per post pointlessly hammers the API — a single
+# ingest cycle fired 185 doomed Anthropic calls after credits ran dry. Trip a short
+# cooldown on such errors so the rest of that run (and the next few) skip straight to
+# the heuristic. Transient errors (timeouts, 5xx) are NOT tripped: they degrade for
+# just the one post, exactly as before.
+_LLM_COOLDOWN_SECONDS = 900  # 15 min
+_llm_cooldown_until = 0.0
+_PERSISTENT_LLM_MARKERS = (
+    "credit balance",    # 400 — Anthropic out of credits
+    "billing",
+    "quota",
+    "authentication",    # 401 — bad/expired key
+    "invalid x-api-key",
+    "permission",        # 403
+)
+
+
+def _llm_on_cooldown() -> bool:
+    return time.monotonic() < _llm_cooldown_until
+
+
+def _is_persistent_llm_error(exc: Exception) -> bool:
+    """True when the error won't fix itself post-by-post (credits/key/permission), so
+    we should stop calling the LLM for a cooldown instead of retrying every post."""
+    if getattr(exc, "status_code", None) in (401, 403):
+        return True
+    msg = str(exc).lower()
+    return any(m in msg for m in _PERSISTENT_LLM_MARKERS)
+
+
+def _trip_llm_cooldown(exc: Exception) -> None:
+    global _llm_cooldown_until
+    _llm_cooldown_until = time.monotonic() + _LLM_COOLDOWN_SECONDS
+    logger.warning("OSINT LLM unavailable (persistent: %s) — heuristic-only for %ds",
+                   exc, _LLM_COOLDOWN_SECONDS)
 
 SOURCE = "osint_reddit"
 ALLOWED_CATEGORIES = set(SECTOR_MAP.keys())  # disaster, conflict, unrest, cyber, ...
@@ -212,12 +251,17 @@ def triage_with_decision(post: dict, allow_llm: bool = True,
     data instead of vanishing. Synchronous (the worker offloads via to_thread)."""
     from backend.services import llm
 
-    if allow_llm and llm.available():
+    if allow_llm and not _llm_on_cooldown() and llm.available():
         try:
             signal, reason = _llm_triage(post, source=source)
             return signal, _decision(post, source, signal, reason, "llm")
         except Exception as exc:  # noqa: BLE001 — degrade to heuristic, never crash ingest
-            logger.warning("OSINT LLM triage failed (%s); using heuristic", exc)
+            # A persistent failure (out of credits, bad key) trips the cooldown so the
+            # rest of the run skips the LLM instead of firing one doomed call per post.
+            if _is_persistent_llm_error(exc):
+                _trip_llm_cooldown(exc)
+            else:
+                logger.warning("OSINT LLM triage failed (%s); using heuristic", exc)
     signal, reason = _heuristic_triage(post, source=source)
     return signal, _decision(post, source, signal, reason, "heuristic")
 
