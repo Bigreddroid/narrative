@@ -10,7 +10,9 @@ REM  (the backend calls them from your own IP). Event data is a
 REM  bundled snapshot. Portable - runs from wherever this folder is.
 REM
 REM  Prereq: Docker Desktop (https://www.docker.com/products/docker-desktop)
-REM  First run pulls images + loads sample data (a few minutes).
+REM  First run pulls images, loads sample data, and downloads the local AI
+REM  models (llama3.2 + llava, ~7GB) so the analyst + geolocation work fully
+REM  offline. That first download can take 10-20 min; later runs are instant.
 REM ============================================================
 
 REM Repo root = the folder this .bat lives in (portable, not hardcoded).
@@ -76,8 +78,11 @@ if /i "%HASTBL%"=="t" (
   docker compose exec -T postgres pg_restore -U narrative -d narrative --no-owner --clean --if-exists < "%REPO%\scripts\narrative.dump"
 )
 
-REM --- 5) Backend API (runs DB migrations on boot) ---
+REM --- 5) Backend API (runs DB migrations on boot). On first run Docker also
+REM        starts Ollama and downloads the local AI models (~7GB) before the API
+REM        comes up, because the api service waits for the model pull to finish. ---
 echo [5/6] Starting backend API ^(http://localhost:8000^)...
+echo       FIRST RUN downloads local AI models ^(~7GB, 10-20 min^) - later runs skip this.
 docker compose up -d api
 echo       waiting for the backend to answer...
 :waitapi

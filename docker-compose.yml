@@ -33,6 +33,39 @@ services:
       timeout: 5s
       retries: 5
 
+  # Local LLM runtime. Without this, api/scheduler default OLLAMA_BASE_URL to
+  # localhost:11434 which — from inside a container — points at the container
+  # itself, so the analyst falls back to templated answers and new events get no
+  # LLM consequence-map. Running Ollama as a service makes the app fully working
+  # ($0, local) out of one `docker compose up`.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      # `ollama list` talks to the local server; succeeds once `ollama serve` is up.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  # One-shot: pull the models the app needs, then exit. llama3.2 = text analyst;
+  # llava = vision for /geolocate. Re-running is a fast no-op once the ollama_data
+  # volume is warm, so only the first boot pays the download cost. api/scheduler
+  # wait for this to complete so a friend/investor never hits a half-loaded model.
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: "ollama pull llama3.2 && ollama pull llava && echo 'ollama models ready'"
+    restart: "no"
+
   api:
     build:
       context: .
@@ -44,11 +77,14 @@ services:
       DATABASE_URL: postgresql+asyncpg://narrative:narrative@postgres:5432/narrative
       REDIS_URL: redis://redis:6379/0
       APP_ENV: development
+      OLLAMA_BASE_URL: http://ollama:11434
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
     volumes:
       - .:/app
     command: >
@@ -65,11 +101,14 @@ services:
       DATABASE_URL: postgresql+asyncpg://narrative:narrative@postgres:5432/narrative
       REDIS_URL: redis://redis:6379/0
       APP_ENV: development
+      OLLAMA_BASE_URL: http://ollama:11434
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
     volumes:
       - .:/app
     command: python -m backend.scheduler
@@ -87,3 +126,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  ollama_data:
