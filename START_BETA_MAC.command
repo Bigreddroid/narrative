@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # ============================================================
 #  The Narrative - Local Beta launcher for macOS (plug and play)
-#  Double-click this file in Finder. First run may take a few
-#  minutes (Docker pulls images + loads the sample database).
+#  Double-click this file in Finder. First run downloads Docker
+#  images, the sample database, and the local AI models (llama3.2
+#  + llava, ~7GB) so the analyst + geolocation work fully offline.
+#  That first download can take 10-20 min; later runs are instant.
 #
 #  If macOS blocks it ("unidentified developer"): right-click ->
 #  Open, then click Open. Or run once in Terminal:
@@ -55,8 +57,11 @@ else
   echo "[3/5] Sample data already loaded."
 fi
 
-# --- 4) Backend API (runs DB migrations on boot) ---
+# --- 4) Backend API (runs DB migrations on boot). On first run Docker also
+#        starts Ollama and downloads the local AI models (~7GB) before the API
+#        comes up, because the api service waits for the model pull to finish. ---
 echo "[4/5] Starting backend API (http://localhost:8000)..."
+echo "      FIRST RUN downloads local AI models (~7GB, 10-20 min) - later runs skip this."
 docker compose up -d api
 printf "      waiting for the backend"
 until curl -sf http://localhost:8000/health >/dev/null 2>&1; do printf "."; sleep 2; done
