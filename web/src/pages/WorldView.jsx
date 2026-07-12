@@ -6,6 +6,7 @@ import WorldMap from "../components/graph/WorldMap.jsx";
 import EventGraph from "../components/graph/EventGraph.jsx";
 import DeckView from "../components/DeckView.jsx";
 import ExposurePanel from "../components/ExposurePanel.jsx";
+import HowThisAffectsYou from "../components/HowThisAffectsYou.jsx";
 import { useWorldGraph } from "../hooks/useWorldGraph.js";
 import { useEventFeed } from "../hooks/useEventFeed.js";
 import { useVesselFeed } from "../hooks/useVesselFeed.js";
@@ -452,6 +453,7 @@ function inRegion(node, region) {
 }
 
 function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
+  const navigate                  = useNavigate();
   const { nodes, edges, loading } = useWorldGraph();
   const [region, setRegion]       = useState("world");
   const [maritime, setMaritime]   = useState(false);
@@ -756,6 +758,16 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Consequence payoff strip — turns the globe's hotspots into "what it means
+          for YOU + what to do", scoped to the chosen lens (R1). */}
+      <div className="flex-shrink-0 max-h-[40vh] overflow-y-auto">
+        <HowThisAffectsYou
+          profileActive={profile.active}
+          profileLabel={profile.label}
+          onSetLens={() => navigate("/settings")}
+        />
       </div>
 
       {catOpen && categories.length > 1 && createPortal(
