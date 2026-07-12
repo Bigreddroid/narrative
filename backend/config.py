@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # Local (free) models
     ollama_base_url: str = "http://localhost:11434"
     local_llm_model: str = "llama3.2:latest"               # works out-of-box; qwen2.5:7b = sharper JSON
+    # Outcome grading needs a model that reliably emits JSON on the strict JUDGE_SYSTEM
+    # prompt. gemma (a common local_llm_model override) returns empty completions ~5/6 of
+    # the time here; llama3.2 does it 6/6. Pinned separately so the analyst can still use a
+    # different local_llm_model without breaking the calibration label loop.
+    outcome_judge_model: str = "llama3.2:latest"
     local_embedding_model: str = "BAAI/bge-large-en-v1.5"  # 1024-dim ⇒ no schema change
     # Where fastembed caches the downloaded model. Empty ⇒ library default (a tmp
     # dir under the ephemeral container FS, re-downloaded every boot). On Railway,

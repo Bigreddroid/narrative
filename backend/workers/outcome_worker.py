@@ -68,7 +68,10 @@ def _judge(prediction_reasoning: str, impact: str, evidence_block: str) -> dict:
         f"PREDICTED IMPACT:\n{impact}\n\n"
         f"LATER EVIDENCE (emerged after the prediction):\n{evidence_block}"
     )
-    result = llm.complete(system=JUDGE_SYSTEM, user=user, max_tokens=512, json_mode=True)
+    result = llm.complete(
+        system=JUDGE_SYSTEM, user=user, max_tokens=512, json_mode=True,
+        model=settings.outcome_judge_model,
+    )
     text = result.text
     if text.startswith("```"):  # defensive: strip accidental markdown fences
         text = text.strip("`")
