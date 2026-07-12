@@ -92,6 +92,7 @@ export default function Analyst() {
 
   const [turns, setTurns] = useState([]); // {q, answer, sources, pressure, sectors, regions}
   const [input, setInput] = useState("");
+  const [deep, setDeep] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [hotspots, setHotspots] = useState([]);
@@ -113,7 +114,7 @@ export default function Analyst() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api.post("/chat", { question: q }, { timeoutMs: 60000 });
+      const res = await api.post("/chat", { question: q, deep }, { timeoutMs: deep ? 120000 : 60000 });
       setTurns((t) => [...t, { q, ...res }]);
     } catch (err) {
       if (err.status === 402) setError("The AI analyst is a paid feature. Upgrade to Full Access in Settings.");
@@ -223,7 +224,7 @@ export default function Analyst() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask the analyst…"
+            placeholder={deep ? "Ask the analyst… (deep, multi-step)" : "Ask the analyst…"}
             className="flex-1 bg-transparent border border-ink/15 px-3 py-2 text-sm text-ink/80 placeholder:text-ink/30 focus:outline-none focus:border-crimson/40"
           />
           <button type="submit" disabled={loading || input.trim().length < 3}
@@ -231,6 +232,16 @@ export default function Analyst() {
             Ask
           </button>
         </div>
+        {/* Deep analysis runs the multi-step OODA reasoner — slower, more specific,
+            scoped to the assets you watch. Still free on the local model. */}
+        <button type="button" onClick={() => setDeep((d) => !d)}
+          className={`mt-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${deep ? "text-crimson" : "text-ink/40 hover:text-ink/60"}`}>
+          <span className={`inline-block w-3 h-3 border ${deep ? "border-crimson bg-crimson/20" : "border-ink/30"}`}>
+            {deep && <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2.5 6.5l2.5 2.5 4.5-5" /></svg>}
+          </span>
+          Deep analysis
+          <span className="normal-case tracking-normal font-normal text-ink/35">— multi-step reasoning, scoped to your watched assets</span>
+        </button>
       </form>
     </div>
   );

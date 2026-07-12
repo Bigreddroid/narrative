@@ -123,14 +123,17 @@ def _event_dict(e) -> dict:
     }
 
 
-async def retrieve_events(db, query: str | None, limit: int = MAX_CONTEXT_EVENTS) -> list[dict]:
+async def retrieve_events(db, query: str | None, limit: int = MAX_CONTEXT_EVENTS,
+                          watched_assets: list[str] | None = None) -> list[dict]:
     """Question-specific mapped events, blending literal + semantic signals.
 
-    Order: strong keyword matches (≥2 salient terms — the event the question actually
-    names) → semantic (pgvector) neighbours → weak keyword matches → top-importance
-    headlines. Blending the keyword pass is what lets an on-topic event that carries no
-    embedding still surface; semantic-only silently drops ~⅔ of the graph and is the
-    usual cause of the analyst "missing" the very event asked about."""
+    Order: watched-asset matches (the user's own named suppliers/ports/companies) →
+    strong keyword matches (≥2 salient terms — the event the question actually names) →
+    semantic (pgvector) neighbours → weak keyword matches → top-importance headlines.
+    Blending the keyword pass is what lets an on-topic event that carries no embedding
+    still surface; semantic-only silently drops ~⅔ of the graph and is the usual cause
+    of the analyst "missing" the very event asked about. ``watched_assets`` (the deep
+    analyst) leads retrieval so answers are about *their* operation, not the generic top."""
     events: list = []
     seen: set = set()
 
@@ -139,6 +142,12 @@ async def retrieve_events(db, query: str | None, limit: int = MAX_CONTEXT_EVENTS
             if e.id not in seen:
                 seen.add(e.id)
                 events.append(e)
+
+    # Watched assets lead: an event naming the user's own port/supplier/counterparty is
+    # the most decision-relevant thing on file, even if the question doesn't name it.
+    if watched_assets:
+        wa_strong, _wa_weak = await _keyword_events(db, " ".join(watched_assets), limit)
+        _extend(wa_strong)
 
     if query:
         strong_kw, weak_kw = await _keyword_events(db, query, limit)
