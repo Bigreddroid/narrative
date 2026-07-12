@@ -10,7 +10,7 @@ import logging
 import time
 from datetime import datetime, timezone
 
-from backend.api.routes.exposure import PAID_TIER_EVENT_LIMIT, _load_graph
+from backend.api.routes.exposure import PAID_TIER_EVENT_LIMIT, _combined_stress, _load_graph
 from backend.consequence_engine import propagation
 from backend.database import AsyncSessionLocal
 from backend.models.exposure_snapshot import ExposureSnapshot
@@ -26,7 +26,12 @@ async def run_exposure_snapshot_worker() -> dict:
         events, edges = await _load_graph(db, PAID_TIER_EVENT_LIMIT)
         if not events:
             return {"snapshotted": 0}
-        model = propagation.compute_exposure_model(events, edges)
+        # Include the same external stress channels (market + chokepoints + space weather)
+        # the live exposure API uses, so the accumulated history the temporal layer reads
+        # matches what users actually see — snapshotting a stress-free model understated
+        # exposure on stressed sectors and skewed momentum/trend.
+        model = propagation.compute_exposure_model(
+            events, edges, market_stress=await _combined_stress(db))
         now = datetime.now(timezone.utc)
         rows = [ExposureSnapshot(kind="pressure", entity_key="", score=model["pressure"], captured_at=now)]
         for s in model["sectors"][:TOP_N]:

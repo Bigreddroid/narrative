@@ -94,6 +94,15 @@ def mean_brier(pairs, predict) -> float:
     return statistics.fmean(calibration.brier_score(predict(p, o), o) for p, o in pairs)
 
 
+def decisive_only(pairs: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Drop soft 0.5 labels so the Brier-vs-base-rate comparison is on genuine
+    {0,1} outcomes. Path B's escalating→0.5 dominates the set and makes every
+    baseline collapse to the same number; on decisive labels the score has to
+    actually separate resolved (1) from stable (0) to beat the base rate.
+    """
+    return [(p, o) for p, o in pairs if o in (0.0, 1.0)]
+
+
 def report(pairs: list[tuple[float, float]]) -> None:
     n = len(pairs)
     print(f"\n=== CPE BACKTEST (Phase 0) — n={n} outcomes ===\n")
@@ -151,8 +160,11 @@ def report(pairs: list[tuple[float, float]]) -> None:
 async def main() -> None:
     print("\n################  PATH A — real graded outcomes (prediction_outcomes)  ################")
     report(await load_pairs())
+    pathb = await load_pairs_pathb()
     print("\n\n################  PATH B — status-derived labels ($0, whole backlog)  ################")
-    report(await load_pairs_pathb())
+    report(pathb)
+    print("\n\n################  PATH B (DECISIVE) — 0.5 soft labels dropped, {0,1} only  ################")
+    report(decisive_only(pathb))
 
 
 if __name__ == "__main__":

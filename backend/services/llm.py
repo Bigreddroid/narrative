@@ -33,6 +33,9 @@ settings = get_settings()
 _ANTHROPIC_IN_PER_MTOK = 5.0
 _ANTHROPIC_OUT_PER_MTOK = 25.0
 
+# Local models occasionally return an empty completion (transient); re-request before failing.
+_OLLAMA_EMPTY_RETRIES = 3
+
 
 class BudgetExceeded(RuntimeError):
     """Raised when a paid provider call is blocked (provider 'off' or over cap)."""
@@ -80,14 +83,19 @@ def available() -> bool:
     return False
 
 
-def complete(system: str, user: str, max_tokens: int, json_mode: bool = False) -> LLMResult:
+def complete(
+    system: str, user: str, max_tokens: int, json_mode: bool = False, model: str | None = None
+) -> LLMResult:
     """Single completion. Raises BudgetExceeded if provider is 'off', or the
-    provider's own error (e.g. httpx/anthropic) on failure — callers degrade."""
+    provider's own error (e.g. httpx/anthropic) on failure — callers degrade.
+
+    `model` overrides the local Ollama model for this call only (e.g. a worker that
+    needs a more reliable model than the global default); ignored by the paid path."""
     p = active_provider()
     if p == "off":
         raise BudgetExceeded("LLM provider is 'off'")
     if p == "ollama":
-        return _ollama_complete(system, user, max_tokens, json_mode)
+        return _ollama_complete(system, user, max_tokens, json_mode, model)
     if p == "anthropic":
         return _anthropic_complete(system, user, max_tokens)
     raise BudgetExceeded(f"unknown llm_provider: {p}")
@@ -127,9 +135,11 @@ def _ollama_up() -> bool:
         return False
 
 
-def _ollama_complete(system: str, user: str, max_tokens: int, json_mode: bool) -> LLMResult:
+def _ollama_complete(
+    system: str, user: str, max_tokens: int, json_mode: bool, model: str | None = None
+) -> LLMResult:
     payload: dict = {
-        "model": settings.local_llm_model,
+        "model": model or settings.local_llm_model,
         "stream": False,
         "messages": [
             {"role": "system", "content": system},
@@ -140,16 +150,27 @@ def _ollama_complete(system: str, user: str, max_tokens: int, json_mode: bool) -
     if json_mode:
         payload["format"] = "json"
 
-    r = httpx.post(
-        f"{settings.ollama_base_url}/api/chat",
-        json=payload,
-        timeout=settings.ollama_timeout_seconds,
-    )
-    r.raise_for_status()
-    data = r.json()
-    text = (data.get("message") or {}).get("content", "").strip()
+    # Some local models (notably gemma on a strict json-format constraint) intermittently
+    # return an empty completion with done_reason=stop. It's transient — a re-request on
+    # the same prompt usually succeeds — so retry a few times before giving up.
+    text = ""
+    data: dict = {}
+    for _ in range(_OLLAMA_EMPTY_RETRIES):
+        r = httpx.post(
+            f"{settings.ollama_base_url}/api/chat",
+            json=payload,
+            timeout=settings.ollama_timeout_seconds,
+        )
+        r.raise_for_status()
+        data = r.json()
+        text = (data.get("message") or {}).get("content", "").strip()
+        if text:
+            break
     if not text:
-        raise ValueError("Ollama returned an empty completion")
+        raise ValueError(
+            f"Ollama returned an empty completion after {_OLLAMA_EMPTY_RETRIES} attempts "
+            f"(model={payload['model']!r})"
+        )
     return LLMResult(
         text=text,
         input_tokens=data.get("prompt_eval_count", 0),
