@@ -57,7 +57,6 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_price_id: str = ""
-    revenuecat_api_key: str = ""
 
     # Email (cost alerts)
     smtp_host: str = ""
@@ -86,12 +85,8 @@ class Settings(BaseSettings):
     cloudflare_r2_bucket: str = "narrative-archive"
     cloudflare_r2_endpoint: str = ""
 
-    # Bias data
-    allsides_api_key: str = ""
-
     # Monitoring
     sentry_dsn: str = ""
-    posthog_api_key: str = ""
 
     # Pipeline config
     engine_version: str = "2.0"  # versioned scoring/propagation params (the "secret sauce")
@@ -127,30 +122,14 @@ class Settings(BaseSettings):
     market_ingest_interval_minutes: int = 30
     osint_ingest_interval_minutes: int = 30    # free keyless OSINT ingest
 
-    # OSINT (open-source intelligence) — keyless GDELT news by default. Reddit is kept
-    # available but blocks anonymous reads AND app-credential creation, so it is opt-in
-    # via OSINT_SOURCE=reddit (then add reddit_client_id/secret for app-only OAuth).
-    osint_source: str = "gdelt"    # gdelt (keyless, default) | reddit
+    # OSINT (open-source intelligence) — keyless GDELT news, always on.
+    osint_source: str = "gdelt"    # gdelt (keyless, default)
     osint_subreddits: str = "worldnews,geopolitics,CredibleDefense"
     # OSINT v2 multi-source RSS/Atom collector (additive, keyless, always on). A
     # portfolio so no single blocked source starves ingestion. Override the default
     # feed list with comma-separated 'url|label' (or bare 'url') entries; empty = built-ins.
     osint_rss_enabled: bool = True
     osint_rss_feeds: str = ""
-    reddit_user_agent: str = ""    # descriptive UA for Reddit (required by Reddit)
-    reddit_client_id: str = ""     # Reddit app-only OAuth (the anon endpoint 403s)
-    reddit_client_secret: str = ""
-
-    # Live news (embedded player). Default = curated OFFICIAL channels only.
-    # iptv-org is a huge keyless HLS catalog but aggregates unofficial restreams
-    # (copyright/geo/uptime risk) — opt-in only, never the shipped default.
-    # iptv-org's category news.m3u carries no country tags, so it can't drive
-    # local matching — left OFF. Local coverage instead comes from iptv-org's
-    # per-country playlists, fetched on demand by the live-news /local endpoint.
-    live_news_use_iptv_org: bool = False
-    # Base for iptv-org per-country playlists: <base>/<cc>.m3u (e.g. .../ve.m3u).
-    live_news_iptv_country_base: str = "https://iptv-org.github.io/iptv/countries"
-    live_news_iptv_org_url: str = "https://iptv-org.github.io/iptv/categories/news.m3u"
 
     # Free feed keys (optional — most sources need none)
     firms_map_key: str = ""        # NASA FIRMS wildfires
