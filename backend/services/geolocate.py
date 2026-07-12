@@ -26,19 +26,27 @@ logger = logging.getLogger(__name__)
 _SYSTEM = """You are a forensic image geolocation analyst. You infer where a photo
 was taken purely from visual evidence, and you SHOW YOUR WORK so a human can check it.
 
-Reason in the OODA loop and return VALID JSON ONLY (no markdown, no prose outside JSON):
+Work through the OODA loop, filling each field with your OWN findings about THIS photo:
+- observe: the concrete visual facts you actually see — readable sign text and its
+  script/language, architecture style, vehicles and license-plate style, which side of
+  the road traffic drives on, vegetation, terrain, sky/sun. State only what is visible.
+- orient: geographic inferences, each tied to one observation above.
+- decide: 2-4 ranked candidate locations (most likely first), each with real decimal
+  coordinates and a one-sentence reason citing the evidence.
+- act: your single best candidate, copied verbatim from the top "decide" entry
+  (same place, country, lat, lng, confidence, and why).
+
+Return VALID JSON ONLY (no markdown, no prose outside JSON) in exactly this shape, with
+the empty strings and zeros replaced by your actual findings:
 {
-  "observe": ["concrete visual facts: readable sign text, script/language, architecture,
-               vehicles + license-plate style, driving side, vegetation, terrain, sky/sun"],
-  "orient":  ["geographic inferences drawn from the observations, each tied to a fact"],
-  "decide":  [ {"place": "City/area", "country": "Country", "lat": <float>, "lng": <float>,
-                "confidence": <0..1>, "why": "1 sentence citing the evidence"} ],
-  "act":     {"place": "...", "country": "...", "lat": <float>, "lng": <float>,
-              "confidence": <0..1>, "why": "why this is the single best guess"}
+  "observe": [],
+  "orient": [],
+  "decide": [{"place": "", "country": "", "lat": 0.0, "lng": 0.0, "confidence": 0.0, "why": ""}],
+  "act": {"place": "", "country": "", "lat": 0.0, "lng": 0.0, "confidence": 0.0, "why": ""}
 }
-Rules: give 2-4 ranked candidates in "decide" (most likely first); "act" must equal the
-top candidate. Use real decimal lat/lng. Be honest — if evidence is thin, say so in "why"
-and lower the confidence. Never invent sign text you cannot actually read."""
+Rules: use real decimal lat/lng. Be honest — if evidence is thin, say so in "why" and lower
+the confidence. Never invent sign text you cannot actually read, and never echo these field
+descriptions back as if they were observations."""
 
 _USER = ("Geolocate this photograph. Extract every usable geographic clue, reason step by "
          "step, and return the JSON schema exactly. Coordinates must be plausible decimals.")
@@ -80,12 +88,29 @@ def _norm_candidate(c: dict) -> dict | None:
     }
 
 
+# Substrings that signal a model echoed the schema's field guidance instead of
+# reporting real findings; such items are dropped from the trace.
+_PLACEHOLDER_MARKERS = (
+    "concrete visual facts",
+    "geographic inferences",
+    "each tied to",
+    "readable sign text, script",
+)
+
+
+def _is_placeholder(s: str) -> bool:
+    t = s.strip().lower()
+    if not t or set(t) <= {".", "…", "-", "_"}:
+        return True
+    return any(m in t for m in _PLACEHOLDER_MARKERS)
+
+
 def _strings(v) -> list[str]:
-    if isinstance(v, list):
-        return [str(x).strip()[:300] for x in v if str(x).strip()][:12]
-    if isinstance(v, str) and v.strip():
-        return [v.strip()[:300]]
-    return []
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, list):
+        return []
+    return [s[:300] for x in v if (s := str(x).strip()) and not _is_placeholder(s)][:12]
 
 
 def geolocate(image_b64: str, media_type: str = "image/jpeg") -> dict:
@@ -121,6 +146,18 @@ def geolocate(image_b64: str, media_type: str = "image/jpeg") -> dict:
         return {"available": False, "reason": "No plausible location could be inferred from the image."}
     if not candidates:
         candidates = [best]
+
+    # Some models return "act" with coordinates but no confidence/why (or a blank place),
+    # leaving the headline pin empty. Backfill those from the nearest decide candidate so
+    # the best guess always carries its rationale.
+    if best["confidence"] == 0.0 or not best["why"] or best["place"] == "Unknown":
+        match = min(candidates, key=lambda c: (c["lat"] - best["lat"]) ** 2 + (c["lng"] - best["lng"]) ** 2)
+        if not best["why"]:
+            best["why"] = match["why"]
+        if best["confidence"] == 0.0:
+            best["confidence"] = match["confidence"]
+        if best["place"] == "Unknown":
+            best["place"], best["country"] = match["place"], match["country"] or best["country"]
 
     return {
         "available": True,
