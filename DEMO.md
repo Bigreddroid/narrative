@@ -14,11 +14,19 @@ Nothing is pre-baked or stale.
 
 ## Run it
 
-From the project folder:
+From the project folder, use the launcher — it plays the intro, then brings the
+whole stack up:
 
-```bash
-docker compose up
-```
+- **Windows** (CMD — double-click it, or run in a terminal):
+  ```
+  start.cmd
+  ```
+- **macOS / Linux** (terminal):
+  ```bash
+  ./start.sh
+  ```
+
+Prefer plain Docker? `docker compose up` does the same thing without the intro.
 
 First boot takes a few minutes — it downloads Postgres, Redis, the Ollama LLM
 runtime, and the `llama3.2` + `llava` models, then creates a fresh database.
