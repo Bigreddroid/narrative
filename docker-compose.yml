@@ -38,8 +38,12 @@ services:
   # ($0, local) out of one `docker compose up`.
   ollama:
     image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
+    # Not published to the host on purpose: api/scheduler reach it over the
+    # internal network (http://ollama:11434), so there's nothing to expose. It
+    # also avoids a boot failure on machines already running a native Ollama on
+    # :11434 (a common collision) — keeping `docker compose up` truly one-command.
+    expose:
+      - "11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -85,7 +89,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    env_file: .env
+    # Optional: a fresh `git clone` has no .env, and the app defaults to a fully
+    # keyless local stack (fastembed embeddings + ollama LLM), so it must still
+    # boot. required:false lets compose start without a .env instead of erroring.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://narrative:narrative@postgres:5432/narrative
       REDIS_URL: redis://redis:6379/0
@@ -109,7 +118,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://narrative:narrative@postgres:5432/narrative
       REDIS_URL: redis://redis:6379/0
@@ -124,7 +135,33 @@ services:
         condition: service_completed_successfully
     volumes:
       - .:/app
+    # The image's HEALTHCHECK curls :8000/health, but the scheduler is a worker
+    # loop — it serves no HTTP, so that probe would always fail and show a scary
+    # (but false) "unhealthy". Disable it; the scheduler's health is its logs.
+    healthcheck:
+      disable: true
     command: python -m backend.scheduler
+
+  # The React/Vite frontend — the actual demo UI. Runs the Vite dev server and
+  # proxies /api to the api container (VITE_API_TARGET=http://api:8000), so the
+  # friend just opens http://localhost:5173. node_modules lives in an anonymous
+  # volume so the container's install isn't shadowed by (or written back to) the
+  # host tree — the bind mount still gives live hot-reload on source edits.
+  web:
+    image: node:20-alpine
+    working_dir: /web
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_TARGET: http://api:8000
+    depends_on:
+      - api
+    volumes:
+      - ./web:/web
+      - web_node_modules:/web/node_modules
+    command: >
+      sh -c "npm install &&
+      npm run dev -- --host 0.0.0.0 --port 5173"
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -142,3 +179,4 @@ volumes:
   postgres_data:
   redis_data:
   ollama_data:
+  web_node_modules:
