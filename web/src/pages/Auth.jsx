@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { setToken } from "../lib/api.js";
 import { DEV_ACCOUNTS } from "../lib/tiers.js";
 import { setStoredUser } from "../hooks/useUser.js";
+import { DEMO_MODE } from "../lib/demoMode.js";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -49,7 +50,12 @@ export default function Auth() {
 
       let res;
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 3500);
+      // First boot of the local stack pulls AI models + builds the DB, so the
+      // API can take a while to answer the very first login. A tight timeout here
+      // used to abort and drop into the offline fallback, minting a fake token
+      // that then silently 401s against the (now healthy) backend. Give login
+      // real headroom instead.
+      const timer = setTimeout(() => ctrl.abort(), 15000);
       try {
         res = await fetch(url, {
           method: "POST",
@@ -58,9 +64,12 @@ export default function Auth() {
           signal: ctrl.signal,
         });
       } catch {
-        // Backend unreachable / timed out — fall into the offline demo session.
-        loginOffline();
-        return;
+        // Backend unreachable / timed out. Only fall into a fake-token offline
+        // session when explicitly in demo mode; otherwise surface an honest
+        // "still starting" error so the user retries against the real backend
+        // rather than ending up logged-in-but-empty on a placeholder token.
+        if (DEMO_MODE) { loginOffline(); return; }
+        throw new Error("Can't reach the server yet — it may still be starting up (first boot downloads AI models). Give it a moment and try again.");
       } finally {
         clearTimeout(timer);
       }
@@ -69,7 +78,10 @@ export default function Auth() {
       let authData = {};
       try { authData = JSON.parse(text); } catch {}
       if (!res.ok) {
-        if (res.status >= 500 && res.status <= 504) { loginOffline(); return; }
+        if (res.status >= 500 && res.status <= 504) {
+          if (DEMO_MODE) { loginOffline(); return; }
+          throw new Error("The server is still starting up. Give it a moment and try again.");
+        }
         throw new Error(authData.detail || "Authentication failed.");
       }
       if (!authData.access_token) throw new Error("Server did not return a token.");

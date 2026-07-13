@@ -44,6 +44,11 @@ services:
     # :11434 (a common collision) — keeping `docker compose up` truly one-command.
     expose:
       - "11434"
+    environment:
+      # Keep pulled models resident in memory so the analyst/OSINT don't re-pay
+      # the ~14s cold model-load on every call (default is 5m). On the CPU-only
+      # demo stack that cold load is a big chunk of perceived latency.
+      OLLAMA_KEEP_ALIVE: "30m"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:

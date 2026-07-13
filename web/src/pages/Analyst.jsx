@@ -114,7 +114,11 @@ export default function Analyst() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api.post("/chat", { question: q, deep }, { timeoutMs: deep ? 120000 : 60000 });
+      // Local ($0) LLM inference runs on CPU in the demo stack, so a grounded
+      // answer can take ~60-90s (deep/multi-step even longer) — well past a
+      // typical REST timeout. Give it real headroom so the answer actually lands
+      // instead of the client aborting a request the server would have completed.
+      const res = await api.post("/chat", { question: q, deep }, { timeoutMs: deep ? 300000 : 180000 });
       setTurns((t) => [...t, { q, ...res }]);
     } catch (err) {
       if (err.status === 402) setError("The AI analyst is a paid feature. Upgrade to Full Access in Settings.");
