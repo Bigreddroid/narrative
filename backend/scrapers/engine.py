@@ -75,7 +75,10 @@ async def seed_sources(db: AsyncSession) -> None:
 
     for data in LAUNCH_SOURCES:
         exists = await db.execute(select(Source).where(Source.url == data["url"]))
-        if exists.scalar_one_or_none():
+        # .first() (not scalar_one_or_none) so a pre-existing duplicate-URL row can
+        # never raise MultipleResultsFound and abort the whole seed loop — a real
+        # bug that silently stopped new sources from ever seeding once a dup existed.
+        if exists.scalars().first() is not None:
             continue
         source = Source(id=uuid.uuid4(), **data)
         db.add(source)

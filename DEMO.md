@@ -9,10 +9,15 @@ Nothing is pre-baked or stale.
 ## Requirements
 
 - **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (Windows, macOS, or Linux) — that's it. Works on Apple Silicon (arm64) and Intel.
-- **Give Docker ~8 GB RAM** (Docker Desktop → Settings → Resources). The local vision
-  model (llava) loads into memory; with too little RAM the AI worker can get
-  OOM-killed. 8 GB is comfortable.
-- ~10 GB free disk; the AI models (~7 GB) download once on first run.
+- **Give Docker ≥10–12 GB RAM** (Docker Desktop → Settings → Resources). The local
+  models (llava vision + bge-large embeddings) load into memory alongside the
+  scheduler's workers; with too little RAM the scheduler can get OOM-killed. The
+  scheduler now auto-restarts and caches the embedding model, but 10–12 GB is the
+  comfortable floor now that ingest refreshes every ~5 minutes.
+- **~23 GB free disk.** Measured footprint: Docker images ~11 GB (the Ollama image
+  alone is ~8 GB) + volumes ~8.5 GB (pulled AI models) + containers/build cache ~3 GB.
+  The AI models (~7 GB) download once on first run and are cached in named volumes
+  thereafter. Dropping the `llava` vision model (only used by /geolocate) saves ~4.7 GB.
 - These ports free on your machine: **5173, 8000, 5432, 6379, 5050**.
 - Internet on first boot (to pull images + models). First boot is the slow one
   (~10–20 min on a normal connection); after that it runs offline too.

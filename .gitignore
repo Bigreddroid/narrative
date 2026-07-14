@@ -7,6 +7,10 @@ web/.env
 web/.env.*
 !web/.env.example
 
+# ─── Build artifacts ─────────────────────────────────────────────────────────
+# Frontend-only distributable produced by scripts/package_frontend.sh (regenerable).
+dist-frontend/
+
 # ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
@@ -49,3 +53,7 @@ Thumbs.db
 *.swp
 
 .vercel
+
+# generated install-guide artifacts
+INSTALL_GUIDE.html
+INSTALL_GUIDE.pdf

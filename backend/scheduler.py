@@ -81,7 +81,7 @@ async def main():
             _run_with_interval("evolution_worker", run_evolution_worker, s.evolution_interval_hours * 3600)
         ),
         asyncio.create_task(
-            _run_with_interval("feed_worker", run_feed_worker, s.feed_rebuild_interval_hours * 3600)
+            _run_with_interval("feed_worker", run_feed_worker, s.feed_rebuild_interval_minutes * 60)
         ),
         asyncio.create_task(
             _run_with_interval("alert_worker", run_alert_worker, s.alert_interval_minutes * 60)
