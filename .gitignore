@@ -53,3 +53,7 @@ Thumbs.db
 *.swp
 
 .vercel
+
+# generated install-guide artifacts
+INSTALL_GUIDE.html
+INSTALL_GUIDE.pdf
