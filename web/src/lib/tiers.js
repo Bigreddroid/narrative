@@ -75,6 +75,26 @@ export const DEV_ACCOUNTS = {
     email: "enterprise@narrative.dev",
     tier: "enterprise",
   },
+  // Extra enterprise-tier test logins (keys lowercased — Auth.jsx lowercases the
+  // email before lookup, so mixed-case inputs like enterprise.Ultra@ still match).
+  "enterprise.b@narrative.dev": {
+    id: "dev-enterprise-b",
+    name: "Enterprise B",
+    email: "enterprise.b@narrative.dev",
+    tier: "enterprise",
+  },
+  "enterprise.ultra@narrative.dev": {
+    id: "dev-enterprise-ultra",
+    name: "Enterprise Ultra",
+    email: "enterprise.ultra@narrative.dev",
+    tier: "enterprise",
+  },
+  "enterprise.c@narrative.dev": {
+    id: "dev-enterprise-c",
+    name: "Enterprise C",
+    email: "enterprise.c@narrative.dev",
+    tier: "enterprise",
+  },
   "admin@narrative.dev": {
     id: "dev-admin-001",
     name: "Admin",

@@ -8,9 +8,16 @@ Nothing is pre-baked or stale.
 
 ## Requirements
 
-- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (Windows, macOS, or Linux) — that's it.
-- ~8 GB free disk (the local AI models download once on first run).
-- Internet on first boot (to pull images + models). After that it runs offline too.
+- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (Windows, macOS, or Linux) — that's it. Works on Apple Silicon (arm64) and Intel.
+- **Give Docker ~8 GB RAM** (Docker Desktop → Settings → Resources). The local vision
+  model (llava) loads into memory; with too little RAM the AI worker can get
+  OOM-killed. 8 GB is comfortable.
+- ~10 GB free disk; the AI models (~7 GB) download once on first run.
+- These ports free on your machine: **5173, 8000, 5432, 6379, 5050**.
+- Internet on first boot (to pull images + models). First boot is the slow one
+  (~10–20 min on a normal connection); after that it runs offline too.
+- Heads-up: the AI analyst runs **locally on CPU** ($0, no keys), so answers take
+  roughly **10 seconds** (longer on the first, cold call). That's expected.
 
 ## Run it
 
@@ -68,6 +75,23 @@ embed + cluster cycle completes — that's expected. Watch it happen with
 
 Everything runs at **$0** — no paid API keys are used. (Paid providers like
 Anthropic/Voyage are strictly opt-in and off by default.)
+
+## Talk to the analyst from your terminal
+
+You can ask the same AI analyst straight from a terminal — no browser needed. The
+stack must be up.
+
+```bash
+./analyst.sh "biggest risk to shipping right now"     # mac/linux
+analyst.cmd "biggest risk to shipping right now"      # windows
+
+./analyst.sh --deep "how could a Strait of Hormuz closure hit me"
+./analyst.sh --image ./photo.jpg                      # geolocate a photo (vision model)
+```
+
+It shows a live "thinking…" spinner while the local model works, then prints the
+grounded answer with its sources. Text questions use the text model; `--image` uses
+the vision model — routed by use case, $0, no keys.
 
 ## Handy commands
 

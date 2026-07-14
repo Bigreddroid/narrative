@@ -65,6 +65,11 @@ _DEV_TIERS = {
 # and the account is auto-provisioned at the given tier on first login.
 _BETA_ACCOUNTS = {
     "enterprise@narrative.dev": {"password": "betatest1", "tier": "enterprise"},
+    # Extra enterprise-tier test logins. Keys are lowercase; login lowercases the
+    # email before lookup, so mixed-case inputs (enterprise.Ultra@…) still match.
+    "enterprise.b@narrative.dev": {"password": "betatest1", "tier": "enterprise"},
+    "enterprise.ultra@narrative.dev": {"password": "betatest1", "tier": "enterprise"},
+    "enterprise.c@narrative.dev": {"password": "betatest1", "tier": "enterprise"},
 }
 
 

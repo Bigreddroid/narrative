@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import or_, select
 
 from backend.consequence_engine import title_dedup
+from backend.consequence_engine.embedder import embed_texts
 from backend.database import AsyncSessionLocal
 from backend.feeds import cyber, gdacs, launches, synthesize, usgs, weather
 from backend.models.event_consequence_map import EventConsequenceMap
@@ -104,6 +105,26 @@ def _corroborate(canonical: NarrativeEvent, signal: dict, now: datetime) -> None
     canonical.last_updated_at = now
 
 
+def _embed_event_text(title: str | None, summary: str | None) -> list[float] | None:
+    """Local ($0) embedding of an event from its title+summary, so the graph
+    connector's semantic gate (cosine of the two events' embeddings) can engage.
+    Without this, events are created with a NULL embedding and every link degrades
+    to tag-only — the reason OSINT/hazard events never linked. Best-effort: a
+    failed/empty embed returns None and the event simply links tag-only (the prior
+    behaviour) instead of blocking ingest."""
+    text = (title or "").strip()
+    if summary:
+        text = f"{text}. {summary.strip()}".strip()
+    if not text:
+        return None
+    try:
+        vecs = embed_texts([text])
+        return vecs[0] if vecs else None
+    except Exception as exc:  # noqa: BLE001 — never let embedding block ingest
+        logger.warning("event embedding failed (%s): tag-only link fallback", exc)
+        return None
+
+
 async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
     """Create or refresh a NarrativeEvent from a Signal. Returns True if a new
     canonical (feed-visible) event was created.
@@ -176,6 +197,7 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
         current_status=signal["status"],
         geographic_relevance=signal.get("geography") or [],
         affected_sectors=syn["affected_sectors"],
+        embedding=_embed_event_text(signal["title"], signal.get("summary")),
         geo_centroid_lat=signal.get("lat"),
         geo_centroid_lng=signal.get("lng"),
         first_detected_at=now,
