@@ -45,6 +45,28 @@ export const LENS_PRESETS = [
       country: "Japan",
     },
   },
+  {
+    id: "indo-pak",
+    label: "Indo-Pak",
+    blurb: "India · Pakistan · Kashmir — subcontinent desk",
+    patch: {
+      spending_categories: ["Energy", "Technology", "Manufacturing"],
+      regions: ["India", "Pakistan", "Kashmir", "Arabian Sea"],
+      purpose: ["Protect supply chain"],
+      country: "India",
+    },
+  },
+  {
+    id: "southeast-asia",
+    label: "Southeast Asia",
+    blurb: "Malacca · Indonesia · Vietnam — ASEAN desk",
+    patch: {
+      spending_categories: ["Shipping & Logistics", "Manufacturing", "Energy"],
+      regions: ["Malacca Strait", "Indonesia", "Vietnam", "Philippines"],
+      purpose: ["Protect supply chain"],
+      country: "Indonesia",
+    },
+  },
 ];
 
 // Which preset (if any) the current stored regions match — drives the active tick.
