@@ -209,8 +209,8 @@ LAUNCH_SOURCES = [
     {"name": "The Hill", "url": "https://thehill.com", "rss_url": "https://thehill.com/news/feed/", "country": "US", "category": "policy", "bias_rating": "center", "bias_source": "allsides", "scrape_method": "rss"},
     {"name": "CNBC", "url": "https://www.cnbc.com", "rss_url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100727362", "country": "US", "category": "economy", "bias_rating": "center", "bias_source": "allsides", "scrape_method": "rss"},
     {"name": "MarketWatch", "url": "https://www.marketwatch.com", "rss_url": "https://feeds.marketwatch.com/marketwatch/topstories/", "country": "US", "category": "economy", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
-    {"name": "New York Times — World", "url": "https://www.nytimes.com", "rss_url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", "country": "US", "category": "general", "bias_rating": "center-left", "bias_source": "allsides", "scrape_method": "rss"},
-    {"name": "New York Times — Business", "url": "https://www.nytimes.com", "rss_url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "country": "US", "category": "economy", "bias_rating": "center-left", "bias_source": "allsides", "scrape_method": "rss"},
+    {"name": "New York Times — World", "url": "https://www.nytimes.com/section/world", "rss_url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", "country": "US", "category": "general", "bias_rating": "center-left", "bias_source": "allsides", "scrape_method": "rss"},
+    {"name": "New York Times — Business", "url": "https://www.nytimes.com/section/business", "rss_url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "country": "US", "category": "economy", "bias_rating": "center-left", "bias_source": "allsides", "scrape_method": "rss"},
     {"name": "Washington Post — World", "url": "https://www.washingtonpost.com", "rss_url": "https://feeds.washingtonpost.com/rss/world", "country": "US", "category": "general", "bias_rating": "center-left", "bias_source": "allsides", "scrape_method": "rss"},
     {"name": "Los Angeles Times — World", "url": "https://www.latimes.com", "rss_url": "https://www.latimes.com/world/rss2.0.xml", "country": "US", "category": "general", "bias_rating": "center-left", "bias_source": "allsides", "scrape_method": "rss"},
     {"name": "CBS News — World", "url": "https://www.cbsnews.com", "rss_url": "https://www.cbsnews.com/latest/rss/world", "country": "US", "category": "general", "bias_rating": "center-left", "bias_source": "allsides", "scrape_method": "rss"},
@@ -295,4 +295,30 @@ LAUNCH_SOURCES = [
     {"name": "Yonhap News", "url": "https://en.yna.co.kr", "rss_url": "https://en.yna.co.kr/RSS/news.xml", "country": "KR", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "Deutsche Welle — Business", "url": "https://www.dw.com/en/business", "rss_url": "https://rss.dw.com/rdf/rss-en-bus", "country": "DE", "category": "economy", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "Rest of World", "url": "https://restofworld.org", "rss_url": "https://restofworld.org/feed/latest/", "country": "US", "category": "technology", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+
+    # ── Batch 2 (5-min cadence expansion) — additional keyless RSS across OSINT/
+    # investigative, humanitarian, state wires, Asia economy, maritime/trade and
+    # cyber-threat. Same fail-soft rule: dead feeds are logged & skipped. ─────────
+    # State wires & broad international
+    {"name": "Deutsche Welle", "url": "https://www.dw.com/en", "rss_url": "https://rss.dw.com/rdf/rss-en-all", "country": "DE", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "Semafor", "url": "https://www.semafor.com", "rss_url": "https://www.semafor.com/rss.xml", "country": "US", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "Anadolu Agency", "url": "https://www.aa.com.tr/en", "rss_url": "https://www.aa.com.tr/en/rss/default?cat=live", "country": "TR", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "Al Arabiya English", "url": "https://english.alarabiya.net", "rss_url": "https://english.alarabiya.net/feed/rss2/en.xml", "country": "AE", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "TASS", "url": "https://tass.com", "rss_url": "https://tass.com/rss/v2.xml", "country": "RU", "category": "geopolitics", "bias_rating": "right", "bias_source": "mbfc", "scrape_method": "rss"},
+    # Humanitarian, conflict & OSINT/investigative
+    {"name": "ReliefWeb", "url": "https://reliefweb.int", "rss_url": "https://reliefweb.int/updates/rss.xml", "country": "CH", "category": "conflict", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "UN News", "url": "https://news.un.org", "rss_url": "https://news.un.org/feed/subscribe/en/news/all/rss.xml", "country": "US", "category": "policy", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "Bellingcat", "url": "https://www.bellingcat.com", "rss_url": "https://www.bellingcat.com/feed/", "country": "NL", "category": "conflict", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "OCCRP", "url": "https://www.occrp.org", "rss_url": "https://www.occrp.org/en/feed", "country": "US", "category": "policy", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    # Asia economy
+    {"name": "Nikkei Asia", "url": "https://asia.nikkei.com", "rss_url": "https://asia.nikkei.com/rss/feed/nar", "country": "JP", "category": "economy", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "South China Morning Post", "url": "https://www.scmp.com", "rss_url": "https://www.scmp.com/rss/91/feed", "country": "HK", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "Caixin Global", "url": "https://www.caixinglobal.com", "rss_url": "https://www.caixinglobal.com/rss/report.xml", "country": "CN", "category": "economy", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    # Maritime & trade (chokepoint/shipping consequence)
+    {"name": "The Maritime Executive", "url": "https://maritime-executive.com", "rss_url": "https://maritime-executive.com/rss", "country": "US", "category": "commodities", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "The Loadstar", "url": "https://theloadstar.com", "rss_url": "https://theloadstar.com/feed/", "country": "UK", "category": "commodities", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    # Cyber & threat intelligence
+    {"name": "BleepingComputer", "url": "https://www.bleepingcomputer.com", "rss_url": "https://www.bleepingcomputer.com/feed/", "country": "US", "category": "technology", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "The Record", "url": "https://therecord.media", "rss_url": "https://therecord.media/feed/", "country": "US", "category": "technology", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "Krebs on Security", "url": "https://krebsonsecurity.com", "rss_url": "https://krebsonsecurity.com/feed/", "country": "US", "category": "technology", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
 ]

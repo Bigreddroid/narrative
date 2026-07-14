@@ -37,11 +37,22 @@ _GOOGLE_NEWS_Q = (
     '"flash flood" OR wildfire OR cyclone OR eruption OR cyberattack OR '
     "ransomware OR sanctions OR explosion OR evacuation"
 )
+# Second Google News query aimed at economic / supply-chain consequence themes,
+# complementing the conflict/hazard query above (kept separate so one query's
+# throttling can't drop the other's coverage).
+_GOOGLE_NEWS_ECON_Q = (
+    'strait OR chokepoint OR blockade OR "port strike" OR "export ban" OR '
+    "tariff OR embargo OR semiconductor OR chip OR pipeline OR "
+    '"supply chain" OR default OR devaluation OR shortage'
+)
 DEFAULT_FEEDS: list[tuple[str, str]] = [
     (f"https://news.google.com/rss/search?q={_GOOGLE_NEWS_Q}&hl=en-US&gl=US&ceid=US:en",
      "news.google.com"),
+    (f"https://news.google.com/rss/search?q={_GOOGLE_NEWS_ECON_Q}&hl=en-US&gl=US&ceid=US:en",
+     "news.google.com/econ"),
     ("https://www.reddit.com/r/worldnews/.rss", "reddit/worldnews"),
     ("https://www.reddit.com/r/CredibleDefense/.rss", "reddit/CredibleDefense"),
+    ("https://www.reddit.com/r/geopolitics/.rss", "reddit/geopolitics"),
 ]
 
 _ATOM = "{http://www.w3.org/2005/Atom}"

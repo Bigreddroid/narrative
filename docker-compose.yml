@@ -112,6 +112,8 @@ services:
         condition: service_healthy
       ollama-pull:
         condition: service_completed_successfully
+    # Self-recover from a crash/OOM instead of leaving the API down.
+    restart: unless-stopped
     volumes:
       - .:/app
     command: >
@@ -131,6 +133,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       APP_ENV: development
       OLLAMA_BASE_URL: http://ollama:11434
+      # Persist the ~1.3 GB bge-large ONNX embedding model to a named volume so
+      # it is fetched ONCE, not re-downloaded on every restart (empty default ⇒
+      # ephemeral tmp dir under the container FS). Big win now the scheduler
+      # restarts more often (restart policy below) and runs a heavier 5-min load.
+      FASTEMBED_CACHE_DIR: /app/.fastembed_cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -138,8 +145,15 @@ services:
         condition: service_healthy
       ollama-pull:
         condition: service_completed_successfully
+    # The scheduler is the memory-heaviest container (loads bge-large + runs 16
+    # workers) and previously OOM-died (exit 137) with NO restart policy, leaving
+    # the whole pipeline frozen until a manual `docker compose up`. Auto-recover.
+    restart: unless-stopped
     volumes:
       - .:/app
+      # Persistent embed-model cache (see FASTEMBED_CACHE_DIR above). Kept out of
+      # the bind-mounted host tree so the ONNX blob never lands in the repo.
+      - fastembed_cache:/app/.fastembed_cache
     # The image's HEALTHCHECK curls :8000/health, but the scheduler is a worker
     # loop — it serves no HTTP, so that probe would always fail and show a scary
     # (but false) "unhealthy". Disable it; the scheduler's health is its logs.
@@ -185,3 +199,4 @@ volumes:
   redis_data:
   ollama_data:
   web_node_modules:
+  fastembed_cache:

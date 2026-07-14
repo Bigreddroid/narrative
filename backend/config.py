@@ -113,19 +113,25 @@ class Settings(BaseSettings):
     evolution_volume_weight: float = 0.5
     evolution_volume_tau: float = 2.0
     max_chain_steps: int = 6
+    # Cadence — tuned so the freshness-critical path (ingest → embed → map →
+    # feed) refreshes about every 5 min. Heavy analytics (graph/evolution/
+    # exposure/archive) stay on a longer cadence to bound peak RAM/CPU on the
+    # CPU-only demo stack. All fields are env-overridable (e.g. EMBED_INTERVAL_MINUTES).
     scrape_interval_hours: int = 2
-    embed_interval_minutes: int = 15
-    cluster_interval_minutes: int = 30
-    importance_interval_minutes: int = 30
-    mapping_interval_minutes: int = 15
+    embed_interval_minutes: int = 5
+    cluster_interval_minutes: int = 10
+    importance_interval_minutes: int = 10
+    mapping_interval_minutes: int = 5
     graph_interval_hours: int = 1
     evolution_interval_hours: int = 1
-    alert_interval_minutes: int = 30
-    feed_rebuild_interval_hours: int = 1
+    alert_interval_minutes: int = 10
+    # feed rebuild is now minute-based (was hourly) so newly ingested events
+    # surface in the feed within ~10 min instead of up to an hour.
+    feed_rebuild_interval_minutes: int = 10
     exposure_snapshot_interval_hours: int = 1
-    hazard_ingest_interval_minutes: int = 30   # free real-time feed ingest
-    market_ingest_interval_minutes: int = 30
-    osint_ingest_interval_minutes: int = 30    # free keyless OSINT ingest
+    hazard_ingest_interval_minutes: int = 5    # free real-time feed ingest
+    market_ingest_interval_minutes: int = 5
+    osint_ingest_interval_minutes: int = 5     # free keyless OSINT ingest
 
     # OSINT (open-source intelligence) — keyless GDELT news, always on.
     osint_source: str = "gdelt"    # gdelt (keyless, default)
