@@ -1,20 +1,16 @@
 """
-Provider-agnostic LLM access.
+Provider-agnostic LLM access — local-only.
 
-Free/local by default (Ollama), with Anthropic as an opt-in, hard-capped upgrade.
-The whole platform must work with NO paid key: when the active provider is local
-or unavailable, callers degrade to free/heuristic paths instead of erroring.
+The whole platform runs on a free, local LLM (Ollama). There is no paid LLM
+provider: when the active provider is unavailable, callers degrade to
+free/heuristic paths instead of erroring, so nothing here ever needs an API key.
 
 Provider selection (see backend/config.py):
-  - llm_provider = "ollama"     → local, free (default)
-  - llm_provider = "anthropic"  → paid; honoured ONLY when paid_apis_enabled=True,
-                                  and the caller must gate the call with
-                                  backend.services.cost_guard.claude_allowed(db).
-  - llm_provider = "off"        → no LLM; available()→False.
+  - llm_provider = "ollama"  → local, free (default)
+  - llm_provider = "off"     → no LLM; available()→False.
 
 `complete()` is synchronous so existing callers can keep offloading via
-asyncio.to_thread(). Paid budget enforcement lives in cost_guard (async, needs the
-DB); this module never spends without the caller first confirming it's allowed.
+asyncio.to_thread().
 """
 
 import logging
@@ -27,18 +23,12 @@ from backend.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Anthropic pricing for claude-opus-4-8 (consequence_engine_model): $5/MTok in,
-# $25/MTok out. Keep in sync with config.consequence_engine_model so the hard cap
-# in cost_guard reflects real spend — under-pricing here lets spend overshoot.
-_ANTHROPIC_IN_PER_MTOK = 5.0
-_ANTHROPIC_OUT_PER_MTOK = 25.0
-
 # Local models occasionally return an empty completion (transient); re-request before failing.
 _OLLAMA_EMPTY_RETRIES = 3
 
 
 class BudgetExceeded(RuntimeError):
-    """Raised when a paid provider call is blocked (provider 'off' or over cap)."""
+    """Raised when no LLM call can proceed (provider 'off')."""
 
 
 @dataclass
@@ -50,25 +40,13 @@ class LLMResult:
     provider: str
 
 
-def estimate_anthropic_cost(input_tokens: int, output_tokens: int) -> float:
-    return (input_tokens * _ANTHROPIC_IN_PER_MTOK + output_tokens * _ANTHROPIC_OUT_PER_MTOK) / 1_000_000
-
-
 def active_provider() -> str:
     """The provider actually used right now. Reads the runtime override (set via the
-    admin Settings panel) falling back to the env default. Paid 'anthropic' still
-    downgrades to local when the master switch is off, so neither a stray config NOR a
-    runtime flip can start spending unless the deploy explicitly enabled paid APIs."""
+    admin Settings panel) falling back to the env default. Only local providers exist,
+    so this is always 'ollama' or 'off' — no path can start paid spend."""
     from backend.services import runtime_config  # lazy: avoids a model import at load
 
-    p = runtime_config.llm_provider()
-    if p == "anthropic" and not settings.paid_apis_enabled:
-        return "ollama"
-    return p
-
-
-def is_paid() -> bool:
-    return active_provider() == "anthropic"
+    return runtime_config.llm_provider()
 
 
 def available() -> bool:
@@ -76,8 +54,6 @@ def available() -> bool:
     p = active_provider()
     if p == "off":
         return False
-    if p == "anthropic":
-        return bool(settings.anthropic_api_key)
     if p == "ollama":
         return _ollama_up()
     return False
@@ -87,17 +63,15 @@ def complete(
     system: str, user: str, max_tokens: int, json_mode: bool = False, model: str | None = None
 ) -> LLMResult:
     """Single completion. Raises BudgetExceeded if provider is 'off', or the
-    provider's own error (e.g. httpx/anthropic) on failure — callers degrade.
+    provider's own error (e.g. httpx) on failure — callers degrade.
 
     `model` overrides the local Ollama model for this call only (e.g. a worker that
-    needs a more reliable model than the global default); ignored by the paid path."""
+    needs a more reliable model than the global default)."""
     p = active_provider()
     if p == "off":
         raise BudgetExceeded("LLM provider is 'off'")
     if p == "ollama":
         return _ollama_complete(system, user, max_tokens, json_mode, model)
-    if p == "anthropic":
-        return _anthropic_complete(system, user, max_tokens)
     raise BudgetExceeded(f"unknown llm_provider: {p}")
 
 
@@ -111,18 +85,14 @@ def complete_vision(
 ) -> LLMResult:
     """Multimodal completion over a single base64-encoded image.
 
-    Every Claude model is vision-capable, so the anthropic path always works. The
-    ollama path only works if local_llm_model is a multimodal model (e.g. llava,
-    llama3.2-vision) — a text-only local model returns a provider error and the
-    caller degrades. Same budget posture as complete(): never spends unless the
-    active provider is paid AND the caller already confirmed it's allowed."""
+    The ollama path only works if local_llm_model is a multimodal model (e.g. llava,
+    llama3.2-vision) — a text-only local model returns a provider error and the caller
+    degrades. `media_type` is accepted for API symmetry but not needed by Ollama."""
     p = active_provider()
     if p == "off":
         raise BudgetExceeded("LLM provider is 'off'")
     if p == "ollama":
         return _ollama_vision(system, user, image_b64, max_tokens, json_mode)
-    if p == "anthropic":
-        return _anthropic_vision(system, user, image_b64, media_type, max_tokens)
     raise BudgetExceeded(f"unknown llm_provider: {p}")
 
 
@@ -212,55 +182,4 @@ def _ollama_vision(system: str, user: str, image_b64: str, max_tokens: int, json
         output_tokens=data.get("eval_count", 0),
         cost_usd=0.0,
         provider="ollama",
-    )
-
-
-# ── Anthropic (paid, opt-in, hard-capped by the caller) ───────────────────────
-def _anthropic_complete(system: str, user: str, max_tokens: int) -> LLMResult:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    resp = client.messages.create(
-        model=settings.consequence_engine_model,
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-    text = resp.content[0].text.strip()
-    in_tok = resp.usage.input_tokens
-    out_tok = resp.usage.output_tokens
-    return LLMResult(
-        text=text,
-        input_tokens=in_tok,
-        output_tokens=out_tok,
-        cost_usd=estimate_anthropic_cost(in_tok, out_tok),
-        provider="anthropic",
-    )
-
-
-def _anthropic_vision(system: str, user: str, image_b64: str, media_type: str, max_tokens: int) -> LLMResult:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    resp = client.messages.create(
-        model=settings.consequence_engine_model,
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
-                {"type": "text", "text": user},
-            ],
-        }],
-    )
-    text = resp.content[0].text.strip()
-    in_tok = resp.usage.input_tokens
-    out_tok = resp.usage.output_tokens
-    return LLMResult(
-        text=text,
-        input_tokens=in_tok,
-        output_tokens=out_tok,
-        cost_usd=estimate_anthropic_cost(in_tok, out_tok),
-        provider="anthropic",
     )

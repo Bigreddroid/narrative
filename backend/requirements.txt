@@ -35,8 +35,8 @@ playwright==1.44.0
 # fastembed: local, free embeddings (ONNX, no torch). Default provider —
 # BAAI/bge-large-en-v1.5 emits 1024-dim vectors, matching the pgvector schema.
 fastembed==0.3.6
-# anthropic + voyageai are OPTIONAL paid providers (opt-in via paid_apis_enabled).
-anthropic==0.28.0
+# voyageai: OPTIONAL paid embeddings provider (opt-in via paid_apis_enabled).
+# The LLM is local-only (Ollama) — no paid LLM SDK is used.
 voyageai==0.2.3
 
 # Auth

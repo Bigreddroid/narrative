@@ -11,14 +11,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # AI
-    anthropic_api_key: str = ""
     voyage_api_key: str = ""
 
-    # Provider posture — free/local by default. Paid providers are opt-in and
-    # only consulted when paid_apis_enabled is True (see backend/services/llm.py
-    # and embedder.py). With the defaults below the whole pipeline runs at $0.
-    paid_apis_enabled: bool = False        # master kill-switch for ALL paid calls
-    llm_provider: str = "ollama"           # ollama | anthropic | off
+    # Provider posture — free/local by default. The LLM is always local (Ollama);
+    # the only opt-in paid provider is Voyage embeddings, consulted solely when
+    # paid_apis_enabled is True (see embedder.py). With the defaults below the whole
+    # pipeline — LLM included — runs at $0 and needs no keys.
+    paid_apis_enabled: bool = False        # master kill-switch for paid embeddings
+    llm_provider: str = "ollama"           # ollama | off  (local-only)
     embeddings_provider: str = "local"     # local | voyage
 
     # Local (free) models
@@ -95,7 +95,6 @@ class Settings(BaseSettings):
 
     # Pipeline config
     engine_version: str = "2.0"  # versioned scoring/propagation params (the "secret sauce")
-    consequence_engine_model: str = "claude-opus-4-8"
     embedding_model: str = "voyage-3"
     importance_threshold_deep: int = 70
     importance_threshold_light: int = 40
@@ -149,14 +148,9 @@ class Settings(BaseSettings):
     archive_interval_hours: int = 24
 
     # Cost control
-    claude_daily_cost_alert_usd: float = 20.0    # soft alert (email only)
+    claude_daily_cost_alert_usd: float = 20.0    # soft alert (email only), Voyage spend
     claude_monthly_budget_usd: float = 200.0     # soft alert / admin reference
     admin_alert_email: str = ""
-    # Enforced hard caps (NOT just alerts). When the active paid LLM provider is
-    # selected, a call is blocked once today's / this-month's spend reaches these.
-    # 0.0 ⇒ no paid spend permitted, so callers degrade to the free path.
-    claude_hard_cap_daily_usd: float = 0.0
-    claude_hard_cap_monthly_usd: float = 0.0
 
     # Data lifecycle
     hot_data_days: int = 30

@@ -336,8 +336,7 @@ async def get_config(db: DbDep, admin: AdminDep) -> dict:
     await runtime_config.load(db)
     return {
         "config": runtime_config.snapshot(),
-        # active_provider reflects the *effective* provider — paid 'anthropic' shows as
-        # 'ollama' here when paid APIs are disabled, so the panel can't imply spend.
+        # active_provider is always a local provider (ollama/off) — no paid LLM path.
         "active_llm_provider": llm.active_provider(),
         "paid_apis_enabled": get_settings().paid_apis_enabled,
     }
