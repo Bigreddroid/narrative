@@ -6,6 +6,7 @@ import { useMediaQuery } from "../hooks/useMediaQuery.js";
 import { useProfile } from "../hooks/useProfile.js";
 import { rankByLens, eventRelevance } from "../lib/lensRelevance.js";
 import EventGraph from "./graph/EventGraph.jsx";
+import InitializingScreen from "./InitializingScreen.jsx";
 import { getCategoryColor } from "../lib/colors.js";
 import { biasLabel } from "../lib/bias.js";
 
@@ -326,11 +327,8 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
 
       {/* Columns row */}
       <div className="flex overflow-x-auto deck-scroll" style={{ height: "calc(100% - 37px)" }}>
-        {loading ? (
-          <div className="flex items-center justify-center w-full">
-            <div className="w-6 h-6 border-2 rounded-full animate-spin"
-              style={{ borderColor: C.border2, borderTopColor: C.crimson }} />
-          </div>
+        {loading || events.length === 0 ? (
+          <InitializingScreen dark title="Initializing Deck" />
         ) : (
           <>
             {columnData.map(({ col, list }) => (

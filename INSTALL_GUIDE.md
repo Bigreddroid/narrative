@@ -2,6 +2,31 @@
 
 Run the whole intelligence platform locally on one machine, with one command.
 Live event feed, AI analyst, world map, personalized exposure — all self-contained.
+Runs at **$0 — no API keys, no accounts** (the AI is local).
+
+---
+
+## Fastest path — the `mithrasayshello` command
+
+Install Docker Desktop first (see Requirements below). Then, from a terminal:
+
+**macOS / Linux** — clone and run in one go:
+```bash
+git clone https://github.com/Bigreddroid/narrative.git && cd narrative && ./mithrasayshello
+```
+Or straight from the internet (it clones itself):
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bigreddroid/narrative/main/mithrasayshello | bash
+```
+
+**Windows** (PowerShell or CMD):
+```powershell
+git clone https://github.com/Bigreddroid/narrative.git ; cd narrative ; .\mithrasayshello.cmd
+```
+
+`mithrasayshello` checks Docker is running, clones the project if you don't have it
+yet, then brings the whole stack up. First run downloads images + the local AI
+models (once). When it settles, open **http://localhost:5173**.
 
 ---
 

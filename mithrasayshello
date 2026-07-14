@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# ============================================================
+#  mithrasayshello — one-command installer for The Narrative
+#  (macOS / Linux)
+#
+#  Clones the project from git if needed, then boots the whole
+#  local stack ($0, keyless, local AI). Works two ways:
+#
+#    1. Straight from the internet (self-clones):
+#         curl -fsSL https://raw.githubusercontent.com/Bigreddroid/narrative/main/mithrasayshello | bash
+#
+#    2. From a checkout you already have:
+#         git clone https://github.com/Bigreddroid/narrative.git
+#         cd narrative && ./mithrasayshello
+#
+#  Pass extra docker args through, e.g.  ./mithrasayshello -d  (background).
+# ============================================================
+set -e
+
+REPO_URL="https://github.com/Bigreddroid/narrative.git"
+DIR_NAME="narrative"
+
+say() { printf "\033[38;5;197m>>\033[0m %s\n" "$*"; }
+die() { printf "\033[38;5;197m!!\033[0m %s\n" "$*" >&2; exit 1; }
+
+printf "\n\033[38;5;197m  mithra says hello.\033[0m  booting The Narrative…\n\n"
+
+# ── 1. Docker must be installed and running ─────────────────────────────────
+command -v docker >/dev/null 2>&1 || die \
+  "Docker isn't installed. Get Docker Desktop: https://www.docker.com/products/docker-desktop/  then re-run me."
+docker info >/dev/null 2>&1 || die \
+  "Docker is installed but not running. Open Docker Desktop, wait for the whale to go steady, then re-run me."
+
+# ── 2. Find (or fetch) the project ──────────────────────────────────────────
+if [ -f "docker-compose.yml" ]; then
+  say "using the project in this folder"
+elif [ -d "$DIR_NAME/.git" ]; then
+  say "found an existing clone in ./$DIR_NAME — updating it"
+  git -C "$DIR_NAME" pull --ff-only || true
+  cd "$DIR_NAME"
+else
+  command -v git >/dev/null 2>&1 || die \
+    "git isn't installed. Install it (macOS: 'xcode-select --install') then re-run me."
+  say "cloning $REPO_URL → ./$DIR_NAME"
+  git clone --depth 1 "$REPO_URL" "$DIR_NAME"
+  cd "$DIR_NAME"
+fi
+
+# ── 3. Punk boot intro (never blocks the launch) ────────────────────────────
+[ -f scripts/boot_intro.sh ] && bash scripts/boot_intro.sh || true
+
+# ── 4. Bring the whole stack up ─────────────────────────────────────────────
+say "docker compose up — first run pulls images + local AI models (~10–20 min, once)"
+say "when it settles, open  http://localhost:5173   (login: enterprise@narrative.dev / betatest1)"
+echo ""
+exec docker compose up "$@"

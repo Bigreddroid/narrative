@@ -23,12 +23,12 @@ from backend.feeds.synthesize import SECTOR_MAP
 logger = logging.getLogger(__name__)
 
 # ── LLM circuit breaker ───────────────────────────────────────────────────────
-# When the paid provider returns a PERSISTENT error (credits exhausted, bad/expired
-# key, permission), retrying it once per post pointlessly hammers the API — a single
-# ingest cycle fired 185 doomed Anthropic calls after credits ran dry. Trip a short
-# cooldown on such errors so the rest of that run (and the next few) skip straight to
-# the heuristic. Transient errors (timeouts, 5xx) are NOT tripped: they degrade for
-# just the one post, exactly as before.
+# When the LLM returns a PERSISTENT error (model unavailable, wedged), retrying it
+# once per post pointlessly hammers it. Trip a short cooldown on such errors so the
+# rest of that run (and the next few) skip straight to the heuristic. Transient errors
+# (timeouts, 5xx) are NOT tripped: they degrade for just the one post, exactly as before.
+# (The markers below are legacy paid-provider signatures — harmless now the LLM is
+# local-only, retained as a defensive catch-all.)
 _LLM_COOLDOWN_SECONDS = 900  # 15 min
 _llm_cooldown_until = 0.0
 _PERSISTENT_LLM_MARKERS = (

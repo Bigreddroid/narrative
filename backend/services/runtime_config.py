@@ -16,8 +16,8 @@ Propagation model:
     is identical to before this layer existed until an admin sets something.
 
 Safety: paid_apis_enabled is deliberately NOT overridable here. It stays the env-only
-master kill-switch, so flipping the provider to 'anthropic' at runtime still cannot
-start paid spend unless the deploy already enabled paid APIs (see llm.active_provider).
+master kill-switch for paid Voyage embeddings. The LLM provider is local-only
+(ollama/off), so no runtime flip can ever start LLM spend.
 """
 
 import logging
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # key -> spec. "choices" = allowed string values; type "bool" = a boolean toggle.
 OVERRIDABLE_KEYS: dict[str, dict] = {
-    "llm_provider": {"choices": {"ollama", "anthropic", "off"}},
+    "llm_provider": {"choices": {"ollama", "off"}},
     "osint_source": {"choices": {"gdelt", "reddit"}},
     "osint_rss_enabled": {"type": "bool"},
 }

@@ -7,6 +7,7 @@ import EventGraph from "../components/graph/EventGraph.jsx";
 import DeckView from "../components/DeckView.jsx";
 import ExposurePanel from "../components/ExposurePanel.jsx";
 import HowThisAffectsYou from "../components/HowThisAffectsYou.jsx";
+import InitializingScreen from "../components/InitializingScreen.jsx";
 import { useWorldGraph } from "../hooks/useWorldGraph.js";
 import { useEventFeed } from "../hooks/useEventFeed.js";
 import { useVesselFeed } from "../hooks/useVesselFeed.js";
@@ -360,16 +361,18 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
 
         {/* Cards */}
         <div>
-          {loading ? (
+          {/* An empty, non-search feed means the live pipeline is still building its
+              first batch (fresh boot) — show the Initializing screen, not "no events". */}
+          {!isSearching && displayEvents.length === 0 ? (
+            <InitializingScreen />
+          ) : loading ? (
             Array(6).fill(0).map((_, i) => <EventCardSkeleton key={i} />)
           ) : displayEvents.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 gap-2">
               <p className="text-xs font-mono text-ink/30 uppercase tracking-widest">
-                {isSearching ? "No matching signals." : "No events yet."}
+                No matching signals.
               </p>
-              {isSearching && (
-                <p className="text-[11px] text-ink/25">Try a different term or browse the feed.</p>
-              )}
+              <p className="text-[11px] text-ink/25">Try a different term or browse the feed.</p>
             </div>
           ) : (
             displayEvents.map(e => (

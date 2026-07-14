@@ -25,7 +25,6 @@ const REGIONS = [
 // llm_provider choices; "self-trained" is a roadmap option, rendered disabled.
 const LLM_OPTIONS = [
   { val: "ollama",    label: "Local (Ollama)", hint: "Free, on-device. The default." },
-  { val: "anthropic", label: "Anthropic API",  hint: "Paid, hard-capped." },
   { val: "off",       label: "Off",            hint: "No LLM — grounded templated answers only." },
 ];
 
@@ -462,7 +461,7 @@ export default function Settings() {
                   <div className="space-y-2">
                     {LLM_OPTIONS.map(({ val, label, hint }) => {
                       const selected = config.config?.llm_provider?.value === val;
-                      const disabled  = val === "anthropic" && !config.paid_apis_enabled;
+                      const disabled  = false;  // local-only providers; nothing gated
                       return (
                         <button
                           key={val}
