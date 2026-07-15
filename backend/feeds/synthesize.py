@@ -24,6 +24,15 @@ SECTOR_MAP = {
 }
 DEFAULT_SECTORS = (["Infrastructure"], ["Energy"])
 
+# Drift guard: the canonical category list lives in backend/taxonomy.py. Keep
+# SECTOR_MAP's keys in lockstep with it so the discipline layer and the sector
+# synthesis never disagree about what categories exist.
+from backend import taxonomy as _taxonomy  # noqa: E402
+assert set(SECTOR_MAP) == set(_taxonomy.CATEGORIES), (
+    "synthesize.SECTOR_MAP keys drifted from taxonomy.CATEGORIES: "
+    f"{set(SECTOR_MAP) ^ set(_taxonomy.CATEGORIES)}"
+)
+
 # How likely a category is to keep escalating (drives the prediction score).
 PRED_VOLATILITY = {
     "conflict": 0.92, "unrest": 0.85, "market": 0.82, "sanction": 0.75,

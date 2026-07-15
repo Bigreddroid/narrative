@@ -18,7 +18,8 @@ import logging
 import re
 import time
 
-from backend.feeds.synthesize import SECTOR_MAP
+from backend import taxonomy
+from backend.feeds.synthesize import SECTOR_MAP  # noqa: F401 — kept for back-compat imports
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def _trip_llm_cooldown(exc: Exception) -> None:
                    exc, _LLM_COOLDOWN_SECONDS)
 
 SOURCE = "osint_reddit"
-ALLOWED_CATEGORIES = set(SECTOR_MAP.keys())  # disaster, conflict, unrest, cyber, ...
+ALLOWED_CATEGORIES = set(taxonomy.CATEGORIES)  # disaster, conflict, unrest, cyber, ...
 _DEFAULT_CATEGORY = "unrest"  # geopolitical catch-all that maps cleanly in SECTOR_MAP
 _MIN_CONFIDENCE = 0.4         # below this, treat as not-relevant noise
 

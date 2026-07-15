@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from backend.api.rate_limit import limiter
-from backend.api.routes import admin, aircraft, auth, chat, events, exposure, feed, follows, geolocate, graph, market, notifications, osint, search, stripe_routes, users, vessels
+from backend.api.routes import admin, aircraft, auth, chat, events, exposure, feed, follows, geolocate, graph, market, meta, notifications, osint, search, stripe_routes, users, vessels
 from backend.config import get_settings
 from backend.database import engine
 
@@ -78,6 +78,7 @@ async def security_headers(request, call_next):
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(events.router, prefix="/api/v1")
+app.include_router(meta.router, prefix="/api/v1")
 app.include_router(graph.router, prefix="/api/v1")
 app.include_router(exposure.router, prefix="/api/v1")
 app.include_router(market.router, prefix="/api/v1")

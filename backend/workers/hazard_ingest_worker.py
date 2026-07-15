@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select
 
+from backend import taxonomy
 from backend.consequence_engine import title_dedup
 from backend.consequence_engine.embedder import embed_texts
 from backend.database import AsyncSessionLocal
@@ -172,6 +173,7 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
             canonical_title=signal["title"],
             canonical_summary=signal.get("summary"),
             category=signal["category"],
+            int_discipline=taxonomy.discipline_for(sid, signal["category"]),
             global_importance_score=signal["importance"],
             current_status=signal["status"],
             geographic_relevance=signal.get("geography") or [],
@@ -193,6 +195,7 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
         canonical_title=signal["title"],
         canonical_summary=signal.get("summary"),
         category=signal["category"],
+        int_discipline=taxonomy.discipline_for(sid, signal["category"]),
         global_importance_score=signal["importance"],
         current_status=signal["status"],
         geographic_relevance=signal.get("geography") or [],

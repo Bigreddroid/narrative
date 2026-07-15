@@ -32,8 +32,24 @@ export const SEVERITY_COLORS = {
   low:      "#333333",
 };
 
+// Multi-INT discipline palette — 7 distinct hues that read cleanly on the dark
+// deck/map. Keyed by the UPPERCASE discipline code from backend/taxonomy.py.
+export const DISCIPLINE_COLORS = {
+  HUMINT: "#C08A2E",  // amber — human reporting
+  SIGINT: "#2E7CC0",  // blue — signals/emitters
+  IMINT:  "#8A50C8",  // violet — imagery
+  GEOINT: "#2E9E5B",  // green — geospatial
+  MASINT: "#C8541F",  // rust — measurement/signature
+  FININT: "#B8B020",  // gold — financial
+  CYBINT: "#C80028",  // crimson — cyber
+};
+
 export function getCategoryColor(category) {
   return CATEGORY_COLORS[category?.toLowerCase()] || "#4A4845";
+}
+
+export function getDisciplineColor(discipline) {
+  return DISCIPLINE_COLORS[(discipline || "").toUpperCase()] || "#4A4845";
 }
 
 export function getNodeSize(importanceScore) {

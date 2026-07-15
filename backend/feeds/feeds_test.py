@@ -438,5 +438,37 @@ ok("rss candidate triages to conflict + osint_rss source",
    rss_sig and rss_sig["category"] == "conflict" and rss_sig["source"] == "osint_rss")
 ok("rss triaged signal synthesizes", len(S.synthesize(rss_sig)["direct_impact"]) >= 1)
 
+# ── multi-INT: taxonomy.discipline_for (pure, deterministic) ──────────────────
+from backend import taxonomy as TAX
+
+ok("taxonomy has 13 categories + 7 disciplines",
+   len(TAX.CATEGORIES) == 13 and len(TAX.DISCIPLINES) == 7)
+ok("SECTOR_MAP keys == taxonomy.CATEGORIES", set(S.SECTOR_MAP) == set(TAX.CATEGORIES))
+
+# source precedence, category fallback, both vocabularies, and the default.
+_DISC_CASES = [
+    ("usgs", "disaster", "MASINT"),          # source wins (MASINT feed)
+    ("nhc", "storm", "MASINT"),
+    ("cisa", "cyber", "CYBINT"),             # source wins
+    ("osint_threatintel", "cyber", "CYBINT"),
+    ("opensanctions", "sanction", "FININT"),
+    ("osint_gdelt", "conflict", "HUMINT"),   # news source → category decides
+    ("osint_rss", "market", "FININT"),
+    (None, "technology", "CYBINT"),          # LLM-vocabulary category
+    (None, "economy", "FININT"),
+    (None, "climate", "MASINT"),
+    (None, "geopolitics", "HUMINT"),
+    (None, "cyber", "CYBINT"),               # feed-vocabulary category, no source
+    (None, None, "HUMINT"),                  # default
+    ("UNKNOWN_SRC", "totally_unknown_cat", "HUMINT"),  # graceful default
+    ("CISA", "Cyber", "CYBINT"),             # case-insensitive
+]
+for src, cat, expected in _DISC_CASES:
+    got = TAX.discipline_for(src, cat)
+    ok(f"discipline_for({src!r},{cat!r}) == {expected}", got == expected)
+
+ok("every discipline_for result is a valid discipline",
+   all(TAX.discipline_for(s, c) in TAX.DISCIPLINES for s, c, _ in _DISC_CASES))
+
 print(f"\nfeeds: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
