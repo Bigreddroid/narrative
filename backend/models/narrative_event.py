@@ -16,6 +16,10 @@ class NarrativeEvent(Base):
     canonical_title: Mapped[str] = mapped_column(Text, nullable=False)
     canonical_summary: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(Text)
+    # Multi-INT intelligence discipline (HUMINT/SIGINT/IMINT/GEOINT/MASINT/FININT/
+    # CYBINT), derived deterministically from (source, category) at ingest — see
+    # backend/taxonomy.discipline_for. Nullable so pre-migration rows never break.
+    int_discipline: Mapped[str | None] = mapped_column(Text, index=True)
     global_importance_score: Mapped[float] = mapped_column(Float, default=0.0)
     current_status: Mapped[str] = mapped_column(Text, default="developing")
     affected_sectors: Mapped[list[str] | None] = mapped_column(ARRAY(Text))

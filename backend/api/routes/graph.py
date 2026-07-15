@@ -44,6 +44,7 @@ async def get_world_graph(
             "id": str(e.id),
             "title": e.canonical_title,
             "category": e.category,
+            "int_discipline": e.int_discipline,
             "status": e.current_status,
             "importance": e.global_importance_score,
             "lat": e.geo_centroid_lat,
@@ -133,6 +134,7 @@ async def get_event_graph(
                 "id": str(e.id),
                 "title": e.canonical_title,
                 "category": e.category,
+            "int_discipline": e.int_discipline,
                 "status": e.current_status,
             }
             for e in connected_events

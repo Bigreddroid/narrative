@@ -33,6 +33,7 @@ async def list_events(
     user: UserDep,
     category: str | None = Query(None),
     status: str | None = Query(None),
+    discipline: str | None = Query(None, description="INT discipline: HUMINT/SIGINT/IMINT/GEOINT/MASINT/FININT/CYBINT"),
     source_type: str | None = Query(None, description="'osint' = open-source/unverified only"),
     limit: int = Query(20, le=100),
     offset: int = Query(0),
@@ -50,12 +51,16 @@ async def list_events(
 
     if category:
         query = query.where(NarrativeEvent.category == category)
-    else:
+    elif not discipline:
         # Cyber CVEs are niche/high-volume — keep them out of the headline feed
-        # (still reachable via ?category=cyber and surfaced as exposure drivers).
+        # (still reachable via ?category=cyber, ?discipline=CYBINT, and surfaced as
+        # exposure drivers). An explicit discipline filter (e.g. a CYBINT view) wants
+        # them, so skip this exclusion whenever discipline= is requested.
         query = query.where(NarrativeEvent.category != "cyber")
     if status:
         query = query.where(NarrativeEvent.current_status == status)
+    if discipline:
+        query = query.where(NarrativeEvent.int_discipline == discipline)
     if source_type == "osint":
         query = query.where(NarrativeEvent.source.like("osint_%"))
 
@@ -78,6 +83,7 @@ async def list_events(
                 "canonical_title": e.canonical_title,
                 "canonical_summary": e.canonical_summary,
                 "category": e.category,
+                "int_discipline": e.int_discipline,
                 "global_importance_score": e.global_importance_score,
                 "current_status": e.current_status,
                 "affected_sectors": e.affected_sectors,
@@ -117,6 +123,7 @@ async def get_event(
     data: dict[str, Any] = {
         "id": str(event.id),
         "canonical_title": event.canonical_title,
+        "int_discipline": event.int_discipline,
         "canonical_summary": event.canonical_summary,
         "category": event.category,
         "global_importance_score": event.global_importance_score,

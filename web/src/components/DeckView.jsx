@@ -7,7 +7,8 @@ import { useProfile } from "../hooks/useProfile.js";
 import { rankByLens, eventRelevance } from "../lib/lensRelevance.js";
 import EventGraph from "./graph/EventGraph.jsx";
 import InitializingScreen from "./InitializingScreen.jsx";
-import { getCategoryColor } from "../lib/colors.js";
+import { getCategoryColor, getDisciplineColor } from "../lib/colors.js";
+import { DISCIPLINES } from "../lib/taxonomy.js";
 import { biasLabel } from "../lib/bias.js";
 
 // ─── TweetDeck-inspired multi-column intelligence board ───────────────────────
@@ -55,6 +56,9 @@ function columnIcon(kind) {
   if (kind === "lens") {
     return <path d="M8 1.5L14.5 8 8 14.5 1.5 8z" />;  // diamond — "for you"
   }
+  if (kind === "discipline") {
+    return <><path d="M8 1.5v13M1.5 8h13" /><circle cx="8" cy="8" r="3" /></>;  // reticle — INT
+  }
   return <><circle cx="8" cy="8" r="6" /><path d="M2 8h12M8 2c1.6 1.6 2.4 3.7 2.4 6S9.6 12.4 8 14M8 2C6.4 3.6 5.6 5.7 5.6 8S6.4 12.4 8 14" /></>;
 }
 
@@ -90,6 +94,12 @@ function DeckCard({ event, isSelected, onClick, following, onFollow }) {
           <span className="text-[8px] font-mono font-bold uppercase tracking-widest" style={{ color }}>
             {event.category}
           </span>
+          {event.int_discipline && (
+            <span className="text-[7px] font-mono font-bold uppercase tracking-wider px-1 py-px rounded-sm flex-shrink-0"
+              style={{ color: getDisciplineColor(event.int_discipline), border: `1px solid ${getDisciplineColor(event.int_discipline)}55` }}>
+              {event.int_discipline}
+            </span>
+          )}
           {escalating && (
             <span className="w-1 h-1 rounded-full animate-pulse flex-shrink-0" style={{ backgroundColor: C.crimson }} />
           )}
@@ -136,6 +146,7 @@ function DeckCard({ event, isSelected, onClick, following, onFollow }) {
 // ─── Column ───────────────────────────────────────────────────────────────────
 function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowing, onFollow }) {
   const accent = column.kind === "category" ? getCategoryColor(column.value)
+    : column.kind === "discipline" ? getDisciplineColor(column.value)
     : column.kind === "status" ? C.crimson
     : column.kind === "lens" ? C.crimson
     : C.fg50;
@@ -264,6 +275,17 @@ function AddColumn({ onAdd }) {
             );
           })}
 
+          <p className="px-3 pt-3 pb-1.5 text-[9px] font-mono uppercase tracking-[0.3em]" style={{ color: C.fg35 }}>Discipline</p>
+          {DISCIPLINES.map(d => (
+            <button key={d} onClick={() => add({ title: d, kind: "discipline", value: d })}
+              className="w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 transition-colors"
+              style={{ color: C.fg80 }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = C.cardHov}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getDisciplineColor(d) }} />{d}
+            </button>
+          ))}
+
           <button onClick={() => add({ title: "All Signals", kind: "all" })}
             className="w-full text-left px-3 py-2.5 mt-1 text-[12px] flex items-center gap-2 transition-colors"
             style={{ color: C.fg80, borderTop: `1px solid ${C.border}` }}
@@ -292,6 +314,7 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
     }
     let list = events;
     if (col.kind === "category") list = events.filter(e => e.category === col.value);
+    else if (col.kind === "discipline") list = events.filter(e => e.int_discipline === col.value);
     else if (col.kind === "status") list = events.filter(e => e.current_status === col.value);
     return [...list].sort((a, b) => (b.importance_score || 0) - (a.importance_score || 0));
   }, [events, profile]);

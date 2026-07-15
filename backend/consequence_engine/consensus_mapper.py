@@ -141,6 +141,19 @@ Return this exact JSON:
 }}"""
 
 
+# Drift guard: the category enum the LLM is told to pick from lives (as the
+# canonical list) in backend/taxonomy.py LLM_CATEGORIES. Assert the templates still
+# match it so the two can't silently diverge. Zero runtime cost beyond import.
+from backend import taxonomy as _taxonomy  # noqa: E402
+_LLM_CAT_ENUM = "|".join(_taxonomy.LLM_CATEGORIES)
+assert f'"category": "{_LLM_CAT_ENUM}"' in DEEP_USER_TEMPLATE, (
+    "consensus_mapper DEEP template category enum drifted from taxonomy.LLM_CATEGORIES"
+)
+assert f'"category": "{_LLM_CAT_ENUM}"' in LIGHT_USER_TEMPLATE, (
+    "consensus_mapper LIGHT template category enum drifted from taxonomy.LLM_CATEGORIES"
+)
+
+
 def _build_articles_block(articles: list[dict]) -> str:
     lines = []
     for article in articles:
