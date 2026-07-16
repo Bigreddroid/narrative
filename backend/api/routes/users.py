@@ -15,6 +15,7 @@ class UserProfileUpdate(BaseModel):
     purpose: list[str] | None = None
     regions: list[str] | None = None
     watched_assets: list[str] | None = None
+    disciplines: list[str] | None = None
     fcm_token: str | None = None
     notification_preferences: dict | None = None
 
@@ -31,6 +32,7 @@ async def get_me(user: UserDep) -> dict:
         "purpose": user.purpose or [],
         "regions": user.regions or [],
         "watched_assets": user.watched_assets or [],
+        "disciplines": user.disciplines or [],
         "tier": user.tier,
         "notification_preferences": user.notification_preferences,
         "created_at": user.created_at.isoformat(),
@@ -53,6 +55,8 @@ async def update_me(body: UserProfileUpdate, db: DbDep, user: UserDep) -> dict:
         user.regions = body.regions
     if body.watched_assets is not None:
         user.watched_assets = body.watched_assets
+    if body.disciplines is not None:
+        user.disciplines = body.disciplines
     if body.fcm_token is not None:
         user.fcm_token = body.fcm_token
     if body.notification_preferences is not None:

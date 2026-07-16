@@ -18,7 +18,7 @@ import { associate, trafficByEvent as buildTrafficByEvent, detectAnomaly } from 
 import { useSearch } from "../hooks/useSearch.js";
 import { createPortal } from "react-dom";
 import { useFollowing } from "../hooks/useFollowing.js";
-import { getCategoryColor } from "../lib/colors.js";
+import { getCategoryColor, getDisciplineColor } from "../lib/colors.js";
 import { biasLabel, BIAS_COLORS } from "../lib/bias.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useUser } from "../hooks/useUser.js";
@@ -70,6 +70,15 @@ function EventCard({ event, isSelected, onClick, onNavigate, following, onFollow
         {/* Category + status row */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider" style={{ color }}>{event.category}</span>
+          {event.int_discipline && (
+            <span
+              className="text-[9px] md:text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm"
+              style={{ color: getDisciplineColor(event.int_discipline), border: `1px solid ${getDisciplineColor(event.int_discipline)}55` }}
+              title={`Intelligence discipline: ${event.int_discipline}`}
+            >
+              {event.int_discipline}
+            </span>
+          )}
           {lens != null && lens.score > 0 && (
             <span
               className="text-[9px] md:text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm flex items-center gap-1"
@@ -467,6 +476,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
   const { getVessels, vesselCount, live } = useVesselFeed(maritime);
   const { getAircraft, aircraftCount, live: airLive } = useAircraftFeed(air);
   const [exposureLayer, setExposureLayer] = useState(false);
+  const [disciplineLayer, setDisciplineLayer] = useState(false);
   const [lensLayer, setLensLayer] = useState(false);
   const [eventCat, setEventCat] = useState(null); // filter globe by event type (conflict/climate/…)
   const [catOpen, setCatOpen] = useState(false);
@@ -687,6 +697,23 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
           Exposure
         </button>
 
+        {/* Discipline layer toggle — colour each event pin by its INT discipline. */}
+        <button
+          onClick={() => setDisciplineLayer((x) => !x)}
+          className="flex-shrink-0 ml-1 mr-3 flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors border"
+          style={{
+            color: disciplineLayer ? "#E8E4DC" : tabInactiveColor,
+            borderColor: disciplineLayer ? "rgba(138,80,200,0.6)" : (isDark ? "rgba(232,228,220,0.12)" : "rgba(26,26,26,0.12)"),
+            backgroundColor: disciplineLayer ? "rgba(138,80,200,0.14)" : "transparent",
+          }}
+          title="Colour event pins by intelligence discipline"
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="7" cy="7" r="3" /><path d="M7 1v2M7 11v2M1 7h2M11 7h2" />
+          </svg>
+          INT
+        </button>
+
         {/* Lens heat toggle — tint the globe by MY profile relevance. Only offered
             once a lens is set. */}
         {profile.active && (
@@ -742,6 +769,7 @@ function WorldViewTab({ selectedEventId, onEventSelect, onEventClose }) {
             showAircraft={air}
             eventScores={lensActive ? lensScores : exposureModel.eventScores}
             exposureLayer={exposureLayer || lensActive}
+            disciplineLayer={disciplineLayer}
             anomalies={anomalies}
           />
         )}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import * as topojson from "topojson-client";
-import { getCategoryColor } from "../../lib/colors.js";
+import { getCategoryColor, getDisciplineColor } from "../../lib/colors.js";
 import { getMapColors } from "../../lib/theme.js";
 import { VESSEL_TYPES } from "../../lib/vesselData.js";
 import { AIRCRAFT_TYPES, AIRCRAFT_GLYPH } from "../../lib/aircraftData.js";
@@ -43,7 +43,7 @@ export default function WorldMap({
   nodes = [], edges = [], selectedNodeId = null, onNodeClick,
   region = "world", isDark = false, getVessels = null, showVessels = false,
   getAircraft = null, showAircraft = false,
-  eventScores = null, exposureLayer = false, anomalies = null,
+  eventScores = null, exposureLayer = false, disciplineLayer = false, anomalies = null,
   focus = null,
 }) {
   const wrapRef  = useRef(null);
@@ -68,6 +68,7 @@ export default function WorldMap({
   const showAircraftRef = useRef(showAircraft);
   const eventScoresRef  = useRef(eventScores);
   const exposureLayerRef = useRef(exposureLayer);
+  const disciplineLayerRef = useRef(disciplineLayer);
   const anomaliesRef    = useRef(anomalies);
   const assocRef        = useRef({ nearestByItem: new Map(), zonesByEvent: new Map() });
   const assocTickRef    = useRef(0);
@@ -112,6 +113,7 @@ export default function WorldMap({
   useEffect(() => { showAircraftRef.current = showAircraft; }, [showAircraft]);
   useEffect(() => { eventScoresRef.current = eventScores; }, [eventScores]);
   useEffect(() => { exposureLayerRef.current = exposureLayer; }, [exposureLayer]);
+  useEffect(() => { disciplineLayerRef.current = disciplineLayer; }, [disciplineLayer]);
   useEffect(() => { anomaliesRef.current = anomalies; }, [anomalies]);
   useEffect(() => { selVesselRef.current = selVessel; }, [selVessel]);
   useEffect(() => { hoverVesselRef.current = hoverVessel; }, [hoverVessel]);
@@ -551,9 +553,13 @@ export default function WorldMap({
       colorTick = now;
       const scores = eventScoresRef.current;
       const on = exposureLayerRef.current;
+      const disc = disciplineLayerRef.current;
       dotsG.selectAll("g.dot").select("circle.core").attr("fill", (d) => {
         if (d.id === selectedNodeId) return CRIMSON_GLOW;
+        // Exposure/lens heat takes precedence when on; otherwise, if the discipline
+        // layer is on, colour each pin by its INT discipline. Default crimson.
         if (on && scores && scores[d.id] != null) return exposureColor(scores[d.id]);
+        if (disc && d.int_discipline) return getDisciplineColor(d.int_discipline);
         return CRIMSON;
       });
     }

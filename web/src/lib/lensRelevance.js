@@ -105,6 +105,15 @@ export function eventRelevance(event, profile) {
     }
   }
 
+  // ── Disciplines (Phase 2d): the event's INT discipline is one the lens favours ─
+  // A modest, additive nudge — enough to lift a favoured-discipline event among
+  // otherwise-equal hits without promoting a fully off-lens one on discipline alone.
+  const disc = (event.int_discipline || "").toUpperCase();
+  if (disc && (profile.disciplines || []).some((d) => String(d).toUpperCase() === disc)) {
+    score += 18;
+    reasons.push(`discipline: ${disc}`);
+  }
+
   // Small nudge for how big the event is, so among equally-relevant hits the
   // more consequential one ranks first. Never enough to promote an off-lens event.
   const importance = event.importance_score ?? event.global_importance_score ?? 0;

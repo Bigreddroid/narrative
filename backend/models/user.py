@@ -22,6 +22,7 @@ class User(Base):
     purpose: Mapped[list[str] | None] = mapped_column(ARRAY(Text))          # protect supply chain / people / capital / sites
     regions: Mapped[list[str] | None] = mapped_column(ARRAY(Text))          # named regions / routes / chokepoints
     watched_assets: Mapped[list[str] | None] = mapped_column(ARRAY(Text))   # named suppliers / ports / counterparties / companies
+    disciplines: Mapped[list[str] | None] = mapped_column(ARRAY(Text))       # INT disciplines the lens favours (HUMINT/SIGINT/…); null ⇒ no discipline bias
     tier: Mapped[str] = mapped_column(Text, default="free")
     stripe_customer_id: Mapped[str | None] = mapped_column(Text)
     revenue_cat_id: Mapped[str | None] = mapped_column(Text)
