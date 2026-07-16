@@ -12,7 +12,7 @@ from reportlab.platypus import (
 )
 
 # Repo-root-relative so this works regardless of where the repo lives.
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Deploy.pdf")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "Deploy.pdf")
 
 INK   = colors.HexColor("#1A1A1A")
 CRIM  = colors.HexColor("#C80028")
