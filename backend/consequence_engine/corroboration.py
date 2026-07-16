@@ -20,11 +20,20 @@ from __future__ import annotations
 
 import math
 
+from backend.taxonomy import DISCIPLINES
+
 # Tuned "secret sauce" — versioned with the model. SERVER-SIDE ONLY.
 KAPPA_SOURCES = 2.0       # distinct-source saturation (2 independent sources ≈ 0.63)
 DEFAULT_RADIUS_KM = 400.0  # spatial proximity for "same place"
 DEFAULT_WINDOW_HOURS = 72.0  # temporal proximity for "same time"
 CORROB_W = 0.4            # max importance uplift from full corroboration (+40%)
+# Cross-discipline convergence uplift: independent feeds from DIFFERENT intelligence
+# disciplines (e.g. a MASINT quake + HUMINT report + FININT market move on the same
+# place/time) is stronger corroboration than the same discipline echoing itself.
+# Applied as a bounded multiplier on the base index. DEFAULT 0.0 = exact no-op, so
+# the fusion is opt-in and every existing corroboration test holds until it's tuned.
+XDISC_W = 0.0
+_N_DISC = len(DISCIPLINES)
 
 
 def _haversine_km(lat1, lng1, lat2, lng2) -> float:
@@ -40,7 +49,8 @@ def corroborate(events: list[dict], radius_km: float = DEFAULT_RADIUS_KM,
                 window_hours: float = DEFAULT_WINDOW_HOURS) -> dict:
     """Map event id → {index, count, sources} from independent feed convergence.
 
-    Each event needs {id, source, lat, lng, ts} (ts = epoch ms). Events missing
+    Each event needs {id, source, lat, lng, ts} (ts = epoch ms); an optional
+    `discipline` enables the cross-discipline uplift (XDISC_W). Events missing
     coordinates, source or ts cannot be geo/time-corroborated and get index 0.
     Only sources DIFFERENT from the event's own count — repeated reports from the
     same feed are not independent corroboration.
@@ -53,9 +63,10 @@ def corroborate(events: list[dict], radius_km: float = DEFAULT_RADIUS_KM,
             continue
         lat, lng, ts, src = e.get("lat"), e.get("lng"), e.get("ts"), e.get("source")
         if lat is None or lng is None or ts is None:
-            out[eid] = {"index": 0.0, "count": 0, "sources": []}
+            out[eid] = {"index": 0.0, "count": 0, "sources": [], "disciplines": []}
             continue
         corroborating: set = set()
+        corr_disc: set = set()
         for o in events:
             if o is e or o.get("id") == eid:
                 continue
@@ -69,9 +80,24 @@ def corroborate(events: list[dict], radius_km: float = DEFAULT_RADIUS_KM,
                 continue
             if _haversine_km(lat, lng, olat, olng) <= radius_km:
                 corroborating.add(osrc)
+                od = o.get("discipline")
+                if od:
+                    corr_disc.add(od)
         n = len(corroborating)
-        idx = round(1 - math.exp(-n / KAPPA_SOURCES), 4) if n else 0.0
-        out[eid] = {"index": idx, "count": n, "sources": sorted(corroborating)}
+        # Distinct disciplines converging on this event (its own + corroborators').
+        disc_set = set(corr_disc)
+        self_disc = e.get("discipline")
+        if self_disc:
+            disc_set.add(self_disc)
+        n_disc = len(disc_set)
+        if n:
+            base = 1 - math.exp(-n / KAPPA_SOURCES)
+            xd = 1 + XDISC_W * ((n_disc - 1) / (_N_DISC - 1)) if n_disc > 1 else 1.0
+            idx = round(min(1.0, base * xd), 4)
+        else:
+            idx = 0.0
+        out[eid] = {"index": idx, "count": n, "sources": sorted(corroborating),
+                    "disciplines": sorted(disc_set)}
     return out
 
 

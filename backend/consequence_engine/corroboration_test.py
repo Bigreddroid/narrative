@@ -72,5 +72,38 @@ ok("zero index ⇒ unchanged importance", C.corroboration_boost(80, 0) == 80.0)
 ok("full index ⇒ +CORROB_W", C.corroboration_boost(100, 1.0) == 140.0)
 ok("boost monotone in index", C.corroboration_boost(100, 0.5) > C.corroboration_boost(100, 0.1))
 
+# 10. multi-INT cross-discipline uplift (XDISC_W) — default no-op, opt-in effect
+def mkd(id, source, disc, lat, lng, ts=T):
+    return {"id": id, "source": source, "discipline": disc, "lat": lat, "lng": lng, "ts": ts}
+
+# disciplines are surfaced even at the default weight
+tri_x = [mkd("t", "usgs", "MASINT", 0, 0), mkd("c1", "gdacs", "HUMINT", 0.4, 0.4),
+         mkd("c2", "gdelt", "FININT", 0.3, -0.3)]
+rx = C.corroborate(tri_x)
+ok("disciplines surfaced (self + corroborators)",
+   rx["t"]["disciplines"] == ["FININT", "HUMINT", "MASINT"])
+
+# parity: at XDISC_W=0 the index equals the discipline-free index for the same geometry
+tri_plain = [mk("t", "usgs", 0, 0), mk("c1", "gdacs", 0.4, 0.4), mk("c2", "gdelt", 0.3, -0.3)]
+assert C.XDISC_W == 0.0, "XDISC_W must default to 0 (no-op) so existing behaviour is preserved"
+ok("XDISC_W=0 ⇒ index unchanged vs discipline-free",
+   rx["t"]["index"] == C.corroborate(tri_plain)["t"]["index"])
+
+# effect: with the weight on, 3 DISTINCT disciplines score strictly higher than
+# 3 sources all in ONE discipline (same geometry/source-count).
+same_disc = [mkd("t", "usgs", "MASINT", 0, 0), mkd("c1", "gdacs", "MASINT", 0.4, 0.4),
+             mkd("c2", "gdelt", "MASINT", 0.3, -0.3)]
+_saved = C.XDISC_W
+try:
+    C.XDISC_W = 0.5
+    hi = C.corroborate(tri_x)["t"]["index"]      # 3 disciplines
+    lo = C.corroborate(same_disc)["t"]["index"]  # 1 discipline
+    ok("cross-discipline convergence > single-discipline echo", hi > lo)
+    ok("single-discipline uplift is a no-op (n_disc=1)",
+       lo == C.corroborate(tri_plain)["t"]["index"])
+finally:
+    C.XDISC_W = _saved
+ok("XDISC_W restored to default after test", C.XDISC_W == 0.0)
+
 print(f"\ncorroboration: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
