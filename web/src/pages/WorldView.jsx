@@ -826,6 +826,7 @@ export default function WorldView() {
   const handleTabChange = useCallback((tab) => {
     if (tab === "following") { navigate("/following"); return; }
     if (tab === "analyst") { navigate("/analyst"); return; }
+    if (tab === "fusion") { navigate("/int"); return; }
     setActiveTab(tab);
     setSelectedEventId(null);
   }, [navigate]);
