@@ -9,11 +9,13 @@ receive only computed scores + driver attribution.
   GET  /api/v1/exposure/me    → personalised exposure for the current user's profile
 """
 
+import math
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backend.api.dependencies import DbDep, UserDep
 from backend.api.routes.market import latest_market_rows
@@ -70,6 +72,8 @@ async def _load_graph(db, limit: int, event_ids: list | None = None) -> tuple[li
             "id": str(e.id),
             "canonical_title": e.canonical_title,
             "category": e.category,
+            # multi-INT: enables the cross-discipline corroboration uplift (XDISC_W)
+            "discipline": e.int_discipline,
             "importance_score": e.global_importance_score,
             "current_status": e.current_status,
             "geographic_relevance": e.geographic_relevance or [],
@@ -152,10 +156,38 @@ async def _attach_history(db, model: dict) -> None:
             r["history"] = h
 
 
+# CYBINT stress: saturating map from recent cyber-event volume to a bounded 0-1
+# level. 3 cyber events ≈ 0.63, matching the corroboration KAPPA feel. Server-side.
+_CYBER_KAPPA = 3.0
+_CYBER_WINDOW_DAYS = 7
+
+
+async def _cyber_stress(db) -> dict:
+    """Per-sector stress from recent CYBINT activity (CISA KEV / ransomware / cyber
+    events). Feeds the same combine_stress channel as market/chokepoint/space so a
+    live CVE or ransomware wave lifts Technology/Banking exposure — a concrete
+    multi-INT fusion signal. Best-effort: any failure degrades to no-op."""
+    try:
+        since = datetime.now(timezone.utc) - timedelta(days=_CYBER_WINDOW_DAYS)
+        n = (await db.execute(
+            select(func.count()).select_from(NarrativeEvent)
+            .where(NarrativeEvent.int_discipline == "CYBINT")
+            .where(NarrativeEvent.merged_into_id.is_(None))
+            .where(func.coalesce(NarrativeEvent.last_updated_at, NarrativeEvent.first_detected_at) >= since)
+        )).scalar_one()
+        if not n:
+            return {}
+        lvl = round(1 - math.exp(-n / _CYBER_KAPPA), 4)
+        return {"Technology": lvl, "Banking": round(0.6 * lvl, 4),
+                "Infrastructure": round(0.4 * lvl, 4)}
+    except Exception:  # noqa: BLE001 — cyber stress is best-effort, never break exposure
+        return {}
+
+
 async def _combined_stress(db) -> dict:
     """Merge the CPE's external stress channels into one {sector: 0-1} dict:
-    market moves + Chokepoint Congestion Index (from cached AIS) + space weather.
-    Each source degrades to no-op if its data is unavailable."""
+    market moves + Chokepoint Congestion Index (from cached AIS) + space weather +
+    CYBINT activity. Each source degrades to no-op if its data is unavailable."""
     market = await _market_stress(db)
     try:
         choke = chokepoints.sector_stress(chokepoints.chokepoint_congestion(cached_vessels()))
@@ -165,7 +197,8 @@ async def _combined_stress(db) -> dict:
         space = spaceweather.sector_stress(await spaceweather.latest_kp())
     except Exception:  # noqa: BLE001
         space = {}
-    return propagation.combine_stress(market, choke, space)
+    cyber = await _cyber_stress(db)
+    return propagation.combine_stress(market, choke, space, cyber)
 
 
 @router.get("")

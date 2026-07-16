@@ -13,8 +13,9 @@ Provider selection (see backend/config.py):
 asyncio.to_thread().
 """
 
+import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -32,12 +33,24 @@ class BudgetExceeded(RuntimeError):
 
 
 @dataclass
+class ToolCall:
+    """One tool the model asked to run. ``arguments`` is already-parsed JSON (dict)."""
+
+    name: str
+    arguments: dict
+
+
+@dataclass
 class LLMResult:
     text: str
     input_tokens: int
     output_tokens: int
     cost_usd: float
     provider: str
+    # Populated only by complete_tools(): the tools the model chose to call, plus the
+    # raw assistant message to append back to the conversation for the next turn.
+    tool_calls: list = field(default_factory=list)
+    raw_message: dict | None = None
 
 
 def active_provider() -> str:
@@ -72,6 +85,23 @@ def complete(
         raise BudgetExceeded("LLM provider is 'off'")
     if p == "ollama":
         return _ollama_complete(system, user, max_tokens, json_mode, model)
+    raise BudgetExceeded(f"unknown llm_provider: {p}")
+
+
+def complete_tools(
+    messages: list[dict], tools: list[dict], max_tokens: int = 1024, model: str | None = None
+) -> LLMResult:
+    """Agentic completion: give the model TOOLS it may call. Returns an LLMResult whose
+    ``tool_calls`` lists the tools the model wants run (empty when it answered directly)
+    and ``raw_message`` is the assistant turn to append back before feeding tool results.
+
+    ``messages`` is a full chat history (system + user + prior assistant/tool turns).
+    Raises BudgetExceeded if provider is 'off'; the caller degrades to a non-agentic path."""
+    p = active_provider()
+    if p == "off":
+        raise BudgetExceeded("LLM provider is 'off'")
+    if p == "ollama":
+        return _ollama_tools(messages, tools, max_tokens, model)
     raise BudgetExceeded(f"unknown llm_provider: {p}")
 
 
@@ -147,6 +177,51 @@ def _ollama_complete(
         output_tokens=data.get("eval_count", 0),
         cost_usd=0.0,
         provider="ollama",
+    )
+
+
+def _ollama_tools(
+    messages: list[dict], tools: list[dict], max_tokens: int, model: str | None = None
+) -> LLMResult:
+    # Ollama's /api/chat accepts OpenAI-style `tools` and returns `message.tool_calls`
+    # (arguments already parsed to a dict, unlike OpenAI which returns a JSON string).
+    # Tool-capable local models: llama3.2, qwen2.5, mistral-nemo, … A model without
+    # tool support simply returns content and no tool_calls — the caller falls back.
+    payload: dict = {
+        "model": model or settings.local_llm_model,
+        "stream": False,
+        "messages": messages,
+        "tools": tools,
+        "options": {"num_predict": max_tokens},
+    }
+    r = httpx.post(
+        f"{settings.ollama_base_url}/api/chat",
+        json=payload,
+        timeout=settings.ollama_timeout_seconds,
+    )
+    r.raise_for_status()
+    data = r.json()
+    msg = data.get("message") or {}
+    calls: list[ToolCall] = []
+    for c in msg.get("tool_calls") or []:
+        fn = c.get("function") or {}
+        name = fn.get("name")
+        args = fn.get("arguments")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except (json.JSONDecodeError, ValueError):
+                args = {}
+        if name:
+            calls.append(ToolCall(name=str(name), arguments=args if isinstance(args, dict) else {}))
+    return LLMResult(
+        text=(msg.get("content") or "").strip(),
+        input_tokens=data.get("prompt_eval_count", 0),
+        output_tokens=data.get("eval_count", 0),
+        cost_usd=0.0,
+        provider="ollama",
+        tool_calls=calls,
+        raw_message=msg,
     )
 
 
