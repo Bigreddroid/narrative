@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.api.dependencies import DbDep, UserDep
-from backend.services import analyst, reasoner
+from backend.services import analyst, operator_loop, reasoner
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -24,6 +24,9 @@ class ChatRequest(BaseModel):
     # "Deep analysis" runs the multi-step OODA reasoner (services/reasoner.py) instead
     # of the single-call analyst. Still free on local Ollama; still cost-gated per step.
     deep: bool = False
+    # "Agent" runs the agentic operator loop (services/operator.py): the LLM calls the
+    # platform's read-only tools mid-reasoning, then answers. Degrades to deep on failure.
+    agent: bool = False
 
 
 @router.post("")
@@ -32,6 +35,8 @@ async def chat(body: ChatRequest, db: DbDep, user: UserDep) -> dict:
         raise HTTPException(status_code=402, detail="Analyst chat is a paid feature.")
     question = body.question.strip()
     try:
+        if body.agent:
+            return await operator_loop.answer_question_agentic(db, question, watched_assets=user.watched_assets)
         if body.deep:
             return await reasoner.answer_question_deep(db, question, watched_assets=user.watched_assets)
         return await analyst.answer_question(db, question)
