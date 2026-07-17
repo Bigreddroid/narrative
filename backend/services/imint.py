@@ -71,11 +71,9 @@ def _clean_json(text: str) -> str:
 
 
 def _conf(v):
-    try:
-        f = float(v)
-    except (TypeError, ValueError):
-        return 0.0
-    return max(0.0, min(1.0, f))
+    # Shared with geolocate: a bare clamp here read llava's percent answer (90.0) as
+    # absolute certainty (1.0). See llm.normalize_confidence.
+    return llm.normalize_confidence(v)
 
 
 # Substrings that signal a model echoed the schema's guidance instead of real findings.
@@ -104,6 +102,11 @@ def _strings(v) -> list[str]:
 
 def _norm_candidate(c: dict) -> dict | None:
     """Coerce one candidate assessment; drop it if it carries no assessment text."""
+    # Live llava fills "decide" with bare strings instead of objects often enough that
+    # assuming a dict here turned a usable read-out into a 502. Drop the malformed
+    # entry and keep whatever else parsed — degrade, never raise.
+    if not isinstance(c, dict):
+        return None
     assessment = str(c.get("assessment") or "").strip()[:240]
     if not assessment or _is_placeholder(assessment):
         return None
@@ -144,8 +147,15 @@ def interpret(image_b64: str, media_type: str = "image/jpeg") -> dict:
         return {"available": False, "reason": "The model did not return a usable assessment.",
                 "scope": SCOPE_NOTE}
 
-    candidates = [nc for c in (data.get("decide") or []) if (nc := _norm_candidate(c))]
-    act = data.get("act") or {}
+    if not isinstance(data, dict):
+        return {"available": False, "reason": "The model did not return a usable assessment.",
+                "scope": SCOPE_NOTE}
+
+    decide = data.get("decide")
+    candidates = [nc for c in (decide if isinstance(decide, list) else []) if (nc := _norm_candidate(c))]
+    # "act" arrives as a bare string when the model ignores the schema; anything but a
+    # dict is treated as absent rather than crashing the tag lookups below.
+    act = data.get("act") if isinstance(data.get("act"), dict) else {}
     best = _norm_candidate(act) or (candidates[0] if candidates else None)
     if best is None:
         return {"available": False, "reason": "No usable assessment could be inferred from the image.",
