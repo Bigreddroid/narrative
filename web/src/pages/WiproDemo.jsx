@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import * as d3 from "d3";
+import * as topojson from "topojson-client";
 import { api } from "../lib/api.js";
 import { getDisciplineColor } from "../lib/colors.js";
 import { useTheme } from "../hooks/useTheme.js";
@@ -76,28 +78,52 @@ function useLiveData() {
   const [state, setState] = useState({ loading: true, events: [], corrob: {}, sectors: [], error: null });
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([
-      api.get("/events/?limit=100"),
-      api.get("/exposure", { timeoutMs: 20000 }),
-    ]).then(([evs, ex]) => {
+    (async () => {
+      const [evs, ex, demo] = await Promise.allSettled([
+        api.get("/events/?limit=100"),
+        api.get("/exposure", { timeoutMs: 20000 }),
+        // The live window is importance-sorted, so a hot news cycle crowds the
+        // seeded scenario (importance 55–72, calibrated to the panel thresholds)
+        // out of the top-100 — fetch the scenario slice explicitly so the demo
+        // beats never depend on a quiet day.
+        api.get("/events/?source_prefix=wipro_demo&limit=50"),
+      ]);
       if (cancelled) return;
-      const events = evs.status === "fulfilled"
-        ? (Array.isArray(evs.value) ? evs.value : evs.value?.events || [])
+      const parse = (r) => r.status === "fulfilled"
+        ? (Array.isArray(r.value) ? r.value : r.value?.events || [])
         : [];
+      const live = parse(evs);
+      const seen = new Set(live.map((e) => e.id));
+      const events = live.concat(parse(demo).filter((e) => !seen.has(e.id)));
       const exposure = ex.status === "fulfilled" ? ex.value : null;
-      const corrob = exposure?.corroboration || {};
+      // Fusion over the events actually in view — /exposure corroborates the
+      // global top-importance slice, which can exclude everything this page
+      // shows. Falls back to the global map if the scoped call fails.
+      let corrob = exposure?.corroboration || {};
+      if (events.length) {
+        try {
+          const vc = await api.get(`/events/corroboration?ids=${events.map((e) => e.id).join(",")}`);
+          if (vc?.corroboration) corrob = vc.corroboration;
+        } catch { /* keep the global exposure map */ }
+      }
+      if (cancelled) return;
+      // The capped score saturates at 100 across the board when the graph runs
+      // hot — rank by the un-capped net signal so "most exposed" stays a real
+      // ordering instead of an alphabetical tie.
       const sectors = (exposure?.sectors || exposure?.exposure || [])
         .slice()
-        .sort((a, b) => (b.score || b.exposure || 0) - (a.score || a.exposure || 0))
+        .sort((a, b) => (b.net ?? b.score ?? b.exposure ?? 0) - (a.net ?? a.score ?? a.exposure ?? 0))
         .slice(0, 3);
+      const expired = [evs, ex, demo].some((r) => r.status === "rejected" && r.reason?.status === 401);
       setState({
         loading: false,
         events,
         corrob,
         sectors,
-        error: evs.status === "rejected" && ex.status === "rejected" ? "unreachable" : null,
+        error: expired ? "auth"
+          : evs.status === "rejected" && ex.status === "rejected" ? "unreachable" : null,
       });
-    });
+    })();
     return () => { cancelled = true; };
   }, []);
   return state;
@@ -169,7 +195,7 @@ function ExecBrief({ data, fusionCount }) {
           {sectors.map((s) => (
             <span key={s.sector || s.name} className="text-[11px] text-ink/80">
               {s.sector || s.name}
-              <span className="text-ink/35 tabular-nums ml-1.5">{Math.round((s.score ?? s.exposure ?? 0) * 100) / 100}</span>
+              <span className="text-ink/35 tabular-nums ml-1.5">signal {Math.round(s.net ?? s.score ?? s.exposure ?? 0)}</span>
             </span>
           ))}
         </div>
@@ -216,6 +242,142 @@ function CountryRisk({ data, appetite, setAppetite }) {
               <div className="text-[9px] text-ink/35 mt-2 tabular-nums">signal {Math.round(c.score)}</div>
             </div>
           ))}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+// ── World presence map — every site, itinerary and signal on one map ─────────
+const WORLD_TOPO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+const STATUS_COLORS = { Alert: "#B4462F", Watch: "#C08A2E", Clear: "#4E9A5A" };
+
+function nearestGeoSignal(geoEvents, lat, lng, radiusKm) {
+  let best = null;
+  for (const e of geoEvents) {
+    const km = haversineKm(lat, lng, e.geo_centroid_lat, e.geo_centroid_lng);
+    if (km <= radiusKm && (!best || (e.global_importance_score || 0) > (best.imp || 0)))
+      best = { event: e, km, imp: e.global_importance_score || 0 };
+  }
+  return best;
+}
+
+function WorldPresence({ data, appetite, onOpen }) {
+  const { loading, events } = data;
+  const factor = 0.5 + appetite / 100;
+  const [world, setWorld] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(WORLD_TOPO_URL)
+      .then((r) => r.json())
+      .then((topo) => { if (!cancelled) setWorld(topojson.feature(topo, topo.objects.countries)); })
+      .catch(() => { if (!cancelled) setWorld("error"); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const W = 960, H = 470;
+  const { path, project } = useMemo(() => {
+    const projection = d3.geoNaturalEarth1().fitSize([W, H], { type: "Sphere" });
+    return { path: d3.geoPath(projection), project: projection };
+  }, []);
+
+  const geoEvents = useMemo(
+    () => events.filter((e) => e.geo_centroid_lat != null && e.geo_centroid_lng != null),
+    [events],
+  );
+
+  const sites = useMemo(() => ASSETS.map((a) => {
+    const best = nearestGeoSignal(geoEvents, a.lat, a.lng, 400);
+    const label = !best ? "Clear" : best.imp >= 70 * factor ? "Alert" : best.imp >= 40 * factor ? "Watch" : "Clear";
+    return { asset: a, best, label };
+  }), [geoEvents, factor]);
+
+  const trips = useMemo(() => TRIPS.map((t) => {
+    const best = nearestGeoSignal(geoEvents, t.toLat, t.toLng, 300);
+    const label = best && best.imp >= 70 * factor ? "Alert" : best && best.imp >= 40 * factor ? "Watch" : "Clear";
+    return { trip: t, best, label };
+  }), [geoEvents, factor]);
+
+  return (
+    <SectionCard title="World presence"
+      subtitle="Every site, itinerary and live signal on one map — sites sized by headcount and coloured by status, signals coloured by discipline and sized by importance."
+      right={loading ? null : <Pill label={`${geoEvents.length} signals`} color="#C80028" />}>
+      {world === "error" ? (
+        <EmptyNote text="World geometry unavailable — the panels above carry the same picture." />
+      ) : !world || loading ? (
+        <EmptyNote text="Projecting sites and signals…" />
+      ) : (
+        <div className="px-2 py-2 text-ink">
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img"
+            aria-label="World map of Wipro sites, travel destinations and live signals">
+            <g fill="currentColor" opacity="0.1">
+              {world.features.map((f, i) => <path key={i} d={path(f)} />)}
+            </g>
+            {/* itineraries — great-circle arcs origin → destination, coloured by verdict.
+                Trips carry only the destination coordinates; origins are company cities,
+                so resolve them from the asset register (skip the arc when none matches). */}
+            {trips.map(({ trip, label }) => {
+              const origin = ASSETS.find((a) => a.city.startsWith(trip.from));
+              const [dx, dy] = project([trip.toLng, trip.toLat]) || [];
+              return (
+                <g key={trip.id}>
+                  {origin && (
+                    <path d={path({ type: "LineString", coordinates: [[origin.lng, origin.lat], [trip.toLng, trip.toLat]] })}
+                      fill="none" stroke={STATUS_COLORS[label]} strokeWidth="1" strokeDasharray="3 3" opacity="0.55" />
+                  )}
+                  {dx != null && (
+                    <circle cx={dx} cy={dy} r="4.5" fill="none" stroke={STATUS_COLORS[label]} strokeWidth="1.3" opacity="0.85">
+                      <title>{`${trip.traveler} — ${trip.from} → ${trip.to} (${trip.departISO})`}</title>
+                    </circle>
+                  )}
+                </g>
+              );
+            })}
+            {/* live signals — discipline colour, sized by importance */}
+            {geoEvents.map((e) => {
+              const [x, y] = project([e.geo_centroid_lng, e.geo_centroid_lat]) || [];
+              if (x == null) return null;
+              return (
+                <circle key={e.id} cx={x} cy={y} r={1.5 + (e.global_importance_score || 0) / 32}
+                  fill={getDisciplineColor(e.int_discipline) || "#888"} opacity="0.5"
+                  style={{ cursor: "pointer" }} onClick={() => onOpen(e.id)}>
+                  <title>{e.canonical_title}</title>
+                </circle>
+              );
+            })}
+            {/* site → nearest-signal links for anything not Clear */}
+            {sites.filter((s) => s.best && s.label !== "Clear").map(({ asset, best, label }) => (
+              <path key={`link-${asset.id}`}
+                d={path({ type: "LineString", coordinates: [[asset.lng, asset.lat], [best.event.geo_centroid_lng, best.event.geo_centroid_lat]] })}
+                fill="none" stroke={STATUS_COLORS[label]} strokeWidth="1.2" opacity="0.7" />
+            ))}
+            {/* sites — diamonds sized by headcount, coloured by status */}
+            {sites.map(({ asset, best, label }) => {
+              const [x, y] = project([asset.lng, asset.lat]) || [];
+              if (x == null) return null;
+              const r = 3 + Math.sqrt(asset.headcount) / 45;
+              return (
+                <g key={asset.id} transform={`translate(${x},${y}) rotate(45)`}
+                  style={{ cursor: best ? "pointer" : "default" }}
+                  onClick={() => best && onOpen(best.event.id)}>
+                  <rect x={-r} y={-r} width={r * 2} height={r * 2}
+                    fill={STATUS_COLORS[label]} opacity="0.9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="0.8" />
+                  <title>{`${asset.name} — ${label}${best ? ` · ${best.event.canonical_title}` : ""}`}</title>
+                </g>
+              );
+            })}
+          </svg>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-3 pb-1">
+            {Object.entries(STATUS_COLORS).map(([label, color]) => (
+              <span key={label} className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-ink/50">
+                <span className="w-2 h-2 rotate-45" style={{ backgroundColor: color }} /> {label} site
+              </span>
+            ))}
+            <span className="text-[9px] uppercase tracking-widest text-ink/40">
+              · dots = live signals (discipline colour) · dashes = itineraries
+            </span>
+          </div>
         </div>
       )}
     </SectionCard>
@@ -362,7 +524,10 @@ function FusionStrip({ data, onOpen }) {
         disciplines: c.disciplines || [], event: byId[id] || null,
       }))
       .filter((r) => (r.disciplines?.length || 0) >= 2)
-      .sort((a, b) => b.index - a.index)
+      // Equal fusion indexes are common (the index saturates fast) — break ties
+      // by breadth of disciplines so the widest convergences surface first.
+      .sort((a, b) => b.index - a.index
+        || (b.disciplines?.length || 0) - (a.disciplines?.length || 0))
       .slice(0, 6);
   }, [events, corrob]);
 
@@ -534,7 +699,10 @@ export default function WiproDemo() {
   const { isDark, toggle } = useTheme();
   const data = useLiveData();
   const [appetite, setAppetiteState] = useState(() => {
-    const v = Number(localStorage.getItem("wipro_risk_appetite"));
+    // Number(null) is 0, which passes the range check — an unset key must fall
+    // through to the 50 default, not silently pin the slider to most-cautious.
+    const raw = localStorage.getItem("wipro_risk_appetite");
+    const v = raw === null ? NaN : Number(raw);
     return Number.isFinite(v) && v >= 0 && v <= 100 ? v : 50;
   });
   const setAppetite = (v) => { setAppetiteState(v); localStorage.setItem("wipro_risk_appetite", String(v)); };
@@ -577,9 +745,19 @@ export default function WiproDemo() {
             Start the stack and refresh.
           </p>
         )}
+        {data.error === "auth" && (
+          <p className="text-[11px] text-crimson border border-crimson/30 rounded-sm px-4 py-3">
+            Your session has expired — every panel below will show its empty state.{" "}
+            <button type="button" onClick={() => navigate("/auth")} className="underline hover:text-ink transition-colors">
+              Sign in again
+            </button>{" "}
+            to load live data.
+          </p>
+        )}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
           <ExecBrief data={data} fusionCount={fusionCount} />
           <FusionStrip data={data} onOpen={onOpen} />
+          <WorldPresence data={data} appetite={appetite} onOpen={onOpen} />
           <CountryRisk data={data} appetite={appetite} setAppetite={setAppetite} />
           <AssetExposure data={data} appetite={appetite} onOpen={onOpen} />
           <TravelSecurity data={data} appetite={appetite} onOpen={onOpen} />
