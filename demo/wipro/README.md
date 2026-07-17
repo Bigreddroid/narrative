@@ -41,6 +41,23 @@ The dashboard reads: `GET /api/v1/exposure`, `GET /api/v1/events/` (trailing sla
 matters), `POST /api/v1/chat` (`agent: true`). Asset + travel fixtures live in
 `web/src/data/wipro/` and are plainly demo data.
 
+## Before a live demo (two-minute checklist)
+
+- **Re-run the seeder the morning of the demo.** The fusion strip only fires on
+  events within a 72 h window of each other; the seeded cluster ages out of that
+  window and the strip goes quiet. Re-running `seed_scenario.py` slides the demo
+  rows' detection time back to *now*, so the cross-domain connections light up
+  again. It's idempotent — safe to run as many times as you like.
+  ```bash
+  python demo/wipro/seed_scenario.py     # or: docker compose exec api python demo/wipro/seed_scenario.py
+  ```
+- **After any `git pull`, restart the web container.** Vite's file watcher does not
+  see git changes through the Windows/OneDrive bind mount, so a pulled `/wipro`
+  change won't appear until you restart it (this once made the whole page 404):
+  ```bash
+  docker compose restart web
+  ```
+
 ## What's in this folder
 
 | File | Purpose |
