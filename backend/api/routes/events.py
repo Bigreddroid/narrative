@@ -11,7 +11,7 @@ from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.event_revision import EventRevision
 from backend.models.narrative_event import NarrativeEvent
 from backend.models.source import Source
-from backend.services import osint_enrich, osint_extract
+from backend.services import osint_enrich, osint_extract, source_reliability
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -138,7 +138,12 @@ async def events_corroboration(
         for e in result.scalars().all()
     ]
     corrob = corroboration.corroborate(payload)
-    return {"corroboration": {k: v for k, v in corrob.items() if v["count"] > 0}}
+    corrob = {k: v for k, v in corrob.items() if v["count"] > 0}
+    # Attach NATO Admiralty grades server-side (same path as /exposure) so the chip
+    # rides the view-scoped map — the /wipro fusion strip reads it straight off here
+    # instead of falling back to the global /exposure slice.
+    await source_reliability.attach_grades(db, corrob, payload)
+    return {"corroboration": corrob}
 
 
 @router.get("/{event_id}")

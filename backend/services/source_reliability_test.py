@@ -7,6 +7,7 @@ phase promised: a grade that (1) reflects source provenance and (2) *rises* with
 independent corroboration.
 """
 
+import asyncio
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -80,6 +81,45 @@ ok("grade string == letter + digit",
    a["grade"] == a["reliability"]["code"] + str(a["credibility"]["code"]))
 ok("both axes carry human labels", bool(a["reliability"]["label"] and a["credibility"]["label"]))
 ok("rationale is a non-empty audit trail", isinstance(a["rationale"], list) and bool(a["rationale"]))
+
+# ── attach_grades: the shared in-place grader for both corroboration surfaces ──
+# No DB: source_history_map is stubbed to "no track record for anyone", so grades
+# come from provenance + corroboration count alone (the deterministic core above).
+_real_history = SR.source_history_map
+
+
+async def _no_history(_db, _sources):
+    return {}
+
+
+SR.source_history_map = _no_history
+try:
+    # A usgs event (A) with 2 corroborators and an osint_rss event (D) with none.
+    corrob = {"e1": {"count": 2, "disciplines": ["OSINT", "SIGINT"]}, "e2": {"count": 0}}
+    events = [
+        {"id": "e1", "source": "usgs", "discipline": "OSINT"},
+        {"id": "e2", "source": "osint_rss", "discipline": "HUMINT"},
+    ]
+    asyncio.run(SR.attach_grades(None, corrob, events))
+    ok("attach_grades grades the corroborated entry", corrob["e1"]["reliability"]["grade"] == "A2")
+    ok("attach_grades carries the discipline through", corrob["e1"]["discipline"] == "OSINT")
+    ok("digit reflects THIS entry's corroboration count",
+       corrob["e1"]["reliability"]["credibility"]["code"] == 2)
+    ok("uncorroborated weak source grades D4", corrob["e2"]["reliability"]["grade"] == "D4")
+
+    # An entry with no matching event must still get a grade (F, cannot be judged),
+    # never a KeyError — the UI renders every entry it's handed.
+    orphan = {"ghost": {"count": 1}}
+    asyncio.run(SR.attach_grades(None, orphan, events))
+    ok("orphan corroboration entry grades on a null source, not a crash",
+       orphan["ghost"]["reliability"]["reliability"]["code"] == "F")
+
+    # Empty map is a no-op (and never queries history).
+    empty = {}
+    asyncio.run(SR.attach_grades(None, empty, events))
+    ok("empty corroboration is a safe no-op", empty == {})
+finally:
+    SR.source_history_map = _real_history
 
 print(f"\nsource_reliability: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
