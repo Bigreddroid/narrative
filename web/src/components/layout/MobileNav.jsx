@@ -38,6 +38,21 @@ const TABS = [
     ),
   },
   {
+    id: "fusion",
+    path: "/int",
+    label: "Fusion",
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="10" cy="10" r="2.2" fill={active ? "currentColor" : "none"} />
+        <circle cx="4" cy="5" r="1.6" />
+        <circle cx="16" cy="5" r="1.6" />
+        <circle cx="4" cy="15" r="1.6" />
+        <circle cx="16" cy="15" r="1.6" />
+        <path d="M8.2 8.6 5.2 6M11.8 8.6 14.8 6M8.2 11.4 5.2 14M11.8 11.4 14.8 14" />
+      </svg>
+    ),
+  },
+  {
     id: "analyst",
     path: "/analyst",
     label: "Analyst",
@@ -87,7 +102,8 @@ export default function MobileNav() {
   const { followed } = useFollowing();
 
   const activeId =
-    location.pathname === "/analyst" ? "analyst"
+    location.pathname === "/int" ? "fusion"
+    : location.pathname === "/analyst" ? "analyst"
     : location.pathname === "/geolocate" ? "locate"
     : location.pathname === "/following" ? "tracked"
     : location.pathname === "/settings" ? "profile"

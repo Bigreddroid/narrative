@@ -30,15 +30,19 @@ export function buildProfile(user) {
   const regions = r.length ? r : DEFAULT_PROFILE.regions;
   const assets = user?.watched_assets || [];
   const purpose = user?.purpose || [];
+  // INT-discipline axis (Phase 2d): disciplines the lens favours. Optional refinement
+  // on top of sectors/regions/assets — an empty list means "no discipline bias".
+  const disciplines = user?.disciplines || [];
   // "active" = the user actually chose a lens (not just the defaults). Any of a
-  // custom sector list, named regions, or watched assets counts.
+  // custom sector list, named regions, watched assets, or favoured disciplines counts.
   const active = Boolean(
-    user?.spending_categories?.length || user?.regions?.length || user?.country || assets.length,
+    user?.spending_categories?.length || user?.regions?.length || user?.country
+      || assets.length || disciplines.length,
   );
   const label = user?.regions?.length
     ? user.regions.slice(0, 2).join(" · ")
     : user?.country || (active ? "Custom lens" : "Default lens");
-  return { sectors, regions, assets, purpose, active, label };
+  return { sectors, regions, assets, purpose, disciplines, active, label };
 }
 
 export function useProfile() {

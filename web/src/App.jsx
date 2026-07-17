@@ -16,6 +16,7 @@ const Following = lazy(() => import("./pages/Following.jsx"));
 const Settings = lazy(() => import("./pages/Settings.jsx"));
 const Analyst = lazy(() => import("./pages/Analyst.jsx"));
 const GeoLocate = lazy(() => import("./pages/GeoLocate.jsx"));
+const IntFusion = lazy(() => import("./pages/IntFusion.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
 const PipelineMonitor = lazy(() => import("./admin/PipelineMonitor.jsx"));
 const CostDashboard = lazy(() => import("./admin/CostDashboard.jsx"));
@@ -75,6 +76,7 @@ export default function App() {
         <Route path="/following"       element={<PrivateRoute><Following /></PrivateRoute>} />
         <Route path="/analyst"         element={<PrivateRoute><Analyst /></PrivateRoute>} />
         <Route path="/geolocate"       element={<PrivateRoute><GeoLocate /></PrivateRoute>} />
+        <Route path="/int"             element={<PrivateRoute><IntFusion /></PrivateRoute>} />
         <Route path="/osint"           element={<OsintRedirect />} />
         <Route path="/settings"        element={<PrivateRoute><Settings /></PrivateRoute>} />
 

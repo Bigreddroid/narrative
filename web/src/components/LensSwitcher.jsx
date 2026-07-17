@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { api } from "../lib/api.js";
 import { getStoredUser, setStoredUser } from "../hooks/useUser.js";
 import { useProfile } from "../hooks/useProfile.js";
+import { DISCIPLINES } from "../lib/taxonomy.js";
+import { getDisciplineColor } from "../lib/colors.js";
 
 // ─── Lens switcher (R2 demo) ──────────────────────────────────────────────────
 // One click swaps the whole app to a different operator's point of view. Each
@@ -94,6 +96,18 @@ export default function LensSwitcher({ dark = false, compact = false }) {
     setOpen(false);
   };
 
+  // Discipline axis (Phase 2d): toggle an INT discipline in/out of the lens. Writes
+  // the stored user for an instant same-tab re-scope, then persists best-effort —
+  // exactly like preset application, so feed/deck/globe re-rank immediately.
+  const toggleDiscipline = (d) => {
+    const current = getStoredUser() || {};
+    const set = new Set(current.disciplines || []);
+    set.has(d) ? set.delete(d) : set.add(d);
+    const disciplines = [...set];
+    setStoredUser({ ...current, disciplines });
+    api.patch("/users/me", { disciplines }).catch(() => {});
+  };
+
   const toggle = () => {
     const r = btnRef.current?.getBoundingClientRect();
     if (r) setPos({ top: r.bottom + 6, left: Math.max(8, r.right - 220) });
@@ -168,9 +182,34 @@ export default function LensSwitcher({ dark = false, compact = false }) {
                 </button>
               );
             })}
+            {/* INT-discipline axis — favour disciplines; re-ranks the whole app. */}
+            <div className="px-3 pt-2.5 pb-1 border-t border-ink/10 text-[9px] font-mono uppercase tracking-widest text-ink/40">
+              Disciplines
+            </div>
+            <div className="px-3 pb-2.5 flex flex-wrap gap-1">
+              {DISCIPLINES.map((d) => {
+                const on = (profile.disciplines || []).includes(d);
+                const color = getDisciplineColor(d);
+                return (
+                  <button
+                    key={d}
+                    onClick={() => toggleDiscipline(d)}
+                    className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-1 rounded-sm transition-colors"
+                    style={{
+                      color: on ? "#fff" : color,
+                      backgroundColor: on ? color : `${color}14`,
+                      border: `1px solid ${color}${on ? "" : "55"}`,
+                    }}
+                    title={`${on ? "Remove" : "Favour"} ${d} in your lens`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
             <button
               onClick={() => { setOpen(false); window.location.assign("/settings"); }}
-              className="w-full text-left px-3 py-2.5 text-[11px] text-ink/50 hover:text-crimson transition-colors"
+              className="w-full text-left px-3 py-2.5 text-[11px] text-ink/50 hover:text-crimson transition-colors border-t border-ink/10"
             >
               Customise in Settings →
             </button>

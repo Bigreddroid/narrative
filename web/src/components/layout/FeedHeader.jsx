@@ -177,6 +177,7 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
             { id: "deck",      label: "Deck"              },
             { id: "world",     label: "World View"        },
             { id: "exposure",  label: "Exposure"          },
+            { id: "fusion",    label: "INT Fusion"        },
             { id: "following", label: "Tracked"           },
             { id: "analyst",   label: "Analyst"           },
           ].map(tab => (
