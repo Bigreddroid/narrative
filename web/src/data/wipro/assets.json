@@ -1,0 +1,19 @@
+{
+  "note": "DEMO DATA — illustrative Wipro asset register for the customer demo. Coordinates approximate; headcounts plausible placeholders, not actuals.",
+  "assets": [
+    { "id": "blr-sarjapur", "name": "Sarjapur Campus (Global HQ)", "city": "Bengaluru", "country": "India", "region": "India", "lat": 12.9094, "lng": 77.6870, "type": "campus", "headcount": 28000 },
+    { "id": "blr-ecity", "name": "Electronic City Campus", "city": "Bengaluru", "country": "India", "region": "India", "lat": 12.8452, "lng": 77.6602, "type": "campus", "headcount": 21000 },
+    { "id": "hyd-gachibowli", "name": "Gachibowli Campus", "city": "Hyderabad", "country": "India", "region": "India", "lat": 17.4435, "lng": 78.3479, "type": "campus", "headcount": 17500 },
+    { "id": "pun-hinjewadi", "name": "Hinjewadi Campus", "city": "Pune", "country": "India", "region": "India", "lat": 18.5913, "lng": 73.7389, "type": "campus", "headcount": 14000 },
+    { "id": "che-sholinganallur", "name": "Sholinganallur Development Center", "city": "Chennai", "country": "India", "region": "India", "lat": 12.9010, "lng": 80.2279, "type": "delivery center", "headcount": 12500 },
+    { "id": "koc-infopark", "name": "Infopark Delivery Center", "city": "Kochi", "country": "India", "region": "India", "lat": 10.0104, "lng": 76.3621, "type": "delivery center", "headcount": 6800 },
+    { "id": "ncr-gnoida", "name": "Greater Noida Campus", "city": "Greater Noida", "country": "India", "region": "India", "lat": 28.4744, "lng": 77.5030, "type": "campus", "headcount": 7200 },
+    { "id": "mum-powai", "name": "Mumbai Office", "city": "Mumbai", "country": "India", "region": "India", "lat": 19.1187, "lng": 72.9050, "type": "office", "headcount": 3400 },
+    { "id": "us-eastbrunswick", "name": "East Brunswick (Americas HQ)", "city": "East Brunswick, NJ", "country": "United States", "region": "Americas", "lat": 40.4280, "lng": -74.4160, "type": "office", "headcount": 1900 },
+    { "id": "uk-london", "name": "London Office", "city": "London", "country": "United Kingdom", "region": "Europe", "lat": 51.5123, "lng": -0.1041, "type": "office", "headcount": 1200 },
+    { "id": "de-frankfurt", "name": "Frankfurt Office", "city": "Frankfurt", "country": "Germany", "region": "Europe", "lat": 50.1109, "lng": 8.6821, "type": "office", "headcount": 850 },
+    { "id": "ro-bucharest", "name": "Bucharest Delivery Center", "city": "Bucharest", "country": "Romania", "region": "Europe", "lat": 44.4361, "lng": 26.1027, "type": "delivery center", "headcount": 2100 },
+    { "id": "ae-dubai", "name": "Dubai Office (Internet City)", "city": "Dubai", "country": "United Arab Emirates", "region": "Middle East", "lat": 25.0954, "lng": 55.1590, "type": "office", "headcount": 950 },
+    { "id": "sa-riyadh", "name": "Riyadh Office", "city": "Riyadh", "country": "Saudi Arabia", "region": "Middle East", "lat": 24.7136, "lng": 46.6753, "type": "office", "headcount": 620 }
+  ]
+}
