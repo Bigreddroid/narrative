@@ -12,6 +12,7 @@ MODULES=(
   backend.services.analyst_test
   backend.services.llm_test
   backend.services.imint_test
+  backend.services.imint_event_test
   backend.services.source_reliability_test
   backend.consequence_engine.propagation_test
   backend.consequence_engine.calibration_test

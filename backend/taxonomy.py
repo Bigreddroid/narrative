@@ -52,8 +52,17 @@ SOURCE_DISCIPLINE: dict[str, str] = {
     "cisa": CYBINT, "osint_threatintel": CYBINT,
     # Financial/sanctions → FININT
     "opensanctions": FININT,
+    # Interpreted operator-supplied imagery → IMINT. Provenance alone fixes this: the
+    # event was created by reading an image (services/imint_event.py), whatever the
+    # imagery happens to depict. Until this entry existed, IMINT was declared in
+    # DISCIPLINES but unreachable — no source and no category resolved to it, so the
+    # /int IMINT panel could never be anything but empty.
+    "imint": IMINT,
     # NOTE: general-news OSINT sources (osint_gdelt/osint_rss/osint_reddit, gdelt)
     # carry varied categories, so they intentionally fall through to category.
+    # NOTE: GEOINT remains intentionally unreachable for now — no collector produces a
+    # purely geospatial event yet. /geolocate is a read-out, and imagery it places is
+    # IMINT (the image is the source), not GEOINT.
 }
 
 # Category → discipline: covers BOTH vocabularies (feed CATEGORIES + LLM_CATEGORIES)
