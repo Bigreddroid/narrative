@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
 from backend.api.dependencies import DbDep, UserDep
+from backend.consequence_engine import corroboration
 from backend.models.article import Article
 from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.event_revision import EventRevision
@@ -35,6 +36,7 @@ async def list_events(
     status: str | None = Query(None),
     discipline: str | None = Query(None, description="INT discipline: HUMINT/SIGINT/IMINT/GEOINT/MASINT/FININT/CYBINT"),
     source_type: str | None = Query(None, description="'osint' = open-source/unverified only"),
+    source_prefix: str | None = Query(None, description="event source prefix, e.g. 'wipro_demo' matches the seeded demo scenario sources"),
     limit: int = Query(20, le=100),
     offset: int = Query(0),
 ) -> dict:
@@ -51,11 +53,12 @@ async def list_events(
 
     if category:
         query = query.where(NarrativeEvent.category == category)
-    elif not discipline:
+    elif not (discipline or source_prefix):
         # Cyber CVEs are niche/high-volume — keep them out of the headline feed
         # (still reachable via ?category=cyber, ?discipline=CYBINT, and surfaced as
-        # exposure drivers). An explicit discipline filter (e.g. a CYBINT view) wants
-        # them, so skip this exclusion whenever discipline= is requested.
+        # exposure drivers). An explicit discipline or source filter (e.g. a CYBINT
+        # view, or the demo scenario slice) wants them, so skip this exclusion
+        # whenever discipline= or source_prefix= is requested.
         query = query.where(NarrativeEvent.category != "cyber")
     if status:
         query = query.where(NarrativeEvent.current_status == status)
@@ -63,6 +66,8 @@ async def list_events(
         query = query.where(NarrativeEvent.int_discipline == discipline)
     if source_type == "osint":
         query = query.where(NarrativeEvent.source.like("osint_%"))
+    if source_prefix:
+        query = query.where(NarrativeEvent.source.like(source_prefix + "%"))
 
     # Freshness-blended ranking: importance + up to +15 recency boost that decays
     # over ~a day, so just-ingested live feeds (quakes, floods, storms) interleave
@@ -99,6 +104,41 @@ async def list_events(
         ],
         "total": len(events),
     }
+
+
+# NOTE: must stay declared before the dynamic /{event_id} route below.
+@router.get("/corroboration")
+async def events_corroboration(
+    db: DbDep,
+    user: UserDep,
+    ids: str = Query(..., description="comma-separated event ids — the window to corroborate over"),
+) -> dict:
+    """Cross-feed corroboration computed over exactly the given set of events.
+
+    Same deterministic engine as /exposure, but scoped to the caller's window
+    (e.g. the events currently in view) instead of the global top-importance
+    slice — so convergence reflects what the client is actually looking at.
+    """
+    try:
+        id_list = [uuid.UUID(x.strip()) for x in ids.split(",") if x.strip()][:200]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="ids must be comma-separated UUIDs")
+    if not id_list:
+        return {"corroboration": {}}
+    result = await db.execute(select(NarrativeEvent).where(NarrativeEvent.id.in_(id_list)))
+    payload = [
+        {
+            "id": str(e.id),
+            "source": e.source,
+            "discipline": e.int_discipline,
+            "lat": e.geo_centroid_lat,
+            "lng": e.geo_centroid_lng,
+            "ts": e.first_detected_at.timestamp() * 1000 if e.first_detected_at else None,
+        }
+        for e in result.scalars().all()
+    ]
+    corrob = corroboration.corroborate(payload)
+    return {"corroboration": {k: v for k, v in corrob.items() if v["count"] > 0}}
 
 
 @router.get("/{event_id}")

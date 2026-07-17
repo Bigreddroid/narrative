@@ -30,10 +30,18 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from sqlalchemy import update  # noqa: E402
+
 from backend.database import AsyncSessionLocal  # noqa: E402
+from backend.models.narrative_event import NarrativeEvent  # noqa: E402
 from backend.workers.hazard_ingest_worker import _upsert  # noqa: E402
 
-SOURCE = "wipro_demo"  # unknown to SOURCE_DISCIPLINE → discipline derives from category
+# All sources share this prefix (cleanup + the dashboard's ?source_prefix= fetch),
+# but each signal carries its own DISTINCT source below: the corroboration engine
+# only counts *independent* sources, so a single shared source would mean the
+# clusters could never fuse — the original design bug this fixed.
+SOURCE_PREFIX = "wipro_demo"  # unknown to SOURCE_DISCIPLINE → discipline derives from category
+LEGACY_SOURCE = "wipro_demo"  # rows seeded before the per-signal split
 
 SIGNALS = [
     # ── Cluster GULF — three disciplines converge near Dubai/Hormuz ─────────────
@@ -44,6 +52,7 @@ SIGNALS = [
         "category": "conflict", "importance": 72, "status": "escalating",
         "geography": ["United Arab Emirates", "Strait of Hormuz"],
         "lat": 26.57, "lng": 56.25, "external_id": "wipro-gulf-hormuz-1",
+        "source": "wipro_demo_maritime",
     },
     {
         "title": "[DEMO] Ransomware campaign targets UAE port and logistics operators",
@@ -52,6 +61,7 @@ SIGNALS = [
         "category": "cyber", "importance": 65, "status": "developing",
         "geography": ["United Arab Emirates", "Dubai"],
         "lat": 25.20, "lng": 55.27, "external_id": "wipro-gulf-cyber-1",
+        "source": "wipro_demo_cyber",
     },
     {
         "title": "[DEMO] Gulf freight rates and war-risk premiums spike on transit fears",
@@ -60,6 +70,7 @@ SIGNALS = [
         "category": "market", "importance": 58, "status": "developing",
         "geography": ["United Arab Emirates", "Gulf"],
         "lat": 25.10, "lng": 55.40, "external_id": "wipro-gulf-market-1",
+        "source": "wipro_demo_market",
     },
     # ── Cluster EUROPE — Black Sea: the ME↔Europe↔Ukraine connection ────────────
     {
@@ -69,6 +80,7 @@ SIGNALS = [
         "category": "conflict", "importance": 68, "status": "escalating",
         "geography": ["Romania", "Black Sea"],
         "lat": 44.17, "lng": 28.65, "external_id": "wipro-eu-blacksea-1",
+        "source": "wipro_demo_maritime",
     },
     {
         "title": "[DEMO] Intrusion attempts probe Romanian power-grid operators",
@@ -77,6 +89,7 @@ SIGNALS = [
         "category": "cyber", "importance": 55, "status": "developing",
         "geography": ["Romania", "Bucharest"],
         "lat": 44.43, "lng": 26.10, "external_id": "wipro-eu-cyber-1",
+        "source": "wipro_demo_cyber",
     },
     # ── Travel-security driver — makes a Riyadh trip read "Advise", not "Proceed" ─
     {
@@ -86,6 +99,7 @@ SIGNALS = [
         "category": "unrest", "importance": 55, "status": "developing",
         "geography": ["Saudi Arabia", "Riyadh"],
         "lat": 24.71, "lng": 46.68, "external_id": "wipro-ksa-advisory-1",
+        "source": "wipro_demo_advisory",
     },
 ]
 
@@ -93,9 +107,17 @@ SIGNALS = [
 async def main() -> None:
     created = 0
     async with AsyncSessionLocal() as db:
+        # Migrate rows seeded under the old shared source to their per-signal
+        # source, so _upsert refreshes them in place instead of duplicating.
         for s in SIGNALS:
-            sig = {**s, "source": SOURCE}
-            if await _upsert(sig, db, require_geo=True):
+            await db.execute(
+                update(NarrativeEvent)
+                .where(NarrativeEvent.source == LEGACY_SOURCE)
+                .where(NarrativeEvent.external_id == s["external_id"])
+                .values(source=s["source"])
+            )
+        for s in SIGNALS:
+            if await _upsert(dict(s), db, require_geo=True):
                 created += 1
         await db.commit()
     print(f"wipro demo scenario: {len(SIGNALS)} signals upserted ({created} new). "
