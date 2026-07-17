@@ -97,6 +97,9 @@ function useFusion() {
           index: c.index || 0,
           count: c.count || 0,
           disciplines: c.disciplines || [],
+          // NATO Admiralty grade computed server-side (Phase 2e) — the digit rises
+          // with the very corroboration this strip is showing.
+          reliability: c.reliability || null,
           event: titleById[id] || null,
         }))
         .filter((r) => (r.disciplines?.length || 0) >= 2)
@@ -118,6 +121,27 @@ function DisciplineBadge({ code }) {
       style={{ color, border: `1px solid ${color}55`, backgroundColor: `${color}12` }}
     >
       {DISCIPLINE_LABELS[code] || code}
+    </span>
+  );
+}
+
+// NATO Admiralty grade (Phase 2e), e.g. "B2" — letter = source reliability, digit =
+// information credibility. Graded server-side from provenance + corroboration; the
+// full rationale rides along in the tooltip so the call is always auditable.
+// Colour tracks credibility (the digit): confirmed reads green, doubtful reads amber.
+const _GRADE_COLOR = { 1: "#4E9A5A", 2: "#4E9A5A", 3: "#C08A2E", 4: "#C08A2E", 5: "#B4462F", 6: "#8A8A8A" };
+
+function AdmiraltyGrade({ grade }) {
+  if (!grade?.grade) return null;
+  const color = _GRADE_COLOR[grade.credibility?.code] || "#8A8A8A";
+  const tip = [
+    `${grade.reliability?.code} — ${grade.reliability?.label}`,
+    `${grade.credibility?.code} — ${grade.credibility?.label}`,
+    ...(grade.rationale || []),
+  ].join("\n");
+  return (
+    <span style={{ color }} title={`NATO Admiralty grade ${grade.grade}\n${tip}`}>
+      {grade.grade}
     </span>
   );
 }
@@ -297,7 +321,7 @@ function FusionStrip({ onOpen }) {
           Cross-Discipline Fusion
         </span>
         <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: "rgba(240,237,232,0.3)" }}>
-          — where ≥2 disciplines converge in space &amp; time
+          — where ≥2 disciplines converge in space &amp; time · graded A–F × 1–6
         </span>
       </div>
 
@@ -343,6 +367,12 @@ function FusionStrip({ onOpen }) {
                   <span>{row.count} source{row.count !== 1 ? "s" : ""}</span>
                   <span>·</span>
                   <span style={{ color: "#C08A2E" }}>fusion {Math.round(row.index * 100)}%</span>
+                  {row.reliability && (
+                    <>
+                      <span>·</span>
+                      <AdmiraltyGrade grade={row.reliability} />
+                    </>
+                  )}
                 </div>
               </button>
             );
