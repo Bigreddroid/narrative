@@ -115,9 +115,10 @@ def complete_vision(
 ) -> LLMResult:
     """Multimodal completion over a single base64-encoded image.
 
-    The ollama path only works if local_llm_model is a multimodal model (e.g. llava,
-    llama3.2-vision) — a text-only local model returns a provider error and the caller
-    degrades. `media_type` is accepted for API symmetry but not needed by Ollama."""
+    The ollama path runs `local_vision_model` (llava by default), NOT local_llm_model,
+    which is text-only — if that model isn't pulled, or isn't multimodal, Ollama returns
+    a provider error and the caller degrades honestly rather than inventing an answer.
+    `media_type` is accepted for API symmetry but not needed by Ollama."""
     p = active_provider()
     if p == "off":
         raise BudgetExceeded("LLM provider is 'off'")
@@ -230,7 +231,9 @@ def _ollama_vision(system: str, user: str, image_b64: str, max_tokens: int, json
     # multimodal models (llava, llama3.2-vision, …) accept them; a text model
     # errors, which the caller catches and degrades on.
     payload: dict = {
-        "model": settings.local_llm_model,
+        # Vision runs on its own pinned multimodal model (llava) — local_llm_model is
+        # text-only by default, so sharing it would degrade every image request.
+        "model": settings.local_vision_model or settings.local_llm_model,
         "stream": False,
         "messages": [
             {"role": "system", "content": system},

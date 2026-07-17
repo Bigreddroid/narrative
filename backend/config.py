@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # the time here; llama3.2 does it 6/6. Pinned separately so the analyst can still use a
     # different local_llm_model without breaking the calibration label loop.
     outcome_judge_model: str = "llama3.2:latest"
+    # Vision (IMINT + geolocate) needs a MULTIMODAL model. Pinned separately for the
+    # same reason as the judge: the default local_llm_model (llama3.2) is text-only, so
+    # sharing it would make every image request degrade to "can't read images" — while
+    # forcing local_llm_model=llava to fix that would blunt the text analyst. Keep them
+    # split so each path runs the right model. Empty ⇒ fall back to local_llm_model.
+    local_vision_model: str = "llava:latest"
     local_embedding_model: str = "BAAI/bge-large-en-v1.5"  # 1024-dim ⇒ no schema change
     # Where fastembed caches the downloaded model. Empty ⇒ library default (a tmp
     # dir under the ephemeral container FS, re-downloaded every boot). On Railway,
