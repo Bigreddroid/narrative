@@ -2,21 +2,39 @@
 IMINT — POST /api/v1/imint.
 
 Upload an image the operator already has; get back an imagery-intelligence read-out
-(what it shows + the OODA reasoning trace, see backend/services/imint.py). Scope is
-honestly bounded: interpretation of provided imagery only — no satellite tasking, no
-commercial-imagery purchase. Paid-tier feature. Runs free on a local multimodal model
-or Claude vision when paid APIs are enabled; degrades to an honest "unavailable"
-result instead of fabricating an assessment.
+(what it shows + the OODA reasoning trace, see backend/services/imint.py) AND, when the
+image can be honestly placed, a real event on the graph and globe.
+
+Persisting is the point. An interpretation that only ever returns to the caller is an
+analytical dead-end: it can never pin, never link, never corroborate another discipline.
+So when persist=true (the default) this endpoint also runs the geolocator and composes
+the two into an event via services/imint_event.py — written through the SAME ingest path
+every feed uses, so IMINT gets the same dedupe, consequence map, embedding and graph
+linkage as any other event rather than a parallel back door.
+
+The read-out is returned either way. A failure to place the image degrades to
+event.persisted=false with a reason; it never fabricates a coordinate, and it never
+costs the operator the interpretation they already have.
+
+Scope is honestly bounded: interpretation of provided imagery only — no satellite
+tasking, no commercial-imagery purchase. Paid-tier feature. Runs free on a local
+multimodal model or Claude vision when paid APIs are enabled; degrades to an honest
+"unavailable" result instead of fabricating an assessment.
 """
 
 import asyncio
 import base64
 import logging
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from sqlalchemy import select
 
 from backend.api.dependencies import DbDep, UserDep
-from backend.services import cost_guard, imint
+from backend.models.narrative_event import NarrativeEvent
+from backend.services import cost_guard, geolocate, imint, imint_event
+# The canonical event-creation path. Imported rather than reimplemented so IMINT events
+# are built exactly like every other event — osint_ingest_worker reuses it the same way.
+from backend.workers.hazard_ingest_worker import _upsert
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/imint", tags=["imint"])
@@ -25,8 +43,47 @@ _MAX_BYTES = 8 * 1024 * 1024  # 8 MB — generous for a photo/frame, bounds memo
 _ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 
+async def _persist(interpretation: dict, image_b64: str, media_type: str, sha: str, db) -> dict:
+    """Place the interpreted image and write it as an event. Never raises: a failure
+    here costs the operator the pin, never the interpretation."""
+    try:
+        # geolocate() wraps a synchronous, blocking vision call — offload it.
+        location = await asyncio.to_thread(geolocate.geolocate, image_b64, media_type)
+    except Exception as exc:  # noqa: BLE001 — the service degrades internally; this is a net
+        logger.warning("IMINT geolocation leg failed: %s", exc)
+        return {"persisted": False, "reason": "The image could not be located.", "location": None}
+
+    built = imint_event.build_signal(interpretation, location, sha)
+    if not built["ok"]:
+        return {"persisted": False, "reason": built["reason"], "location": location}
+
+    try:
+        await _upsert(built["signal"], db, require_geo=True)
+        await db.commit()
+        # Resolve the row back so the operator can click through to their pin. A fold
+        # (the same scene re-read into an identical assessment) points at the canonical,
+        # which is the event they should actually land on.
+        row = (await db.execute(
+            select(NarrativeEvent)
+            .where(NarrativeEvent.source == imint_event.SOURCE)
+            .where(NarrativeEvent.external_id == sha)
+        )).scalars().first()
+        event_id = str(row.merged_into_id or row.id) if row else None
+    except Exception as exc:  # noqa: BLE001
+        await db.rollback()
+        logger.error("IMINT event persist failed: %s", exc)
+        return {"persisted": False, "reason": "The event could not be saved.", "location": location}
+
+    return {"persisted": True, "reason": None, "event_id": event_id, "location": location}
+
+
 @router.post("")
-async def interpret_image(db: DbDep, user: UserDep, file: UploadFile = File(...)) -> dict:
+async def interpret_image(
+    db: DbDep,
+    user: UserDep,
+    file: UploadFile = File(...),
+    persist: bool = Query(True, description="Also place the image and write it as an event."),
+) -> dict:
     if user.tier == "free":
         raise HTTPException(status_code=402, detail="Imagery interpretation is a paid feature.")
 
@@ -47,7 +104,19 @@ async def interpret_image(db: DbDep, user: UserDep, file: UploadFile = File(...)
     image_b64 = base64.b64encode(data).decode("ascii")
     try:
         # interpret() wraps a synchronous, blocking vision call — offload it.
-        return await asyncio.to_thread(imint.interpret, image_b64, media_type)
+        interpretation = await asyncio.to_thread(imint.interpret, image_b64, media_type)
     except Exception as exc:  # noqa: BLE001 — safety net; the service degrades internally
         logger.error("IMINT interpretation failed: %s", exc)
         raise HTTPException(status_code=502, detail="The IMINT interpreter is unavailable right now.")
+
+    if not persist:
+        return interpretation
+    if interpretation.get("available") is not True:
+        # Nothing to place — don't spend a second vision call on it.
+        return {**interpretation,
+                "event": {"persisted": False, "reason": "No assessment to place."}}
+
+    outcome = await _persist(interpretation, image_b64, media_type,
+                             imint_event.image_sha256(data), db)
+    location = outcome.pop("location", None)
+    return {**interpretation, "location": location, "event": outcome}
