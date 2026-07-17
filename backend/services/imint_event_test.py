@@ -110,5 +110,13 @@ ok("importance rises with evidence", strong["importance"] > weak["importance"])
 placed = E.build_signal(interp(confidence=0.95), loc(confidence=0.4), SHA)["signal"]
 ok("shaky geolocation drags importance down", placed["importance"] < strong["importance"])
 
+# Regression — live llava answers these prompts in PERCENT. Read as a raw 0-1 value,
+# 90.0 either fails the confidence floor outright or reads as absolute certainty; the
+# real Eiffel-Tower drive produced exactly this and no event was ever created.
+pct = E.build_signal(interp(confidence=90.0), loc(confidence=90.0), SHA)
+ok("percent-style confidence still earns an event", pct["ok"] is True)
+ok("percent-style confidence is not read as certainty",
+   pct["signal"]["importance"] == E.build_signal(interp(confidence=0.9), loc(confidence=0.9), SHA)["signal"]["importance"])
+
 print(f"\nimint_event: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

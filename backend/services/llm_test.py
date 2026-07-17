@@ -95,5 +95,23 @@ finally:
     llm.httpx.post = _real_post
     s.local_vision_model = "llava:latest"
 
+# ── normalize_confidence: vision models answer in percent when asked for 0-1 ─────
+# Observed live on llava: the geolocate prompt asks for confidence 0-1 and the model
+# returns {"confidence": 90.0} meaning 90%. Read naively that is either "out of range,
+# discard" (geolocate dropped it to 0.0 — a correct Paris pin arrived as ZERO
+# confidence) or "clamp to 1.0" (imint called it 100% certain). Both are wrong, in
+# opposite directions, which is exactly why this lives in one place.
+ok("0-1 confidence is passed through", llm.normalize_confidence(0.7) == 0.7)
+ok("percent confidence is rescaled, not discarded", llm.normalize_confidence(90.0) == 0.9)
+ok("percent confidence is rescaled, not clamped to certainty",
+   llm.normalize_confidence(90.0) < 1.0)
+ok("1.0 stays certain (not read as 1%)", llm.normalize_confidence(1.0) == 1.0)
+ok("0 stays zero", llm.normalize_confidence(0) == 0.0)
+ok("integer percent works", llm.normalize_confidence(75) == 0.75)
+ok("above 100 saturates at certain", llm.normalize_confidence(140) == 1.0)
+ok("negative floors at zero", llm.normalize_confidence(-5) == 0.0)
+ok("garbage → zero, never raises", llm.normalize_confidence("banana") == 0.0)
+ok("None → zero", llm.normalize_confidence(None) == 0.0)
+
 print(f"\nllm: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -26,6 +26,7 @@ $0/local doctrine: pure function, no I/O, no LLM. The two vision calls happen up
 import hashlib
 
 from backend import taxonomy
+from backend.services import llm
 
 # Provenance for every event this path creates. Registered in taxonomy.SOURCE_DISCIPLINE
 # so discipline_for() resolves it to IMINT the same deterministic way a USGS feed
@@ -67,8 +68,9 @@ def _num(v) -> float | None:
 
 
 def _conf(v) -> float:
-    f = _num(v)
-    return max(0.0, min(1.0, f)) if f is not None else 0.0
+    # Upstream services already normalize, but this is the gate that decides whether a
+    # pin is real — it must not be the place a percent answer sneaks through.
+    return llm.normalize_confidence(v)
 
 
 def _no(reason: str) -> dict:

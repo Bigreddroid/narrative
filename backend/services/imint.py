@@ -71,11 +71,9 @@ def _clean_json(text: str) -> str:
 
 
 def _conf(v):
-    try:
-        f = float(v)
-    except (TypeError, ValueError):
-        return 0.0
-    return max(0.0, min(1.0, f))
+    # Shared with geolocate: a bare clamp here read llava's percent answer (90.0) as
+    # absolute certainty (1.0). See llm.normalize_confidence.
+    return llm.normalize_confidence(v)
 
 
 # Substrings that signal a model echoed the schema's guidance instead of real findings.

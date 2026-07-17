@@ -77,13 +77,14 @@ def _norm_candidate(c: dict) -> dict | None:
     lat, lng = _coord(c.get("lat"), -90, 90), _coord(c.get("lng"), -180, 180)
     if lat is None or lng is None:
         return None
-    conf = _coord(c.get("confidence"), 0, 1)
+    # NOT _coord(..., 0, 1): llava answers this prompt in percent (confidence: 90.0),
+    # which a range check discards — landing a correct pin at 0.0 confidence.
     return {
         "place": str(c.get("place") or "Unknown").strip()[:120],
         "country": str(c.get("country") or "").strip()[:80],
         "lat": lat,
         "lng": lng,
-        "confidence": conf if conf is not None else 0.0,
+        "confidence": llm.normalize_confidence(c.get("confidence")),
         "why": str(c.get("why") or "").strip()[:400],
     }
 

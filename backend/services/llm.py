@@ -53,6 +53,30 @@ class LLMResult:
     raw_message: dict | None = None
 
 
+def normalize_confidence(v) -> float:
+    """Coerce a model-reported confidence onto 0-1, tolerating percent answers.
+
+    Every vision prompt here asks for a confidence in 0-1, and models routinely answer
+    in percent anyway ({"confidence": 90.0} meaning 90%) — observed live on llava. Read
+    naively that number is a trap in both directions: a strict range check discards it
+    as out-of-range (a correct pin lands with ZERO confidence and gets gated out), while
+    a clamp promotes it to 1.0 (absolute certainty the model never claimed). Both were
+    happening in this codebase at once — geolocate discarded, imint clamped — so the
+    rule lives here and both callers share it.
+
+    A value >1 is read as percent, since no honest 0-1 confidence exceeds 1.
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    if f != f:  # NaN
+        return 0.0
+    if f > 1.0:
+        f /= 100.0
+    return max(0.0, min(1.0, f))
+
+
 def active_provider() -> str:
     """The provider actually used right now. Reads the runtime override (set via the
     admin Settings panel) falling back to the env default. Only local providers exist,
