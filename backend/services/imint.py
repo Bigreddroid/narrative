@@ -143,9 +143,13 @@ def interpret(image_b64: str, media_type: str = "image/jpeg") -> dict:
     try:
         data = json.loads(_clean_json(result.text))
     except (json.JSONDecodeError, ValueError):
-        logger.warning("Vision IMINT returned unparseable JSON: %r", result.text[:200])
-        return {"available": False, "reason": "The model did not return a usable assessment.",
-                "scope": SCOPE_NOTE}
+        # llava truncates long outputs mid-string under the token ceiling; salvage the
+        # complete prefix rather than discarding minutes of CPU vision work.
+        data = llm.salvage_truncated_json(result.text)
+        if data is None:
+            logger.warning("Vision IMINT returned unparseable JSON: %r", result.text[:200])
+            return {"available": False, "reason": "The model did not return a usable assessment.",
+                    "scope": SCOPE_NOTE}
 
     if not isinstance(data, dict):
         return {"available": False, "reason": "The model did not return a usable assessment.",

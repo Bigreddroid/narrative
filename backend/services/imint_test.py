@@ -121,6 +121,31 @@ try:
     with_vision(lambda **_: fake_result(nulls))
     out = I.interpret("Zm9v")
     ok("null/garbage candidates degrade honestly", out["available"] is False)
+
+    # ── Truncated output is salvaged, not discarded ────────────────────────────
+    # REAL llava output (captured 2026-07-17, done_reason=length): the model was cut
+    # off mid-string inside "observe", before any assessment. json.loads alone throws
+    # this away with "did not return a usable assessment"; the salvage path recovers
+    # the dict and the honesty gates then judge what the model actually finished —
+    # here no assessment, so the distinct "could be inferred" reason proves the
+    # salvaged parse (not the parse failure) is what degraded.
+    truncated = '{\n  "observe": [\n    "The image displays a computer screen with an interface for a satellite or aerial photo viewing application.",\n    "There is a text box in the upper left corner that reads \'World news\'.",\n    "On the right side, there are several images and icons with various geographical locations marked on them.",\n    "The image shows different colored regions highlighted on the map. These highlights may indicate specific areas of interest or concern.",\n    "There is a menu bar at the top of the screen with options like \'File\', \'Edit\', \'View\', \'Go\', and \'Tools\'.",\n    "Below this, there is another menu bar with sub-options for'
+    with_vision(lambda **_: fake_result(truncated))
+    out = I.interpret("Zm9v")
+    ok("truncated output reaches the salvage path, not the parse failure",
+       out["available"] is False and "could be inferred" in out["reason"])
+
+    # The same truncation with a complete decide entry keeps the whole read-out:
+    # everything before the cut is verbatim llava; only the tail is trimmed earlier
+    # so one full candidate survives the cut.
+    salvageable = ('{\n  "observe": [\n    "The image displays a computer screen with an interface '
+                   'for a satellite or aerial photo viewing application."],\n'
+                   '"decide": [{"assessment": "News dashboard screenshot", "confidence": 0.6, '
+                   '"why": "browser chrome and map tiles"}],\n"act": {"assessment":')
+    with_vision(lambda **_: fake_result(salvageable))
+    out = I.interpret("Zm9v")
+    ok("a complete candidate before the cut still becomes a read-out",
+       out["available"] is True and out["best"]["assessment"] == "News dashboard screenshot")
 finally:
     llm.available, llm.complete_vision = _real_available, _real_vision
 
