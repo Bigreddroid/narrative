@@ -21,6 +21,7 @@ from backend.api.dependencies import DbDep, UserDep
 from backend.api.routes.market import latest_market_rows
 from backend.api.routes.vessels import cached_vessels
 from backend.consequence_engine import corroboration, propagation
+from backend.services import source_reliability
 from backend.feeds import chokepoints, spaceweather
 from backend.feeds.market import sector_stress
 from backend.models.event_connection import EventConnection
@@ -125,6 +126,26 @@ async def _market_stress(db) -> dict:
     return sector_stress([{"sector": r.sector, "change_pct": r.change_pct} for r in rows])
 
 
+async def _attach_reliability(db, model: dict, events: list[dict]) -> None:
+    """Attach a NATO Admiralty reliability grade (Phase 2e) to each corroborated
+    event. The letter comes from the event's source provenance + its OSINT-triage
+    track record; the digit from how many independent feeds corroborated it — so the
+    grade a HUMINT card shows literally *rises* with corroboration. Deterministic,
+    no LLM (see backend/services/source_reliability.py)."""
+    corrob = model.get("corroboration") or {}
+    if not corrob:
+        return
+    by_id = {e.get("id"): e for e in events}
+    sources = [by_id.get(eid, {}).get("source") for eid in corrob]
+    history = await source_reliability.source_history_map(db, [s for s in sources if s])
+    for eid, entry in corrob.items():
+        ev = by_id.get(eid) or {}
+        src = ev.get("source")
+        entry["reliability"] = source_reliability.grade(
+            src, entry.get("count", 0), history.get(src))
+        entry["discipline"] = ev.get("discipline")
+
+
 async def _attach_history(db, model: dict) -> None:
     """Attach REAL recent ExposureSnapshot history (oldest→newest) to each sector/
     region so the UI can draw a genuine trend. Entities with <2 stored points get
@@ -212,6 +233,7 @@ async def get_exposure(db: DbDep, user: UserDep) -> dict:
     model = propagation.compute_exposure_model(
         events, edges, market_stress=await _combined_stress(db), corroboration=corrob)
     model["corroboration"] = {k: v for k, v in corrob.items() if v["count"] > 0}
+    await _attach_reliability(db, model, events)
     await _attach_history(db, model)
     if user.tier == "free":
         # Free tier sees the headline pressure + top sectors only.

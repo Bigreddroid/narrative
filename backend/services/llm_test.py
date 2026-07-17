@@ -54,5 +54,46 @@ ok("claude_allowed always True (local/free, db unused)",
 # restore default
 _set("ollama")
 
+# ── Vision runs on the VISION model, never the text model ─────────────────────
+# Regression guard for a silent failure: _ollama_vision used to send
+# settings.local_llm_model, which is text-only by default — so every image request
+# degraded to "the active model can't read images" no matter what was pulled. The
+# two must stay split (text stays sharp, vision actually sees). No network: we
+# intercept the POST and read back the payload.
+_sent = {}
+
+
+class _FakeResp:
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"message": {"content": "ok"}, "prompt_eval_count": 1, "eval_count": 1}
+
+
+def _fake_post(url, json=None, timeout=None):
+    _sent.update(json or {})
+    return _FakeResp()
+
+
+_real_post = llm.httpx.post
+llm.httpx.post = _fake_post
+try:
+    s.local_vision_model = "llava:latest"
+    s.local_llm_model = "llama3.2:latest"
+    llm.complete_vision(system="s", user="u", image_b64="Zm9v")
+    ok("vision uses local_vision_model, not local_llm_model", _sent.get("model") == "llava:latest")
+    ok("image is attached to the user message", _sent["messages"][1].get("images") == ["Zm9v"])
+
+    # Empty vision model ⇒ fall back to the text model rather than sending model="".
+    _sent.clear()
+    s.local_vision_model = ""
+    llm.complete_vision(system="s", user="u", image_b64="Zm9v")
+    ok("empty local_vision_model falls back to local_llm_model",
+       _sent.get("model") == "llama3.2:latest")
+finally:
+    llm.httpx.post = _real_post
+    s.local_vision_model = "llava:latest"
+
 print(f"\nllm: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
