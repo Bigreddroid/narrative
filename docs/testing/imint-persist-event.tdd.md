@@ -70,17 +70,63 @@ prompt contained the correct pin (`"lat": 48.8572, "lng": 2.3521, "confidence": 
 which `_coord(90.0, 0, 1)` discarded as out-of-range → `confidence: 0.0` → below the 0.35
 gate → no event, forever, no matter how good the read.
 
+## Happy path — verified on DEFAULT config
+
+Re-driven with no env overrides (text timeout 120s, vision timeout 600s, both defaults):
+
+```
+POST /api/v1/imint  → HTTP 200 in 224s
+IMINT : "This image shows a cityscape with the Eiffel Tower in the background..."
+LOC   : {"place":"Paris","country":"France","lat":48.8561,"lng":2.3577,"confidence":0.9}
+EVENT : {"persisted": true, "event_id": "106fa2b7-09f4-42a6-9749-cbf715a15006"}
+
+GET /events/?discipline=IMINT → total: 1
+  • IMINT | This image shows a cityscape with the Eiffel Tower... | 48.8561 2.3577
+```
+
+DB row: `int_discipline=IMINT`, `source=imint`, real centroid, importance 67 (≤ the 70
+ceiling), `embedding IS NOT NULL` (so graph linkage engages). The `/int` IMINT panel —
+which was structurally incapable of showing anything — now returns the event with no
+frontend change.
+
+Probes:
+
+- 🔍 Re-upload the same image → same `event_id`, `total` still 1. The sha dedupe holds.
+- 🔍 `?persist=false` → 52s (one vision call, not two), no `event`/`location` keys. The
+  read-only shape is preserved.
+- 🔍 Non-image upload → 415 with a clear message. No auth → 401.
+
+## Two more bugs this drive found (both fixed here)
+
+1. **Wrong-shaped model output 502'd the endpoint.** llava returns `"decide"` as a list
+   of bare strings often enough to matter; `_norm_candidate` called `.get()` on a `str`
+   → `AttributeError` → HTTP 502, violating the module's own doctrine of degrading
+   honestly. Same latent trap in geolocate. Both now guard shape and drop the malformed
+   entry. RED reproduced the exact live error.
+2. **Vision shared the 120s text timeout.** llava on CPU takes ~90-170s per call and
+   `/imint` makes two back-to-back, so the geolocate leg always `ReadTimeout`'d — an
+   image could never become an event on the default $0 config. New
+   `ollama_vision_timeout_seconds` (600s) is used only by the vision path, so text calls
+   keep their fast failure detection. The timeout was also *misreported* as "The active
+   model can't read images", which sent this session hunting a model-capability problem
+   that did not exist; it now says it timed out.
+
 ## Coverage and known gaps
 
-- **The post-fix happy path (`persisted: true` + a pin on the globe) is NOT yet verified
-  live.** Docker Desktop's engine API began returning 500s mid-session and the verify
-  container could not be recreated to load the fix. The fix is proven at unit level and
-  against captured real model output, but not yet end-to-end.
-- **llava emits malformed JSON intermittently** on the geolocate prompt (observed:
-  `"act}: {"` truncation), which discards an otherwise-correct pin. Not addressed here —
-  it makes IMINT persistence flaky rather than wrong, and a salvage parser is a separate
-  change with its own risk.
+- ⚠️ **llava's coordinates are not always right, and it is confident anyway.** One run
+  returned `lng -2.229` for Paris (sign error — that pin lands in the Atlantic off
+  Brittany) at `confidence: 0.9`; the next returned a correct `2.3577`. The gate cannot
+  catch this: it filters on *stated* confidence, and the model states 0.9 either way. The
+  honesty gate stops us pinning an image we *can't* place; it cannot stop us pinning one
+  the model places *wrongly*.
+- **A re-upload still pays for both vision calls** before the `(source, external_id)`
+  dedupe short-circuits inside `_upsert`. At $0 local that is only latency (~94s), but on
+  paid vision it is real money for a result already on disk. Hashing first and
+  short-circuiting before the models run would be a clean follow-up.
+- **llava intermittently emits malformed JSON** on the geolocate prompt (observed:
+  `"act}: {"` truncation), discarding an otherwise-correct pin. Makes persistence *flaky*,
+  not wrong. A salvage parser is a separate change with its own risk.
 - No test drives `_upsert` for IMINT against a live DB; it is exercised only through the
-  endpoint.
+  endpoint (which is what the live drive above does).
 - `GEOINT` remains unreachable in the taxonomy by design — no collector produces a purely
   geospatial event yet.

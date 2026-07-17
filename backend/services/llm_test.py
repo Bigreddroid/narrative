@@ -73,6 +73,7 @@ class _FakeResp:
 
 def _fake_post(url, json=None, timeout=None):
     _sent.update(json or {})
+    _sent["__timeout"] = timeout
     return _FakeResp()
 
 
@@ -91,6 +92,23 @@ try:
     llm.complete_vision(system="s", user="u", image_b64="Zm9v")
     ok("empty local_vision_model falls back to local_llm_model",
        _sent.get("model") == "llama3.2:latest")
+
+    # Vision needs its own, longer deadline. Measured live: llava on CPU takes ~90-170s
+    # for ONE call, and /imint makes two back-to-back (interpret then geolocate). At the
+    # shared 120s text timeout the second call always ReadTimeout'd, so an image could
+    # never become an event on the default $0 config — the feature would ship dead.
+    _sent.clear()
+    s.local_vision_model = "llava:latest"
+    llm.complete_vision(system="s", user="u", image_b64="Zm9v")
+    ok("vision gets the vision timeout, not the text timeout",
+       _sent.get("__timeout") == s.ollama_vision_timeout_seconds)
+    ok("the vision deadline is long enough for llava on CPU",
+       s.ollama_vision_timeout_seconds >= 300.0)
+
+    _sent.clear()
+    llm.complete(system="s", user="u", max_tokens=16)
+    ok("text completion keeps the shorter text timeout",
+       _sent.get("__timeout") == s.ollama_timeout_seconds)
 finally:
     llm.httpx.post = _real_post
     s.local_vision_model = "llava:latest"

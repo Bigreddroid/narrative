@@ -99,6 +99,28 @@ try:
     with_vision(lambda **_: fake_result(echo))
     out = I.interpret("Zm9v")
     ok("schema-echo observations are dropped", out["trace"]["observe"] == ["a burning depot"])
+
+    # ── A model that fills the schema with the WRONG SHAPE must degrade, not 502 ──
+    # Live llava does this: "decide" comes back as a list of bare strings instead of
+    # objects, and _norm_candidate called .get() on a str → AttributeError → the route
+    # returned 502. The whole doctrine of this module is to degrade honestly.
+    loose = ('{"observe":["a bridge"],"orient":[],'
+             '"decide":["a road bridge","a rail bridge"],'
+             '"act":{"assessment":"road bridge","confidence":0.6,"why":"deck markings"}}')
+    with_vision(lambda **_: fake_result(loose))
+    out = I.interpret("Zm9v")
+    ok("string candidates don't raise; the act assessment still lands",
+       out["available"] is True and out["best"]["assessment"] == "road bridge")
+
+    all_loose = '{"observe":[],"orient":[],"decide":["a road bridge"],"act":"road bridge"}'
+    with_vision(lambda **_: fake_result(all_loose))
+    out = I.interpret("Zm9v")
+    ok("a wholly wrong-shaped payload degrades honestly", out["available"] is False)
+
+    nulls = '{"observe":null,"orient":null,"decide":[null,42],"act":null}'
+    with_vision(lambda **_: fake_result(nulls))
+    out = I.interpret("Zm9v")
+    ok("null/garbage candidates degrade honestly", out["available"] is False)
 finally:
     llm.available, llm.complete_vision = _real_available, _real_vision
 

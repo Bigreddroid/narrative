@@ -74,6 +74,10 @@ def _coord(v, lo: float, hi: float):
 
 def _norm_candidate(c: dict) -> dict | None:
     """Coerce one candidate; drop it if it has no usable coordinate."""
+    # Same trap as imint: the model returns bare strings in "decide" often enough that
+    # assuming a dict raises AttributeError on a read that would otherwise degrade.
+    if not isinstance(c, dict):
+        return None
     lat, lng = _coord(c.get("lat"), -90, 90), _coord(c.get("lng"), -180, 180)
     if lat is None or lng is None:
         return None
@@ -129,6 +133,11 @@ def geolocate(image_b64: str, media_type: str = "image/jpeg") -> dict:
         return {"available": False, "reason": f"LLM unavailable: {exc}"}
     except Exception as exc:  # noqa: BLE001 — includes a text-only local model rejecting the image
         logger.warning("Vision geolocation call failed: %s", exc)
+        # A timeout is NOT "can't read images" — reporting it that way sends whoever is
+        # debugging off hunting a model-capability problem that isn't there.
+        if "timed out" in str(exc).lower() or "timeout" in type(exc).__name__.lower():
+            return {"available": False,
+                    "reason": "The vision model timed out before it could place the image."}
         return {
             "available": False,
             "reason": "The active model can't read images. Enable Claude vision, or set "
@@ -141,8 +150,12 @@ def geolocate(image_b64: str, media_type: str = "image/jpeg") -> dict:
         logger.warning("Vision geolocation returned unparseable JSON: %r", result.text[:200])
         return {"available": False, "reason": "The model did not return a usable location."}
 
-    candidates = [nc for c in (data.get("decide") or []) if (nc := _norm_candidate(c))]
-    best = _norm_candidate(data.get("act") or {}) or (candidates[0] if candidates else None)
+    if not isinstance(data, dict):
+        return {"available": False, "reason": "The model did not return a usable location."}
+
+    decide = data.get("decide")
+    candidates = [nc for c in (decide if isinstance(decide, list) else []) if (nc := _norm_candidate(c))]
+    best = _norm_candidate(data.get("act")) or (candidates[0] if candidates else None)
     if best is None:
         return {"available": False, "reason": "No plausible location could be inferred from the image."}
     if not candidates:

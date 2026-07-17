@@ -271,7 +271,8 @@ def _ollama_vision(system: str, user: str, image_b64: str, max_tokens: int, json
     r = httpx.post(
         f"{settings.ollama_base_url}/api/chat",
         json=payload,
-        timeout=settings.ollama_timeout_seconds,
+        # Not ollama_timeout_seconds: a vision pass costs minutes on CPU. See config.
+        timeout=settings.ollama_vision_timeout_seconds,
     )
     r.raise_for_status()
     data = r.json()

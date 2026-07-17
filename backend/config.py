@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # ~1.3 GB bge-large model is fetched once, not on every scheduler restart.
     fastembed_cache_dir: str = ""
     ollama_timeout_seconds: float = 120.0
+    # Vision needs its own, much longer deadline. Measured on the documented $0 path
+    # (llava on CPU): ~90-170s for a SINGLE call, and /imint makes two back-to-back
+    # (interpret, then geolocate). At the 120s text timeout the second call always
+    # ReadTimeout'd — an uploaded image could never become an event out of the box.
+    ollama_vision_timeout_seconds: float = 600.0
 
     # Database
     database_url: str = "postgresql+asyncpg://narrative:narrative@localhost:5432/narrative"
