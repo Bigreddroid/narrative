@@ -72,5 +72,37 @@ br = C.base_rates([
 ok("base rate per pattern", abs(br["conflict"] - 0.667) < 0.01 and br["economics"] == 0.0)
 ok("base_rates empty ⇒ empty", C.base_rates([]) == {})
 
+# --- Brier Skill Score (forecast-verification standard) ---
+ok("BSS = 0 when model equals base rate", abs(C.brier_skill_score([(0.5, 1.0), (0.5, 0.0)]) - 0.0) < 1e-12)
+ok("BSS = 1 for a perfect model", abs(C.brier_skill_score([(1.0, 1.0), (0.0, 0.0)]) - 1.0) < 1e-12)
+ok("BSS < 0 when worse than base rate", C.brier_skill_score([(0.9, 1.0), (0.9, 0.0)]) < 0.0)
+ok("BSS honors explicit reference_prob", abs(C.brier_skill_score([(0.5, 1.0), (0.5, 0.0)], reference_prob=0.5) - 0.0) < 1e-12)
+ok("BSS None on empty", C.brier_skill_score([]) is None)
+ok("BSS None when reference is perfect (single-outcome set)", C.brier_skill_score([(0.3, 1.0), (0.7, 1.0)]) is None)
+
+# --- Murphy decomposition: Brier = Reliability - Resolution + Uncertainty (exact for binary) ---
+def _mean_brier(prs):
+    return sum(C.brier_score(p, o) for p, o in prs) / len(prs)
+
+# perfectly resolving & reliable: rel=0, res=unc=0.25, brier=0
+d1 = C.murphy_decomposition([(0.0, 0.0)] * 5 + [(1.0, 1.0)] * 5)
+ok("Murphy: reliability 0 when calibrated", abs(d1["reliability"]) < 1e-12)
+ok("Murphy: resolution == uncertainty when perfectly resolving", abs(d1["resolution"] - d1["uncertainty"]) < 1e-12)
+ok("Murphy: brier reconstruction == 0 here", abs(d1["brier"]) < 1e-12)
+
+# miscalibrated single-group: forecast 0.8, outcomes 3x1 + 2x0 -> rel=0.04, res=0, unc=0.24, brier=0.28
+mis = [(0.8, 1.0)] * 3 + [(0.8, 0.0)] * 2
+d2 = C.murphy_decomposition(mis)
+ok("Murphy: reliability known value", abs(d2["reliability"] - 0.04) < 1e-12)
+ok("Murphy: resolution 0 for single group", abs(d2["resolution"]) < 1e-12)
+ok("Murphy: uncertainty known value", abs(d2["uncertainty"] - 0.24) < 1e-12)
+ok("Murphy: reconstruction == mean Brier (binary)", abs(d2["brier"] - _mean_brier(mis)) < 1e-12)
+
+# reconstruction identity holds on an arbitrary binary set
+arb = [(0.2, 0.0), (0.2, 1.0), (0.7, 1.0), (0.7, 1.0), (0.9, 0.0), (0.4, 1.0), (0.4, 0.0)]
+d3 = C.murphy_decomposition(arb)
+ok("Murphy: REL - RES + UNC == mean Brier on arbitrary binary set", abs(d3["brier"] - _mean_brier(arb)) < 1e-12)
+ok("Murphy: empty set is all zeros", C.murphy_decomposition([]) == {"reliability": 0.0, "resolution": 0.0, "uncertainty": 0.0, "brier": 0.0})
+
 print(f"\ncalibration: {passed} passed, {failed} failed (ECE {ece_raw:.3f} -> {ece_cal:.3f})")
 raise SystemExit(1 if failed else 0)

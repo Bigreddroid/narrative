@@ -124,12 +124,24 @@ def report(pairs: list[tuple[float, float]]) -> None:
     model_ll = statistics.fmean(calibration.log_loss(p, o) for p, o in pairs)
     ece = calibration.ece(pairs)
 
+    bss = calibration.brier_skill_score(pairs, reference_prob=base_rate)
+    decomp = calibration.murphy_decomposition(pairs)
+
     print(f"outcome base rate (mean o)   : {base_rate:.3f}   ({fails} of {n} failed)")
     print(f"model  Brier (lower=better)  : {model_brier:.4f}")
     print(f"  vs always-base-rate Brier  : {base_brier:.4f}")
     print(f"  vs always-0.5 (coin) Brier : {coin_brier:.4f}")
     print(f"model  log-loss              : {model_ll:.4f}")
     print(f"model  ECE (calibration gap) : {ece:.4f}")
+    # Brier Skill Score: the forecast-verification standard. >0 = genuine skill
+    # over climatology (base rate); 0 = no better; <0 = worse. Quotable one number.
+    bss_str = f"{bss:+.4f}" if bss is not None else "n/a (reference is degenerate)"
+    print(f"model  Brier Skill Score     : {bss_str}   (>0 = skill over base rate)")
+    # Murphy (1973): Brier = Reliability - Resolution + Uncertainty.
+    print(
+        f"Murphy decomp (rel-res+unc)  : {decomp['reliability']:.4f} - "
+        f"{decomp['resolution']:.4f} + {decomp['uncertainty']:.4f} = {decomp['brier']:.4f}"
+    )
 
     print("\nreliability (predicted vs observed):")
     for b in calibration.reliability_curve(pairs):

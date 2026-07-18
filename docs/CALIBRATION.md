@@ -68,7 +68,65 @@ Path A directly.
 
 ---
 
-## 3. The claims we make (verbatim, safe to quote)
+## 3. The benchmark — metrics the forecast-verification field already recognizes
+
+Being an "industry-best-standard" benchmark means adopting the metrics the forecast-verification
+field already accepts — proper scoring rules and their standard decompositions — not inventing our
+own. `backend/consequence_engine/calibration.py` implements them (pure stdlib, unit-tested); they
+surface in `scripts/backtest_cpe.py` and are reproduced in CI on the validation controls.
+
+### 3a. The two benchmarks and their bars
+
+| Benchmark | Metric | Bar to pass | Status |
+|---|---|---|---|
+| **Pipeline** (fixed pass/fail) | calibrated-control ECE | < 0.05 | ✅ (0.019 → 0.000) |
+| | isotonic no-harm on calibrated data | ΔBrier ≤ +0.005 | ✅ |
+| | overconfident-control detection | ECE > 0.05 flagged | ✅ (0.132) |
+| | isotonic recovery on overconfident data | strictly lowers Brier **and** ECE | ✅ (Brier 0.193 → 0.168, ECE → 0.000) |
+| | seeded reproducibility | numbers locked to < 1e-12 | ✅ |
+| **Engine** (relative, gated) | graded outcomes | n ≥ 20 | ⏳ accruing |
+| | **Brier Skill Score** vs base rate | BSS > 0 | ⏳ (runs once n ≥ 20) |
+
+### 3b. The recognized metrics we report
+
+- **Proper scoring rules** — **Brier score** and **log-loss**, per prediction. Proper = a
+  forecaster minimizes expected score only by reporting its true probability, so the score cannot
+  be gamed.
+- **Brier Skill Score (BSS)** = `1 − Brier_model / Brier_reference`, reference = the climatological
+  base rate. **BSS > 0 means genuine skill over the baseline** — the meteorology / forecast-
+  verification standard. It turns the raw "beats base rate" comparison into one normalized, quotable
+  number: BSS = 1 perfect, 0 = no better than climatology, < 0 = worse.
+- **Murphy (1973) decomposition**: `Brier = Reliability − Resolution + Uncertainty`.
+  Reliability (calibration gap, lower better), Resolution (ability to separate cases, higher better),
+  Uncertainty (irreducible base-rate variance). Our implementation groups by distinct forecast value,
+  so the identity reconstructs the Brier score exactly for binary outcomes (asserted to < 1e-12).
+- **ECE / reliability curve** — Expected Calibration Error and the reliability diagram (the standard
+  calibration plot).
+
+### 3c. Field reference points (so "good" is honest, not near-zero)
+
+- **Brier:** 0 = perfect, **0.25 = a coin flip**, 1 = worst possible.
+- **ECE:** < 0.05 well-calibrated, < 0.10 acceptable.
+- **Elite human forecasters** (Tetlock / Good Judgment superforecasters) score roughly **0.15–0.20
+  Brier** on hard geopolitical questions. So the honest bar for the engine is **"positive BSS with a
+  small ECE"** — beating the base rate on real outcomes — **not** a near-zero Brier, which on genuinely
+  uncertain events would signal a leak or an easy question set, not skill.
+
+### 3d. Methodology citations
+
+- Brier, G.W. (1950). *Verification of forecasts expressed in terms of probability.* Monthly Weather Review.
+- Murphy, A.H. (1973). *A new vector partition of the probability score.* Journal of Applied Meteorology (reliability–resolution–uncertainty).
+- Gneiting, T. & Raftery, A.E. (2007). *Strictly proper scoring rules, prediction, and estimation.* JASA.
+- Barnston, A.G. (1992) / WMO forecast-verification practice — **Brier Skill Score** vs climatology.
+- Ayer, M. et al. (1955); Zadrozny & Elkan (2002) — **isotonic regression / PAVA** for probability calibration.
+
+> **No overclaiming:** BSS and the Murphy decomposition on the *engine* are still gated on n ≥ 20 real
+> graded outcomes. Until then they run on the validation controls — proving the *metrics themselves* are
+> implemented correctly — exactly as `backtest_cpe.py` refuses a verdict below n = 20.
+
+---
+
+## 4. The claims we make (verbatim, safe to quote)
 
 > "Our calibration **pipeline** is validated against positive and negative controls — it detects
 > miscalibration and provably corrects it — and the proof is reproducible in one command."
@@ -85,7 +143,7 @@ presented as ground truth.
 
 ---
 
-## 4. Reproduce it
+## 5. Reproduce it
 
 ```
 # Pipeline proof (offline, <1s, deterministic)
