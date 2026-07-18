@@ -10,6 +10,8 @@ sector_stress) — fully unit-testable, no I/O. Tuned constants are the secret s
 
 import math
 
+from backend.geo import haversine_km  # re-exported: callers/tests use chokepoints.haversine_km
+
 # name → (lat, lng, radius_km, is_oil_route)
 CHOKEPOINTS = {
     "Strait of Hormuz":  (26.57, 56.25, 80, True),
@@ -21,15 +23,6 @@ CHOKEPOINTS = {
 }
 
 TAU_VESSELS = 40.0  # vessel count giving ~0.63 congestion (saturation). Tunable.
-
-
-def haversine_km(lat1, lng1, lat2, lng2) -> float:
-    r = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lng2 - lng1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
 def congestion_from_count(n: float) -> float:

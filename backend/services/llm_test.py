@@ -174,5 +174,19 @@ ok("no JSON at all → None, never raises", llm.salvage_truncated_json("I think 
 ok("nothing salvageable → None", llm.salvage_truncated_json('{"') is None)
 ok("a top-level array is not promoted to a dict", llm.salvage_truncated_json('["a", "b"') is None)
 
+# clean_json — shared fence/prose stripper (imint / geolocate / reasoner)
+import json as _json
+ok("clean_json strips a ```json fence",
+   _json.loads(llm.clean_json('```json\n{"a": 1}\n```')) == {"a": 1})
+ok("clean_json strips a bare ``` fence",
+   _json.loads(llm.clean_json('```\n{"a": 1}\n```')) == {"a": 1})
+ok("clean_json trims surrounding prose",
+   _json.loads(llm.clean_json('Sure! Here is the JSON: {"b": 2} — hope that helps')) == {"b": 2})
+ok("clean_json falls back to an array when there is no object",
+   _json.loads(llm.clean_json('junk [1, 2, 3] more')) == [1, 2, 3])
+ok("clean_json prefers the object over a trailing array",
+   _json.loads(llm.clean_json('{"x": [1]}')) == {"x": [1]})
+ok("clean_json is null-safe", llm.clean_json(None) == "")
+
 print(f"\nllm: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

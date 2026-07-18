@@ -77,6 +77,26 @@ def normalize_confidence(v) -> float:
     return max(0.0, min(1.0, f))
 
 
+def clean_json(text: str) -> str:
+    """Strip accidental markdown fences / prose around a JSON value (object or array).
+
+    Local models routinely wrap their JSON in ```json fences or surrounding chatter;
+    this trims to the outermost value so json.loads succeeds. Prefers an object, falls
+    back to an array. Null-safe. Shared by imint / geolocate / reasoner."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        nl = t.find("\n")
+        if nl != -1 and t[:nl].strip().lower() in ("json", ""):
+            t = t[nl + 1:]
+    # Prefer the outermost object; fall back to an array.
+    for lo, hi in (("{", "}"), ("[", "]")):
+        start, end = t.find(lo), t.rfind(hi)
+        if start != -1 and end != -1 and end > start:
+            return t[start:end + 1]
+    return t
+
+
 def salvage_truncated_json(text: str) -> dict | None:
     """Best-effort recovery of a JSON object the model truncated mid-output.
 
