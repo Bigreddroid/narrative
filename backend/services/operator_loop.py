@@ -48,7 +48,11 @@ Method:
 - Then write the final answer: lead with a direct exposure verdict; name specific entities, the
   mechanism, direction (up/down/disrupt), approximate lag and rough magnitude; end with ONE
   concrete recommended action. Ground every claim in tool results — never invent events or numbers.
-- If the tools return little, say so plainly rather than speculating."""
+- If the tools return little, say so plainly rather than speculating.
+- If your analysis surfaces an entity (a company, supplier, port, country, counterparty) that
+  keeps driving the consequences this user cares about and is NOT already on their watched assets,
+  call propose_watchlist_add for it. This only SUGGESTS the addition for the user to approve — it
+  saves nothing — so propose sparingly, only entities central to your answer."""
 
 
 def _summarize(name: str, result: dict) -> str:
@@ -73,6 +77,9 @@ def _summarize(name: str, result: dict) -> str:
         g = (result.get("graded") or [])
         top = g[0]["grade"] if g else "n/a"
         return f"{len(g)} graded; top {top}"
+    if name == "propose_watchlist_add":
+        ents = (result.get("proposal") or {}).get("entities") or []
+        return f"proposed {len(ents)} watchlist add(s): {', '.join(ents[:4]) or 'none'}"
     return "ok"
 
 
@@ -109,6 +116,7 @@ async def answer_question_agentic(db, question: str, watched_assets: list[str] |
     trace: list[dict] = []
     sources: dict[str, dict] = {}
     exposure_holder: dict = {}
+    proposals: list[dict] = []  # watchlist-add proposals surfaced for human approval
     tools_ran = 0
 
     try:
@@ -122,7 +130,7 @@ async def answer_question_agentic(db, question: str, watched_assets: list[str] |
                 if tools_ran == 0:
                     return await _fallback(db, question, watched, trace, reason="no-tools")
                 if res.text:
-                    return await _finalize(db, res.text.strip(), sources, exposure_holder, trace)
+                    return await _finalize(db, res.text.strip(), sources, exposure_holder, trace, proposals)
                 break
 
             # Append the assistant turn, then run each requested tool and feed results back.
@@ -133,6 +141,9 @@ async def answer_question_agentic(db, question: str, watched_assets: list[str] |
                 trace.append({"tool": call.name, "args": call.arguments,
                               "summary": _summarize(call.name, result)})
                 _harvest(call.name, result, sources, exposure_holder)
+                if call.name == "propose_watchlist_add" and isinstance(result, dict) \
+                        and result.get("proposal", {}).get("entities"):
+                    proposals.append(result)
                 messages.append({
                     "role": "tool", "tool_name": call.name,
                     "content": json.dumps(result, default=str)[:_TOOL_RESULT_CHARS],
@@ -154,14 +165,15 @@ async def answer_question_agentic(db, question: str, watched_assets: list[str] |
     return await _fallback(db, question, watched, trace, reason="budget")
 
 
-async def _finalize(db, answer: str, sources: dict, exposure_holder: dict, trace: list[dict]) -> dict:
+async def _finalize(db, answer: str, sources: dict, exposure_holder: dict, trace: list[dict],
+                    proposals: list[dict] | None = None) -> dict:
     """Assemble the analyst-shaped payload from harvested tool evidence."""
     exposure = exposure_holder.get("exposure")
     if not exposure:  # model never called get_exposure — populate the readout anyway
         event_ids = list(sources.keys()) or None
         exposure = await analyst.exposure_summary(db, event_ids=event_ids) \
             or {"pressure": None, "sectors": [], "regions": []}
-    return {
+    payload = {
         "answer": answer,
         "sources": list(sources.values()),
         "pressure": exposure.get("pressure"),
@@ -171,6 +183,9 @@ async def _finalize(db, answer: str, sources: dict, exposure_holder: dict, trace
         "mode": "agent",
         "trace": trace,
     }
+    if proposals:  # watchlist-add suggestions the UI renders as one-click, human-approved chips
+        payload["watchlist_proposals"] = proposals
+    return payload
 
 
 async def _fallback(db, question: str, watched: list[str], trace: list[dict], reason: str) -> dict:

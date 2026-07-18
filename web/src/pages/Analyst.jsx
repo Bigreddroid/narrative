@@ -90,12 +90,14 @@ export default function Analyst() {
   const { user } = useUser();
   const profile = useProfile();
 
-  const [turns, setTurns] = useState([]); // {q, answer, sources, pressure, sectors, regions}
+  const [turns, setTurns] = useState([]); // {q, answer, sources, pressure, sectors, regions, trace, watchlist_proposals}
   const [input, setInput] = useState("");
   const [deep, setDeep] = useState(false);
+  const [agent, setAgent] = useState(false); // agentic operator: the LLM calls the platform's tools mid-reasoning
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [hotspots, setHotspots] = useState([]);
+  const [watched, setWatched] = useState([]); // current watched assets, so proposal-approval merges (never clobbers)
   const endRef = useRef(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
@@ -104,7 +106,20 @@ export default function Analyst() {
     api.get("/exposure/countries?top=40")
       .then((d) => setHotspots((d.countries || []).filter((c) => !c.country.includes(",")).slice(0, 8)))
       .catch(() => {});
+    api.get("/users/me").then((d) => setWatched(d.watched_assets || [])).catch(() => {});
   }, []);
+
+  // Approve an operator watchlist proposal: merge into the user's watched assets
+  // (the PATCH replaces the whole array, so we always merge with the current set).
+  async function approveWatchlist(turnIdx, entities) {
+    const next = Array.from(new Set([...watched, ...entities]));
+    try {
+      await api.patch("/users/me", { watched_assets: next });
+      setWatched(next);
+      setTurns((ts) => ts.map((t, i) =>
+        i === turnIdx ? { ...t, _approved: [...(t._approved || []), ...entities] } : t));
+    } catch { /* soft-fail: leave the chip actionable so the user can retry */ }
+  }
 
   async function ask(e) {
     e?.preventDefault();
@@ -118,7 +133,10 @@ export default function Analyst() {
       // answer can take ~60-90s (deep/multi-step even longer) — well past a
       // typical REST timeout. Give it real headroom so the answer actually lands
       // instead of the client aborting a request the server would have completed.
-      const res = await api.post("/chat", { question: q, deep }, { timeoutMs: deep ? 300000 : 180000 });
+      // Agent mode runs the tool-calling operator loop (slowest); deep runs the OODA
+      // reasoner; plain runs the single-call analyst. Agent wins if both are on.
+      const res = await api.post("/chat", { question: q, deep, agent },
+        { timeoutMs: (agent || deep) ? 300000 : 180000 });
       setTurns((t) => [...t, { q, ...res }]);
     } catch (err) {
       if (err.status === 402) setError("The AI analyst is a paid feature. Upgrade to Full Access in Settings.");
@@ -206,6 +224,46 @@ export default function Analyst() {
                     ))}
                   </div>
                 )}
+                {(() => {
+                  const proposals = (t.watchlist_proposals || []).flatMap((p) => p.proposal?.entities || []);
+                  const uniqueProposals = Array.from(new Set(proposals));
+                  if (uniqueProposals.length === 0) return null;
+                  return (
+                    <div className="border-t border-ink/10 pt-3 space-y-1.5">
+                      <div className="text-[10px] uppercase tracking-widest text-ink/35">Suggested watchlist additions</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {uniqueProposals.map((ent) => {
+                          const done = (t._approved || []).includes(ent) || watched.includes(ent);
+                          return (
+                            <button key={ent} type="button" disabled={done}
+                              onClick={() => approveWatchlist(i, [ent])}
+                              className={`px-2 py-1 text-[11px] border transition-colors ${done
+                                ? "border-ink/15 text-ink/35 cursor-default"
+                                : "border-crimson/40 text-crimson hover:bg-crimson hover:text-paper"}`}>
+                              {done ? `✓ ${ent}` : `+ ${ent}`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {Array.isArray(t.trace || t.tool_trace) && (t.trace || t.tool_trace).length > 0 && (
+                  <details className="border-t border-ink/10 pt-3 group">
+                    <summary className="text-[10px] uppercase tracking-widest text-ink/35 cursor-pointer hover:text-ink/55 list-none">
+                      Agent reasoning · {(t.trace || t.tool_trace).length} tool call{(t.trace || t.tool_trace).length === 1 ? "" : "s"}
+                    </summary>
+                    <ol className="mt-2 space-y-1">
+                      {(t.trace || t.tool_trace).map((step, n) => (
+                        <li key={n} className="text-xs text-ink/55 flex gap-2">
+                          <span className="text-ink/30 tabular-nums">{n + 1}</span>
+                          <span><span className="text-ink/70 font-medium">{step.tool}</span>
+                            <span className="text-ink/40"> — {step.summary}</span></span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
               </div>
             ))}
 
@@ -228,7 +286,7 @@ export default function Analyst() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={deep ? "Ask the analyst… (deep, multi-step)" : "Ask the analyst…"}
+            placeholder={agent ? "Ask the operator… (agentic, tool-calling)" : deep ? "Ask the analyst… (deep, multi-step)" : "Ask the analyst…"}
             className="flex-1 bg-transparent border border-ink/15 px-3 py-2 text-sm text-ink/80 placeholder:text-ink/30 focus:outline-none focus:border-crimson/40"
           />
           <button type="submit" disabled={loading || input.trim().length < 3}
@@ -238,14 +296,26 @@ export default function Analyst() {
         </div>
         {/* Deep analysis runs the multi-step OODA reasoner — slower, more specific,
             scoped to the assets you watch. Still free on the local model. */}
-        <button type="button" onClick={() => setDeep((d) => !d)}
-          className={`mt-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${deep ? "text-crimson" : "text-ink/40 hover:text-ink/60"}`}>
-          <span className={`inline-block w-3 h-3 border ${deep ? "border-crimson bg-crimson/20" : "border-ink/30"}`}>
-            {deep && <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2.5 6.5l2.5 2.5 4.5-5" /></svg>}
-          </span>
-          Deep analysis
-          <span className="normal-case tracking-normal font-normal text-ink/35">— multi-step reasoning, scoped to your watched assets</span>
-        </button>
+        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1">
+          <button type="button" onClick={() => setDeep((d) => !d)}
+            className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${deep ? "text-crimson" : "text-ink/40 hover:text-ink/60"}`}>
+            <span className={`inline-block w-3 h-3 border ${deep ? "border-crimson bg-crimson/20" : "border-ink/30"}`}>
+              {deep && <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2.5 6.5l2.5 2.5 4.5-5" /></svg>}
+            </span>
+            Deep analysis
+            <span className="normal-case tracking-normal font-normal text-ink/35">— multi-step reasoning</span>
+          </button>
+          {/* Agent mode: the operator calls the platform's read-only tools mid-reasoning,
+              shows its trace, and may propose watchlist additions for you to approve. */}
+          <button type="button" onClick={() => setAgent((a) => !a)}
+            className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${agent ? "text-crimson" : "text-ink/40 hover:text-ink/60"}`}>
+            <span className={`inline-block w-3 h-3 border ${agent ? "border-crimson bg-crimson/20" : "border-ink/30"}`}>
+              {agent && <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2.5 6.5l2.5 2.5 4.5-5" /></svg>}
+            </span>
+            Agent mode
+            <span className="normal-case tracking-normal font-normal text-ink/35">— tool-calling operator, shows its work</span>
+          </button>
+        </div>
       </form>
     </div>
   );
