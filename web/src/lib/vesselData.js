@@ -5,6 +5,7 @@
 //  shows a simulated fleet moving along real shipping lanes (chokepoint-heavy);
 //  with VITE_AISSTREAM_KEY set, useVesselFeed streams real positions instead.
 // ─────────────────────────────────────────────────────────────────────────────
+import { haversineKm as _havKm, bearingDeg as _bearDeg } from "./geoAssoc.js";
 
 export const VESSEL_TYPES = {
   cargo:     { label: "Cargo",     color: "#3FA7A0" },
@@ -40,24 +41,10 @@ const LANES = [
 ];
 
 // ─── Geo helpers ───────────────────────────────────────────────────────────────
-const R = 6371; // km
-const toRad = (d) => (d * Math.PI) / 180;
-const toDeg = (r) => (r * 180) / Math.PI;
-
-function haversineKm([lng1, lat1], [lng2, lat2]) {
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
-}
-
-function bearingDeg([lng1, lat1], [lng2, lat2]) {
-  const φ1 = toRad(lat1), φ2 = toRad(lat2), Δλ = toRad(lng2 - lng1);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
+// Great-circle math lives once in geoAssoc.js; these are [lng,lat]-array adapters
+// over its (lng,lat) scalar core so the lane call sites below stay unchanged.
+const haversineKm = ([lng1, lat1], [lng2, lat2]) => _havKm(lng1, lat1, lng2, lat2);
+const bearingDeg = ([lng1, lat1], [lng2, lat2]) => _bearDeg(lng1, lat1, lng2, lat2);
 
 // Precompute per-lane segment metrics (cumulative distance + bearing).
 const LANE_METRICS = LANES.map((lane) => {

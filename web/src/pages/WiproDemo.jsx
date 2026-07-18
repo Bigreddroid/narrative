@@ -6,6 +6,7 @@ import * as topojson from "topojson-client";
 import { api } from "../lib/api.js";
 import DeckView from "../components/DeckView.jsx";
 import { getDisciplineColor } from "../lib/colors.js";
+import { haversineKm as _havKm } from "../lib/geoAssoc.js";
 import { useTheme } from "../hooks/useTheme.js";
 import assetsData from "../data/wipro/assets.json";
 import travelData from "../data/wipro/travel.json";
@@ -27,13 +28,9 @@ const ASSETS = assetsData.assets;
 const TRIPS = travelData.trips;
 
 // ── Geometry + region helpers (client-side only — no engine constants) ───────
-function haversineKm(lat1, lng1, lat2, lng2) {
-  const R = 6371, toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
+// (lat,lng) adapter over the shared (lng,lat) core in geoAssoc.js — one copy of
+// the great-circle math app-wide (adds the domain clamp the local copy lacked).
+const haversineKm = (lat1, lng1, lat2, lng2) => _havKm(lng1, lat1, lng2, lat2);
 
 // Region cards match the client's footprint. Order matters: first match wins
 // (UAE/Saudi before the broad Europe/Americas boxes).
@@ -660,7 +657,7 @@ function AskAnalyst() {
             <p className="text-[12px] text-ink/85 leading-relaxed whitespace-pre-wrap">{turn.answer}</p>
             <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-ink/8">
               {turn.mode && <Pill label={turn.mode} color="#5BA3D0" />}
-              {(turn.tool_trace || []).map((t, i) => (
+              {(turn.trace || turn.tool_trace || []).map((t, i) => (
                 <span key={i} className="text-[9px] font-mono text-ink/45 px-1.5 py-0.5 border border-ink/10 rounded-sm">
                   {t.tool || t.name || String(t).slice(0, 30)}
                 </span>

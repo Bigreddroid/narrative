@@ -1,5 +1,5 @@
 // Property test for geoAssoc (pure). Run:  node web/src/lib/geoAssoc.test.mjs
-import { haversineKm, eventRadiusKm, associate, trafficByEvent, detectAnomaly } from "./geoAssoc.js";
+import { haversineKm, bearingDeg, eventRadiusKm, associate, trafficByEvent, detectAnomaly } from "./geoAssoc.js";
 
 let passed = 0, failed = 0;
 const ok = (n, c) => { if (c) { passed++; console.log(`  ✓ ${n}`); } else { failed++; console.error(`  ✗ ${n}`); } };
@@ -7,6 +7,11 @@ const ok = (n, c) => { if (c) { passed++; console.log(`  ✓ ${n}`); } else { fa
 // haversine
 ok("same point ⇒ 0 km", haversineKm(0, 0, 0, 0) === 0);
 ok("NYC→London ≈ 5570 km", Math.abs(haversineKm(-74, 40.7, -0.1, 51.5) - 5570) < 100);
+
+// bearing (shared by vessel/aircraft lane metrics — (lng,lat) arg order)
+ok("due east ⇒ ~90°", Math.abs(bearingDeg(0, 0, 10, 0) - 90) < 0.5);
+ok("due north ⇒ ~0°", Math.abs(bearingDeg(0, 0, 0, 10)) < 0.5);
+ok("due south ⇒ ~180°", Math.abs(bearingDeg(0, 0, 0, -10) - 180) < 0.5);
 
 // radius scales with importance, clamped
 ok("low importance ⇒ floor 300", eventRadiusKm({ importance: 0 }) === 300);

@@ -10,6 +10,7 @@
 
 const R = 6371; // km
 const toRad = (d) => (d * Math.PI) / 180;
+export const toDeg = (r) => (r * 180) / Math.PI;
 const round1 = (x) => Math.round(x * 10) / 10;
 
 export function haversineKm(aLng, aLat, bLng, bLat) {
@@ -17,6 +18,15 @@ export function haversineKm(aLng, aLat, bLng, bLat) {
   const dLng = toRad(bLng - aLng);
   const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+// Initial great-circle bearing a→b, degrees [0,360). Same (lng,lat) arg order as
+// haversineKm so both share one convention across the app.
+export function bearingDeg(aLng, aLat, bLng, bLat) {
+  const φ1 = toRad(aLat), φ2 = toRad(bLat), Δλ = toRad(bLng - aLng);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
 const importanceOf = (e) => e.importance ?? e.importance_score ?? e.global_importance_score ?? 50;

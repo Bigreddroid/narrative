@@ -5,6 +5,7 @@
 //  reachable source the app shows a simulated fleet flying real corridors; the
 //  backend /api/v1/aircraft route upgrades it to live OpenSky positions.
 // ─────────────────────────────────────────────────────────────────────────────
+import { haversineKm as _havKm, bearingDeg as _bearDeg } from "./geoAssoc.js";
 
 export const AIRCRAFT_TYPES = {
   commercial: { label: "Commercial", color: "#5BA3D0" },
@@ -32,23 +33,10 @@ const CORRIDORS = [
   { name: "Hong Kong → Frankfurt",bias: "cargo",      points: [[114.2, 22.3], [100, 30], [75, 42], [45, 48], [15, 50], [8.5, 50]] },
 ];
 
-const R = 6371;
-const toRad = (d) => (d * Math.PI) / 180;
-const toDeg = (r) => (r * 180) / Math.PI;
-
-function haversineKm([lng1, lat1], [lng2, lat2]) {
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
-}
-
-function bearingDeg([lng1, lat1], [lng2, lat2]) {
-  const φ1 = toRad(lat1), φ2 = toRad(lat2), Δλ = toRad(lng2 - lng1);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
+// Great-circle math lives once in geoAssoc.js; these are [lng,lat]-array adapters
+// over its (lng,lat) scalar core so the corridor call sites below stay unchanged.
+const haversineKm = ([lng1, lat1], [lng2, lat2]) => _havKm(lng1, lat1, lng2, lat2);
+const bearingDeg = ([lng1, lat1], [lng2, lat2]) => _bearDeg(lng1, lat1, lng2, lat2);
 
 const CORRIDOR_METRICS = CORRIDORS.map((c) => {
   const segs = [];
