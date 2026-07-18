@@ -102,5 +102,14 @@ try:
 except Exception:
     ok("token does NOT verify under a different (supabase) key", True)
 
+# ── beta accounts are secure-by-default (off in prod unless explicitly enabled) ──
+# Importing the module also proves the @limiter.limit decorators on login/signup apply
+# cleanly at import time.
+from backend.api.routes import auth as _auth_mod  # noqa: E402
+ok("beta_accounts_enabled defaults to False (off in prod)", settings.beta_accounts_enabled is False)
+ok("login + signup are registered routes", any(
+    getattr(r, "path", "").endswith("/login") for r in _auth_mod.router.routes) and any(
+    getattr(r, "path", "").endswith("/signup") for r in _auth_mod.router.routes))
+
 print(f"\nauth: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

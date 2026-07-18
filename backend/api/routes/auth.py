@@ -3,16 +3,22 @@ import secrets
 import uuid
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from jose import jwt
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from backend.api.dependencies import DbDep
+from backend.api.rate_limit import limiter
 from backend.config import get_settings
 from backend.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Credential endpoints get a much tighter cap than the global 120/min so a stolen or
+# guessed password can't be brute-forced. Keyed per-IP for these unauthenticated routes
+# (rate_limit_key falls back to client IP when there's no bearer token).
+_AUTH_RATELIMIT = "10/minute"
 settings = get_settings()
 
 PBKDF2_ITERS = 200_000
@@ -134,7 +140,8 @@ class CredentialsRequest(BaseModel):
 
 
 @router.post("/signup")
-async def signup(body: CredentialsRequest, db: DbDep) -> dict:
+@limiter.limit(_AUTH_RATELIMIT)
+async def signup(request: Request, body: CredentialsRequest, db: DbDep) -> dict:
     """Real email+password signup. Works in production. Returns a signed JWT."""
     email = body.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
@@ -163,14 +170,18 @@ async def signup(body: CredentialsRequest, db: DbDep) -> dict:
 
 
 @router.post("/login")
-async def login(body: CredentialsRequest, db: DbDep) -> dict:
+@limiter.limit(_AUTH_RATELIMIT)
+async def login(request: Request, body: CredentialsRequest, db: DbDep) -> dict:
     """Real email+password login. Works in production. Returns a signed JWT."""
     email = body.email.strip().lower()
 
-    # Beta-test accounts (e.g. enterprise@narrative.dev) are provisioned on
-    # demand so they work on the deployed build, where /dev-login is disabled.
+    # Beta-test accounts (e.g. enterprise@narrative.dev) are provisioned on demand so they
+    # work on the deployed build, where /dev-login is disabled. They're shared hardcoded
+    # credentials, so in PRODUCTION they only work when beta_accounts_enabled is set — non-
+    # prod always allows them (local demos). When gated off, fall through to the normal
+    # credential check (which 401s unless a real matching account exists).
     beta = _BETA_ACCOUNTS.get(email)
-    if beta is not None:
+    if beta is not None and (settings.beta_accounts_enabled or not settings.is_production):
         user = await _provision_beta_account(email, body.password, db, beta)
         if user is None:
             raise HTTPException(status_code=401, detail="Incorrect email or password")
