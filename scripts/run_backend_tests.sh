@@ -28,6 +28,7 @@ MODULES=(
   backend.feeds.feeds_test
   backend.feeds.mastodon_osint_test
   scripts.backfill_prediction_outcomes_test
+  scripts.validate_calibration_test
 )
 
 fail=0
