@@ -151,6 +151,11 @@ class Settings(BaseSettings):
     # feed list with comma-separated 'url|label' (or bare 'url') entries; empty = built-ins.
     osint_rss_enabled: bool = True
     osint_rss_feeds: str = ""
+    # OSINT social — keyless Mastodon public tag timeline (additive, always on). One
+    # GET per tag against a public instance; no auth. First-party social signal.
+    osint_mastodon_enabled: bool = True
+    mastodon_instance: str = "mastodon.social"
+    mastodon_tags: str = "osint,geopolitics,breakingnews"
 
     # Free feed keys (optional — most sources need none)
     firms_map_key: str = ""        # NASA FIRMS wildfires

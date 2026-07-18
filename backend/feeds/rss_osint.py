@@ -9,8 +9,8 @@ publisher feed — using only the Python stdlib XML parser (no feedparser dep), 
 parse_rss stays pure + testable and the $0/no-dep posture holds.
 
 Like the other OSINT feeds these items are NOISY: parse_rss only normalizes raw
-post candidates into the shared candidate shape (matching reddit_osint /
-gdelt_osint), and the LLM triage agent (backend/services/osint_agent.py) decides
+post candidates into the shared candidate shape (matching gdelt_osint /
+osint_threatintel), and the LLM triage agent (backend/services/osint_agent.py) decides
 relevance, category, geolocation, and importance before a candidate becomes a
 NarrativeEvent. The headline carries the signal; the feed summary fills selftext.
 Source = 'osint_rss'.
