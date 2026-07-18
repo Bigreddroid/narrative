@@ -20,6 +20,14 @@ Written through hazard_ingest_worker._upsert — the SAME canonical path every l
 uses (dedupe, consequence map, embedding, graph linkage). Idempotent: fixed
 (source, external_id) pairs mean re-runs refresh instead of duplicating.
 
+Timestamp refresh (why re-running the morning of a demo actually works): the
+corroboration engine only fuses events within DEFAULT_WINDOW_HOURS (72 h) of each
+other, gating on `first_detected_at`. But `_upsert` refreshes only `last_updated_at`
+on an existing row — so seeds age out of the fusion window after 72 h and the strip
+goes quiet even after a re-seed. This seeder therefore stamps `first_detected_at`
+(and `last_updated_at`) to NOW on its own rows every run, which is what keeps the
+fusion strip lit. Run it the morning of any demo.
+
 Run from the repo root (host venv or inside the api container):
     python demo/wipro/seed_scenario.py
 """
@@ -27,6 +35,7 @@ Run from the repo root (host venv or inside the api container):
 import asyncio
 import os
 import sys
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -119,9 +128,21 @@ async def main() -> None:
         for s in SIGNALS:
             if await _upsert(dict(s), db, require_geo=True):
                 created += 1
+        # Slide every demo row's detection time to NOW so the cluster sits inside the
+        # 72 h corroboration window on THIS run — _upsert leaves first_detected_at
+        # untouched on an existing row, so without this a re-seed would never relight
+        # the fusion strip once the seeds had aged out. Targets only wipro_demo* rows.
+        now = datetime.now(timezone.utc)
+        refreshed = (await db.execute(
+            update(NarrativeEvent)
+            .where(NarrativeEvent.external_id.in_([s["external_id"] for s in SIGNALS]))
+            .where(NarrativeEvent.source.in_([s["source"] for s in SIGNALS]))
+            .values(first_detected_at=now, last_updated_at=now)
+        )).rowcount
         await db.commit()
-    print(f"wipro demo scenario: {len(SIGNALS)} signals upserted ({created} new). "
-          f"Re-runs refresh in place — external_ids are fixed.")
+    print(f"wipro demo scenario: {len(SIGNALS)} signals upserted ({created} new); "
+          f"{refreshed} rows time-refreshed to now. Re-runs refresh in place — "
+          f"external_ids are fixed, and the cluster is back inside the 72 h fusion window.")
 
 
 if __name__ == "__main__":
