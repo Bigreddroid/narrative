@@ -141,6 +141,28 @@ function DisciplineBadge({ code }) {
   );
 }
 
+// NATO Admiralty grade chip (Phase 2e), e.g. "B2" — letter = source reliability,
+// digit = information credibility, graded server-side from provenance + how many
+// independent feeds corroborated the event. The full rationale rides in the tooltip
+// so the call is auditable. Colour tracks the credibility digit. Mirrors the chip on
+// /int (IntFusion) so the two fusion surfaces read identically.
+const _GRADE_COLOR = { 1: "#4E9A5A", 2: "#4E9A5A", 3: "#C08A2E", 4: "#C08A2E", 5: "#B4462F", 6: "#8A8A8A" };
+
+function AdmiraltyGrade({ grade }) {
+  if (!grade?.grade) return null;
+  const color = _GRADE_COLOR[grade.credibility?.code] || "#8A8A8A";
+  const tip = [
+    `${grade.reliability?.code} — ${grade.reliability?.label}`,
+    `${grade.credibility?.code} — ${grade.credibility?.label}`,
+    ...(grade.rationale || []),
+  ].join("\n");
+  return (
+    <span className="font-bold" style={{ color }} title={`NATO Admiralty grade ${grade.grade}\n${tip}`}>
+      {grade.grade}
+    </span>
+  );
+}
+
 function Pill({ label, color }) {
   return (
     <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
@@ -522,6 +544,9 @@ function FusionStrip({ data, onOpen }) {
       .map(([id, c]) => ({
         id, index: c.index || 0, count: c.count || 0,
         disciplines: c.disciplines || [], event: byId[id] || null,
+        // NATO Admiralty grade attached server-side to the view-scoped
+        // corroboration map — the digit rises with the very convergence shown here.
+        reliability: c.reliability || null,
       }))
       .filter((r) => (r.disciplines?.length || 0) >= 2)
       // Equal fusion indexes are common (the index saturates fast) — break ties
@@ -565,8 +590,14 @@ function FusionStrip({ data, onOpen }) {
                 style={{ color: "rgba(240,237,232,0.85)" }}>
                 {row.event?.canonical_title || `${row.disciplines.length}-discipline convergence`}
               </p>
-              <div className="text-[9px] font-mono uppercase tracking-wider" style={{ color: "rgba(240,237,232,0.4)" }}>
+              <div className="text-[9px] font-mono uppercase tracking-wider flex items-center gap-1.5" style={{ color: "rgba(240,237,232,0.4)" }}>
                 {row.count} sources · <span style={{ color: "#C08A2E" }}>fusion {Math.round(row.index * 100)}%</span>
+                {row.reliability?.grade && (
+                  <>
+                    <span style={{ color: "rgba(240,237,232,0.25)" }}>·</span>
+                    <AdmiraltyGrade grade={row.reliability} />
+                  </>
+                )}
               </div>
             </button>
           ))}

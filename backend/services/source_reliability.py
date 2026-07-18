@@ -178,6 +178,32 @@ def grade(source: str | None, corroboration_count: int = 0,
     }
 
 
+async def attach_grades(db: AsyncSession, corroboration: dict, events: list[dict]) -> None:
+    """Attach a NATO Admiralty reliability grade to each corroborated entry, in place.
+
+    Shared by /exposure and the view-scoped /events/corroboration so both endpoints
+    grade convergence identically: the reliability letter comes from the event's
+    source provenance + its OSINT-triage track record, and the credibility digit from
+    how many independent feeds corroborated it — so the grade a card shows literally
+    *rises* with corroboration. Deterministic, no LLM.
+
+    `events` is any list of dicts each carrying at least "id" and "source" (and
+    optionally "discipline"). A corroboration entry with no matching event is graded
+    on a null source (→ F, cannot be judged) rather than skipped, so every entry the
+    UI renders carries a grade. One grouped history query for the whole set.
+    """
+    if not corroboration:
+        return
+    by_id = {e.get("id"): e for e in events}
+    sources = [by_id.get(eid, {}).get("source") for eid in corroboration]
+    history = await source_history_map(db, [s for s in sources if s])
+    for eid, entry in corroboration.items():
+        ev = by_id.get(eid) or {}
+        src = ev.get("source")
+        entry["reliability"] = grade(src, entry.get("count", 0), history.get(src))
+        entry["discipline"] = ev.get("discipline")
+
+
 async def source_history_map(db: AsyncSession, sources: list[str]) -> dict[str, dict]:
     """One grouped query → {source: {n, kept_rate, avg_confidence}} for the given
     sources, from the OSINT triage decision log. Sources with no rows are omitted

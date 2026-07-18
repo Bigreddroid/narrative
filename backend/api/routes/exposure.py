@@ -127,23 +127,10 @@ async def _market_stress(db) -> dict:
 
 
 async def _attach_reliability(db, model: dict, events: list[dict]) -> None:
-    """Attach a NATO Admiralty reliability grade (Phase 2e) to each corroborated
-    event. The letter comes from the event's source provenance + its OSINT-triage
-    track record; the digit from how many independent feeds corroborated it — so the
-    grade a HUMINT card shows literally *rises* with corroboration. Deterministic,
-    no LLM (see backend/services/source_reliability.py)."""
-    corrob = model.get("corroboration") or {}
-    if not corrob:
-        return
-    by_id = {e.get("id"): e for e in events}
-    sources = [by_id.get(eid, {}).get("source") for eid in corrob]
-    history = await source_reliability.source_history_map(db, [s for s in sources if s])
-    for eid, entry in corrob.items():
-        ev = by_id.get(eid) or {}
-        src = ev.get("source")
-        entry["reliability"] = source_reliability.grade(
-            src, entry.get("count", 0), history.get(src))
-        entry["discipline"] = ev.get("discipline")
+    """Attach NATO Admiralty grades to /exposure's corroboration map. The grading is
+    shared with the view-scoped /events/corroboration so both surfaces read the same
+    (see source_reliability.attach_grades)."""
+    await source_reliability.attach_grades(db, model.get("corroboration") or {}, events)
 
 
 async def _attach_history(db, model: dict) -> None:
