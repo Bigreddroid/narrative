@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getCategoryColor, TYPE_COLORS, SEVERITY_COLORS } from "../../lib/colors.js";
+import { getCategoryColor, TYPE_COLORS, SEVERITY_COLORS, scoreColor } from "../../lib/colors.js";
 import { api } from "../../lib/api.js";
 import { biasLabel, BIAS_COLORS, SOURCE_BIAS } from "../../lib/bias.js";
 import TierGate from "../TierGate.jsx";
@@ -127,7 +127,7 @@ function PredictionArc({ score, label }) {
   const r    = 28;
   const circ = 2 * Math.PI * r;
   const pct  = Math.min(100, Math.max(0, score));
-  const color = pct >= 70 ? "#C80028" : pct >= 40 ? "#B07020" : "#2A6A40";
+  const color = scoreColor(pct);
 
   return (
     <div className="flex flex-col items-center gap-1.5">

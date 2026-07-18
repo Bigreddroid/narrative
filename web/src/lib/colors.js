@@ -57,3 +57,9 @@ export function getNodeSize(importanceScore) {
   const max = 28;
   return min + ((importanceScore || 0) / 100) * (max - min);
 }
+
+// Prediction-arc score → color (crimson / amber / green by 70/40 thresholds).
+// Shared by the PredictionArc rings in EventDetail + EventGraph.
+export function scoreColor(pct) {
+  return pct >= 70 ? "#C80028" : pct >= 40 ? "#B07020" : "#2A6A40";
+}
