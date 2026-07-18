@@ -80,7 +80,7 @@ async def _run_tool_stub(db, name, args):
 # ── 1. registry schemas well-formed ──────────────────────────────────────────
 ok("every tool schema is a function with a registered name",
    all(s.get("type") == "function" and s["function"]["name"] in OT.TOOL_NAMES for s in OT.TOOL_SCHEMAS))
-ok("five tools registered", len(OT.TOOL_SCHEMAS) == 5 and "cross_discipline" in OT.TOOL_NAMES)
+ok("six tools registered", len(OT.TOOL_SCHEMAS) == 6 and "grade_sources" in OT.TOOL_NAMES)
 ok("unknown tool returns an error (never raises)",
    asyncio.run(OT.run_tool(None, "does_not_exist", {})).get("error", "").startswith("unknown tool"))
 
@@ -151,6 +151,50 @@ ok("error fallback reason recorded", out.get("fallback_reason") == "error")
 with _Patch(complete_tools=_boom, run_tool=_run_tool_stub, deep=_deep_stub, allowed=False):
     out = asyncio.run(operator.answer_question_agentic(None, "q?"))
 ok("no-budget skips the loop entirely", out.get("fallback_reason") == "no-llm")
+
+
+# ── 7. grade_sources tool body: real corroboration + Admiralty grading, no DB ──
+# Stub the graph loader and the triage-history query (the only DB touches) so the
+# grader itself runs for real: three independent feeds converging in geo+time.
+import backend.api.routes.exposure as _EXPO
+import backend.services.source_reliability as _SR
+
+_saved_lg, _saved_sh = _EXPO._load_graph, _SR.source_history_map
+_TS = 1_700_000_000_000.0
+
+
+async def _fake_load_graph(db, limit, event_ids=None):
+    return [
+        {"id": "e1", "canonical_title": "Strait incident", "source": "reuters",
+         "discipline": "HUMINT", "lat": 26.5, "lng": 56.3, "ts": _TS},
+        {"id": "e2", "canonical_title": "Strait incident (sensor)", "source": "usgs",
+         "discipline": "MASINT", "lat": 26.5, "lng": 56.3, "ts": _TS + 1000},
+        {"id": "e3", "canonical_title": "Strait incident (wire)", "source": "bbc",
+         "discipline": "CYBINT", "lat": 26.5, "lng": 56.3, "ts": _TS + 2000},
+    ], []
+
+
+async def _fake_history(db, sources):
+    return {}  # no track record → grade from provenance + corroboration only
+
+
+_EXPO._load_graph = _fake_load_graph
+_SR.source_history_map = _fake_history
+try:
+    out = asyncio.run(OT._grade_sources(None))                 # global (no scope)
+    one = asyncio.run(OT._grade_sources(None, event_id="e2"))  # single-event filter
+finally:
+    _EXPO._load_graph, _SR.source_history_map = _saved_lg, _saved_sh
+
+ok("grade_sources grades every event in scope", out["count"] == 3 and len(out["graded"]) == 3)
+ok("each entry carries a 2-char Admiralty grade",
+   all(isinstance(g["grade"], str) and len(g["grade"]) == 2 for g in out["graded"]))
+ok("3 independent feeds -> credibility digit <= 2 (probably true / confirmed)",
+   all(int(g["grade"][1]) <= 2 for g in out["graded"]))
+ok("strongest source (usgs -> A) sorts first", out["graded"][0]["grade"][0] == "A")
+ok("rationale is auditable (non-empty list)",
+   all(isinstance(g["rationale"], list) and g["rationale"] for g in out["graded"]))
+ok("event_id scopes output to that one event", one["count"] == 1 and one["graded"][0]["event_id"] == "e2")
 
 
 print(f"\noperator: {passed} passed, {failed} failed")

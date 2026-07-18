@@ -16,6 +16,7 @@ MODULES=(
   backend.services.imint_event_test
   backend.services.geolocate_test
   backend.services.source_reliability_test
+  backend.services.operator_test
   backend.consequence_engine.propagation_test
   backend.consequence_engine.calibration_test
   backend.consequence_engine.cluster_logic_test
