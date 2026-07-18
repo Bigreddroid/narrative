@@ -170,6 +170,11 @@ class Settings(BaseSettings):
     # App
     app_env: str = "development"
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+    # Shared beta-test logins (_BETA_ACCOUNTS in auth.py) are convenient for demos but are
+    # hardcoded shared credentials. They always work in non-prod; in production they are
+    # OFF unless this is explicitly enabled — so a public prod deploy doesn't ship a live
+    # shared password by default. Flip to true only for a gated beta on a deployed build.
+    beta_accounts_enabled: bool = False
     app_base_url: str = "https://app.thenarrative.io"  # used for Stripe redirect URLs
 
     @property
