@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import * as d3 from "d3";
 import * as topojson from "topojson-client";
 import { api } from "../lib/api.js";
+import DeckView from "../components/DeckView.jsx";
 import { getDisciplineColor } from "../lib/colors.js";
 import { useTheme } from "../hooks/useTheme.js";
 import assetsData from "../data/wipro/assets.json";
@@ -724,6 +725,24 @@ function EventTimeline({ data, onOpen }) {
   );
 }
 
+// ── i. Signal deck — TweetDeck-style live board over the same event graph ──────
+function SignalDeck({ onOpen }) {
+  // The full DeckView is a flex-1 board; give it a bounded height so it lives
+  // inside the scrolling dashboard instead of taking the whole viewport. Clicking
+  // a card opens the event (no in-deck overlay), matching every other panel here.
+  return (
+    <SectionCard
+      title="Signal deck"
+      subtitle="The live event graph as an operator board — independently-scrolling columns by status, category and INT discipline. Add or drop columns; click any signal to open it."
+      right={<Pill label="Live" color="#C80028" />}
+    >
+      <div className="flex flex-col" style={{ height: 600 }}>
+        <DeckView selectedEventId={null} onEventSelect={onOpen} onEventClose={() => {}} />
+      </div>
+    </SectionCard>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function WiproDemo() {
   const navigate = useNavigate();
@@ -792,6 +811,7 @@ export default function WiproDemo() {
           <CountryRisk data={data} appetite={appetite} setAppetite={setAppetite} />
           <AssetExposure data={data} appetite={appetite} onOpen={onOpen} />
           <TravelSecurity data={data} appetite={appetite} onOpen={onOpen} />
+          <SignalDeck onOpen={onOpen} />
           <div className="grid gap-5 lg:grid-cols-2">
             <AskAnalyst />
             <EventTimeline data={data} onOpen={onOpen} />
