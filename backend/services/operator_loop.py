@@ -43,6 +43,8 @@ Method:
   follow the cascade.
 - Call tools one or a few at a time; use earlier results to decide the next call. Stop calling
   tools once you have enough to answer.
+- Before asserting a key claim, consider grade_sources to check HOW TRUSTWORTHY the evidence is
+  (its NATO Admiralty reliability grade, e.g. "B2") — and say so when the grade is weak.
 - Then write the final answer: lead with a direct exposure verdict; name specific entities, the
   mechanism, direction (up/down/disrupt), approximate lag and rough magnitude; end with ONE
   concrete recommended action. Ground every claim in tool results — never invent events or numbers.
@@ -67,6 +69,10 @@ def _summarize(name: str, result: dict) -> str:
         return f"{len(result.get('nodes') or [])} nodes, {len(result.get('hops') or [])} hops"
     if name == "cross_discipline":
         return f"{result.get('count', 0)} cross-discipline convergences"
+    if name == "grade_sources":
+        g = (result.get("graded") or [])
+        top = g[0]["grade"] if g else "n/a"
+        return f"{len(g)} graded; top {top}"
     return "ok"
 
 

@@ -3,10 +3,10 @@ Operator tool registry — the read-only intelligence tools Narrative's own LLM 
 call mid-reasoning (see backend/services/operator.py).
 
 Each tool wraps an EXISTING service/engine function in-process over the request's
-``db`` — nothing new is computed here, and every tool is strictly read-only. The
-same five capabilities are exposed to external MCP clients by backend/mcp_server.py
-(over HTTP); this module is the in-process mirror so the agent loop can call them
-without a network hop. Tool bodies never raise: on any failure they return
+``db`` — nothing new is computed here, and every tool is strictly read-only. A core
+subset of these capabilities is also exposed to external MCP clients by
+backend/mcp_server.py (over HTTP); this module is the richer in-process registry the
+agent loop calls without a network hop. Tool bodies never raise: on any failure they return
 ``{"error": ...}`` so one bad tool can't crash the loop.
 """
 
@@ -105,6 +105,59 @@ async def _cross_discipline(db, query: str | None = None, **_) -> dict:
     return {"cross_discipline": multi[:_MAX_CROSS_DISC], "count": len(multi)}
 
 
+async def _grade_sources(db, query: str | None = None, event_id: str | None = None,
+                         top: int = 8, **_) -> dict:
+    """NATO Admiralty reliability grade for the events in scope — the same deterministic,
+    no-LLM grader the /wipro fusion strip shows. Each event gets a letter (source
+    reliability, from provenance + OSINT-triage track record) and a digit (information
+    credibility, from how many INDEPENDENT feeds corroborate it in geo+time), e.g. "B2",
+    with an auditable rationale. The grade *rises with corroboration*.
+
+    Scope: a `query` grades convergence WITHIN that topic's events (view-scoped, same as
+    the /events/corroboration endpoint); an `event_id` grades that one event against the
+    broader graph. With neither, the strongest-graded events overall are returned."""
+    from backend.api.routes.exposure import PAID_TIER_EVENT_LIMIT, _load_graph
+    from backend.consequence_engine import corroboration
+    from backend.services import source_reliability
+
+    wanted: set | None = None
+    if event_id:
+        # One event vs. the whole graph: load the global slice, filter the OUTPUT.
+        events, _edges = await _load_graph(db, PAID_TIER_EVENT_LIMIT)
+        wanted = {str(event_id)}
+    elif query:
+        # View-scoped: corroborate only within the topic's events (endpoint parity).
+        hits = await analyst.retrieve_events(db, query, limit=_MAX_EVENTS)
+        ids = [e["id"] for e in hits] or None
+        events, _edges = await _load_graph(db, _MAX_EVENTS, event_ids=ids)
+    else:
+        events, _edges = await _load_graph(db, PAID_TIER_EVENT_LIMIT)
+
+    corr = corroboration.corroborate(events)
+    await source_reliability.attach_grades(db, corr, events)  # adds entry["reliability"]
+
+    meta = {e["id"]: e for e in events}
+    graded = [
+        {
+            "event_id": eid,
+            "title": meta.get(eid, {}).get("canonical_title"),
+            "source": meta.get(eid, {}).get("source"),
+            "grade": v["reliability"]["grade"],
+            "reliability": v["reliability"]["reliability"]["label"],
+            "credibility": v["reliability"]["credibility"]["label"],
+            "corroborating_sources": v.get("count", 0),
+            "disciplines": v.get("disciplines") or [],
+            "rationale": v["reliability"]["rationale"],
+        }
+        for eid, v in corr.items()
+        if "reliability" in v and (wanted is None or eid in wanted)
+    ]
+    # Strongest first: grade string sorts "A1" < "B2" < "F6"; break ties on corroboration.
+    graded.sort(key=lambda g: (g["grade"], -g["corroborating_sources"]))
+    graded = graded[: max(1, min(int(top or 8), _MAX_EVENTS))]
+    return {"graded": graded, "count": len(graded)}
+
+
 # ── registry: name → (callable, JSON schema) ─────────────────────────────────
 _REGISTRY: dict[str, dict] = {
     "search_events": {
@@ -190,6 +243,28 @@ _REGISTRY: dict[str, dict] = {
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "optional topic to scope to"},
+                    },
+                },
+            },
+        },
+    },
+    "grade_sources": {
+        "fn": _grade_sources,
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "grade_sources",
+                "description": "NATO Admiralty source-reliability grade (e.g. 'B2') for events: a "
+                               "letter for how reliable the source is and a digit for how well the "
+                               "report is corroborated — with an auditable rationale. Use it to weigh "
+                               "HOW TRUSTWORTHY your evidence is before asserting it. Pass a query to "
+                               "grade a topic, or an event_id from search_events to grade one event.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "topic to grade"},
+                        "event_id": {"type": "string",
+                                     "description": "grade a single event id from search_events"},
                     },
                 },
             },
