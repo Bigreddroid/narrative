@@ -27,6 +27,7 @@ MODULES=(
   backend.consequence_engine.importance_scorer_test
   backend.feeds.feeds_test
   backend.feeds.mastodon_osint_test
+  scripts.backfill_prediction_outcomes_test
 )
 
 fail=0
