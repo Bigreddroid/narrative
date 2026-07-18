@@ -1,6 +1,8 @@
 """
-OSINT INGEST — pulls open-source social signals (Reddit), runs each through the LLM
-triage agent, and upserts the survivors as NarrativeEvents (source 'osint_*').
+OSINT INGEST — pulls keyless open-source signals (GDELT news + ransomware.live
+threat-intel + a multi-source RSS/Atom portfolio + the Mastodon public tag timeline),
+runs each through the LLM triage agent, and upserts the survivors as NarrativeEvents
+(source 'osint_*').
 
 Free by default: triage uses the local LLM; when no LLM is permitted/available
 (cost_guard) it degrades to a keyword heuristic. Reuses hazard_ingest_worker._upsert
@@ -15,7 +17,7 @@ import time
 
 from backend.config import get_settings
 from backend.database import AsyncSessionLocal
-from backend.feeds import gdelt_osint, osint_threatintel, rss_osint
+from backend.feeds import gdelt_osint, mastodon_osint, osint_threatintel, rss_osint
 from backend.models.osint_triage_decision import OsintTriageDecision
 from backend.services import cost_guard, osint_agent, runtime_config
 from backend.workers.hazard_ingest_worker import _upsert
@@ -100,11 +102,13 @@ async def run_osint_ingest_worker() -> dict:
             await runtime_config.load(db)
     except Exception as exc:  # noqa: BLE001 — overrides are optional; env is the fallback
         logger.debug("runtime_config load skipped: %s", exc)
+    settings = get_settings()
     fetch, source = _osint_source()
-    # Source batches: the configured news source (GDELT/Reddit) + the additive,
-    # keyless cyber threat-intel feed + the OSINT v2 multi-source RSS/Atom portfolio.
-    # Each batch is triaged under its own source tag so events badge correctly. A
-    # failing feed returns [] (best-effort, no-op) — no single source can starve ingest.
+    # Source batches: the configured news source (keyless GDELT) + the additive,
+    # keyless cyber threat-intel feed + the OSINT v2 multi-source RSS/Atom portfolio +
+    # the keyless Mastodon public tag timeline. Each batch is triaged under its own
+    # source tag so events badge correctly. A failing feed returns [] (best-effort,
+    # no-op) — no single source can starve ingest.
     batches = [
         (await _safe_fetch(fetch(), source), source),
         (await _safe_fetch(osint_threatintel.fetch_threatintel(), osint_threatintel.SOURCE),
@@ -113,6 +117,10 @@ async def run_osint_ingest_worker() -> dict:
     if runtime_config.osint_rss_enabled():
         batches.append((await _safe_fetch(rss_osint.fetch_rss_osint(), rss_osint.SOURCE),
                         rss_osint.SOURCE))
+    if settings.osint_mastodon_enabled:
+        batches.append((await _safe_fetch(
+            mastodon_osint.fetch_mastodon(settings.mastodon_instance, settings.mastodon_tags),
+            mastodon_osint.SOURCE), mastodon_osint.SOURCE))
     total_posts = created = ingested = 0
     decisions: list[dict] = []  # one record per judged post — the triage flywheel
     async with AsyncSessionLocal() as db:

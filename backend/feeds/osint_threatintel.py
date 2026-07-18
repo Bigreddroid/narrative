@@ -6,7 +6,7 @@ adds: most framework entries are interactive investigator tools, but its "Cyber
 Threat Intelligence" branch points at a few feeds, of which ransomware.live exposes a
 keyless JSON of recent ransomware victims (group, victim org, country, sector).
 
-Like the GDELT/Reddit OSINT sources, this only normalizes raw candidates — the LLM
+Like the GDELT/RSS OSINT sources, this only normalizes raw candidates — the LLM
 triage agent (backend/services/osint_agent.py) decides relevance, geolocation and
 importance before a candidate becomes a NarrativeEvent. The candidate shape mirrors
 gdelt_osint so the same triage agent consumes it. Source = 'osint_threatintel'.

@@ -1,10 +1,10 @@
 """
 GDELT OSINT — free, KEYLESS open-source news signal via the GDELT DOC 2.0 API.
 
-This is the default OSINT candidate source. Reddit (backend/feeds/reddit_osint.py)
-is kept wired but blocks both anonymous .json reads and app-credential creation, so
-GDELT is the reliable keyless path: the DOC API works from datacenter IPs (unlike the
-GEO 2.0 endpoint, which 404s — see hazard_ingest_worker) and needs no account.
+This is the default OSINT candidate source. Reddit blocks both anonymous .json reads
+and app-credential creation, so GDELT is the reliable keyless path: the DOC API works
+from datacenter IPs (unlike the GEO 2.0 endpoint, which 404s — see hazard_ingest_worker)
+and needs no account. (Reddit's per-subreddit `.rss` is still ingested via rss_osint.)
 
 The DOC API returns recent global news ARTICLES matching a conflict/disaster/unrest
 query. Like Reddit posts these are NOISY, so parse_gdelt_doc only normalizes raw
