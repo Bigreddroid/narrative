@@ -45,13 +45,6 @@ def normalize_tokens(text: str | None) -> frozenset[str]:
     return frozenset(_stem(t) for t in toks if t not in _STOPWORDS and len(t) > 1)
 
 
-def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
-    if not a or not b:
-        return 0.0
-    inter = len(a & b)
-    return inter / len(a | b) if inter else 0.0
-
-
 def _geo_overlap(geo_a, geo_b) -> bool:
     """Any shared place token between two geography lists (case-insensitive)."""
     ta = {w for g in (geo_a or []) for w in _TOKEN_RE.findall(str(g).lower())}
@@ -70,11 +63,6 @@ TITLE_HIGH = 0.6
 TITLE_MID = 0.45
 CONTAIN = 0.75
 MIN_SHARED = 2  # never merge on a single shared token (usually a generic word)
-
-
-def title_similarity(title_a: str | None, title_b: str | None) -> float:
-    """0..1 token-set Jaccard of two normalized titles."""
-    return _jaccard(normalize_tokens(title_a), normalize_tokens(title_b))
 
 
 def _exact_tokens(text: str | None) -> frozenset[str]:
