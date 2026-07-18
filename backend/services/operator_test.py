@@ -80,7 +80,8 @@ async def _run_tool_stub(db, name, args):
 # ── 1. registry schemas well-formed ──────────────────────────────────────────
 ok("every tool schema is a function with a registered name",
    all(s.get("type") == "function" and s["function"]["name"] in OT.TOOL_NAMES for s in OT.TOOL_SCHEMAS))
-ok("six tools registered", len(OT.TOOL_SCHEMAS) == 6 and "grade_sources" in OT.TOOL_NAMES)
+ok("seven tools registered", len(OT.TOOL_SCHEMAS) == 7
+   and "grade_sources" in OT.TOOL_NAMES and "propose_watchlist_add" in OT.TOOL_NAMES)
 ok("unknown tool returns an error (never raises)",
    asyncio.run(OT.run_tool(None, "does_not_exist", {})).get("error", "").startswith("unknown tool"))
 
@@ -195,6 +196,62 @@ ok("strongest source (usgs -> A) sorts first", out["graded"][0]["grade"][0] == "
 ok("rationale is auditable (non-empty list)",
    all(isinstance(g["rationale"], list) and g["rationale"] for g in out["graded"]))
 ok("event_id scopes output to that one event", one["count"] == 1 and one["graded"][0]["event_id"] == "e2")
+
+
+# ── 8. propose_watchlist_add: pure proposal, grounds against the graph, never writes ──
+# Stub analyst.retrieve_events so "Acme Corp" is grounded (has events) and "Ghost Ltd"
+# is not — no DB touched.
+import backend.services.analyst as _AN
+_saved_retrieve = _AN.retrieve_events
+
+
+async def _fake_retrieve(db, query, limit=8):
+    return [{"id": "x1"}] if "acme" in (query or "").lower() else []
+
+
+_AN.retrieve_events = _fake_retrieve
+try:
+    prop = asyncio.run(OT._propose_watchlist_add(None, entities=["Acme Corp", "acme corp", "Ghost Ltd"],
+                                                 reason="Both keep driving your supply-chain exposure."))
+    empty = asyncio.run(OT._propose_watchlist_add(None, entities=[]))
+    as_str = asyncio.run(OT._propose_watchlist_add(None, entities="Acme Corp, Ghost Ltd"))
+finally:
+    _AN.retrieve_events = _saved_retrieve
+
+ok("proposal dedupes case-insensitively", prop["proposal"]["entities"] == ["Acme Corp", "Ghost Ltd"])
+ok("grounded entities are flagged from the live graph", prop["grounded"] == ["Acme Corp"])
+ok("ungrounded entities are flagged too", prop["ungrounded"] == ["Ghost Ltd"])
+ok("proposal always requires human approval", prop["requires_approval"] is True)
+ok("reason is carried through", prop["proposal"]["reason"].startswith("Both keep driving"))
+ok("empty entity list is a clean error, never a write", empty.get("error") == "no entities proposed")
+ok("a comma-string is accepted like a list", as_str["proposal"]["entities"] == ["Acme Corp", "Ghost Ltd"])
+
+
+# ── 9. operator loop surfaces watchlist_proposals for the UI ──────────────────
+def _script_with_proposal():
+    seq = iter([
+        _res(calls=[ToolCall("search_events", {"query": "chips"}),
+                    ToolCall("propose_watchlist_add", {"entities": ["TSMC"], "reason": "central to your chip exposure"})]),
+        _res(text="TSMC drives your semiconductor exposure. Action: dual-source."),
+    ])
+    def stub(messages, tools, max_tokens=1024, model=None):
+        return next(seq)
+    return stub
+
+
+async def _run_tool_with_proposal(db, name, args):
+    if name == "propose_watchlist_add":
+        return {"proposal": {"entities": ["TSMC"], "reason": "central to your chip exposure"},
+                "grounded": ["TSMC"], "ungrounded": [], "requires_approval": True}
+    return _TOOL_OUT.get(name, {"ok": True})
+
+
+with _Patch(complete_tools=_script_with_proposal(), run_tool=_run_tool_with_proposal):
+    out = asyncio.run(operator.answer_question_agentic(None, "chip exposure?"))
+ok("watchlist_proposals surfaced on the payload",
+   [e for p in out.get("watchlist_proposals", []) for e in p["proposal"]["entities"]] == ["TSMC"])
+ok("proposal also recorded in the trace summary",
+   any(t["tool"] == "propose_watchlist_add" and "TSMC" in t["summary"] for t in out["trace"]))
 
 
 print(f"\noperator: {passed} passed, {failed} failed")

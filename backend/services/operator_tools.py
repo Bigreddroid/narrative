@@ -158,6 +158,48 @@ async def _grade_sources(db, query: str | None = None, event_id: str | None = No
     return {"graded": graded, "count": len(graded)}
 
 
+_MAX_PROPOSALS = 6
+
+
+async def _propose_watchlist_add(db, entities=None, reason: str = "", **_) -> dict:
+    """Propose entities for the user's watchlist. NEVER writes — the operator is
+    read-only; this only surfaces a suggestion the UI turns into a one-click, human-
+    approved 'Add to watchlist'. Each proposed name is grounded against the live graph
+    (does the platform actually see events about it?) so the user is never asked to
+    watch something with no signal behind it."""
+    if isinstance(entities, str):
+        entities = entities.split(",")
+    seen: set = set()
+    norm: list[str] = []
+    for e in (entities or []):
+        name = str(e).strip()[:80]
+        key = name.lower()
+        if name and key not in seen:
+            seen.add(key)
+            norm.append(name)
+        if len(norm) >= _MAX_PROPOSALS:
+            break
+    if not norm:
+        return {"error": "no entities proposed"}
+
+    grounded: list[str] = []
+    for name in norm:
+        try:
+            hits = await analyst.retrieve_events(db, name, limit=1)
+        except Exception:  # noqa: BLE001 — grounding is best-effort; absence ≠ failure
+            hits = []
+        if hits:
+            grounded.append(name)
+
+    return {
+        "proposal": {"entities": norm, "reason": str(reason or "").strip()[:300]},
+        "grounded": grounded,
+        "ungrounded": [n for n in norm if n not in grounded],
+        "requires_approval": True,
+        "note": "Proposed watchlist additions — the user must approve before anything is saved.",
+    }
+
+
 # ── registry: name → (callable, JSON schema) ─────────────────────────────────
 _REGISTRY: dict[str, dict] = {
     "search_events": {
@@ -266,6 +308,30 @@ _REGISTRY: dict[str, dict] = {
                         "event_id": {"type": "string",
                                      "description": "grade a single event id from search_events"},
                     },
+                },
+            },
+        },
+    },
+    "propose_watchlist_add": {
+        "fn": _propose_watchlist_add,
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "propose_watchlist_add",
+                "description": "Propose one or more entities (a company, supplier, port, country, "
+                               "counterparty) for the user's watchlist when the analysis shows they "
+                               "keep driving consequences the user cares about. This does NOT save "
+                               "anything — it surfaces a suggestion the user approves with one click. "
+                               "Use sparingly, only for entities central to your answer.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "entities": {"type": "array", "items": {"type": "string"},
+                                     "description": "entity names to propose (max 6)"},
+                        "reason": {"type": "string",
+                                   "description": "one sentence: why these are worth watching"},
+                    },
+                    "required": ["entities"],
                 },
             },
         },
