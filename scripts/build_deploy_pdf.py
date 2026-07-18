@@ -79,7 +79,7 @@ story = []
 # ── Header band ──────────────────────────────────────────────────────────────
 band = Table([[Paragraph("THE NARRATIVE", TITLE)],
               [Paragraph("Production Deployment Runbook &nbsp;&middot;&nbsp; Railway + Vercel", SUBT)],
-              [Paragraph("Generated 2026-06-21 &nbsp;&middot;&nbsp; target hosting ~$30–$50/mo", SUBT)]],
+              [Paragraph("Generated 2026-07-18 &nbsp;&middot;&nbsp; target hosting ~$30–$50/mo", SUBT)]],
              colWidths=[CONTENT_W])
 band.setStyle(TableStyle([
     ("BACKGROUND", (0,0), (-1,-1), HEADBG),
@@ -99,9 +99,11 @@ story += [para(
     "to the Railway API. The Consequence Propagation Engine is deterministic — <b>no LLM at serving "
     "time</b> — so running cost is dominated by hosting, not tokens.")]
 story += [para(
-    "<b>Cost reality (measured):</b> the entire Claude spend to build the current dataset "
-    "(354 mapped events from 1,613 articles over 11 days) was <b>$2.10</b> — about <b>$6/month</b> "
-    "at this ingestion rate. Hosting is the lever.", BODY)]
+    "<b>Cost reality:</b> the LLM is <b>local-only (Ollama), $0</b> — there is no paid LLM "
+    "provider. The consequence-mapping worker runs the local model when one is reachable and "
+    "<b>skips cleanly</b> when it is not, so the pipeline runs at zero token spend by default. "
+    "The only optionally-paid provider is Voyage embeddings (off unless you enable it). "
+    "Hosting is the only real cost lever.", BODY)]
 story += [Spacer(1,4), table([
     ["Path", "Hosting", "Total / month"],
     ["Lean", "1 small VPS (docker-compose) + Vercel free", "~$15–$25"],
@@ -112,8 +114,9 @@ story += [Spacer(1,4), table([
 # ── 2. Pre-deploy ────────────────────────────────────────────────────────────
 story += [para("2 &nbsp; Pre-deploy checklist", H1)]
 story += bullets([
-    "<b>Rotate</b> the Anthropic + Voyage keys in their consoles — the old ones leaked via the "
-    "OneDrive <span face='Courier'>.env</span>. New keys go into Railway variables only, never committed.",
+    "<b>Rotate</b> the Voyage + AISStream keys in their consoles — the old ones leaked via the "
+    "OneDrive <span face='Courier'>.env</span>. New keys go into Railway/Vercel variables only, never "
+    "committed. (There is no LLM key to rotate — the LLM is local-only.)",
     "Confirm the canonical repo copy (three exist on disk; only the OneDrive copy is git-initialized).",
     "Generate a JWT secret: <span face='Courier'>openssl rand -hex 32</span>.",
 ])
@@ -142,8 +145,8 @@ story += [code(
 "REDIS_URL    = ${{ Redis.REDIS_URL }}\n"
 "APP_ENV      = production                  # disables /docs, runs gunicorn\n"
 "SECRET_KEY   = <openssl rand -hex 32>\n"
-"ANTHROPIC_API_KEY = <rotated>\n"
-"VOYAGE_API_KEY    = <rotated>\n"
+"LLM_PROVIDER = off                         # no local Ollama in cloud; AI paths degrade cleanly\n"
+"VOYAGE_API_KEY    = <rotated, optional>    # only if EMBEDDINGS_PROVIDER=voyage\n"
 "ALLOWED_ORIGINS   = https://<your-app>.vercel.app\n"
 "APP_BASE_URL      = https://<your-app>.vercel.app")]
 story += [para("Full required/optional list is in <span face='Courier'>.env.production.example</span>. The api "
@@ -192,24 +195,26 @@ story += [code(
 "                  default_limits=[\"120/minute\"],   # <- edit here\n"
 "                  storage_uri=_storage_uri, swallow_errors=True)")]
 
-story += [para("7.2 &nbsp; Claude (token) cost caps", H2)]
+story += [para("7.2 &nbsp; LLM posture (local, $0)", H2)]
 story += [para(
-    "The only paid LLM step is <span face='Courier'>mapping_worker</span>, which is budget-routed "
-    "(a small number of deep Claude calls per run). Cost alerting + budget are configured via env:", BODY)]
+    "The LLM is <b>local-only</b>: <span face='Courier'>LLM_PROVIDER</span> accepts "
+    "<span face='Courier'>ollama</span> (local/free) or <span face='Courier'>off</span>. There is no paid "
+    "LLM provider and no LLM API key — so there is no token spend to cap. Railway has no local Ollama, "
+    "so the two supported cloud postures are:", BODY)]
 story += [table([
-    ["Env var", "Default", "Effect"],
-    ["CLAUDE_DAILY_COST_ALERT_USD", "20", "alert when day's Claude spend exceeds it"],
-    ["CLAUDE_MONTHLY_BUDGET_USD", "200", "monthly budget ceiling for alerting"],
-    ["ADMIN_ALERT_EMAIL", "(unset)", "where budget alerts are emailed (needs SMTP)"],
-    ["CONSEQUENCE_ENGINE_MODEL", "claude-sonnet-4", "model used for mapping (cost driver)"],
-], [2.5*inch, 1.2*inch, 2.8*inch])]
+    ["Posture", "Set", "Behaviour"],
+    ["Ship without local-LLM features", "LLM_PROVIDER=off", "AI paths degrade cleanly; nothing 500s"],
+    ["Full AI stack", "OLLAMA_BASE_URL &rarr; a reachable Ollama", "text (llama3.2) + vision (llava) enabled"],
+    ["Embeddings", "EMBEDDINGS_PROVIDER=local", "free (fastembed); voyage is opt-in paid"],
+], [2.3*inch, 2.3*inch, 2.0*inch])]
 story += [para(
-    "Ingestion cadence also caps spend — slower intervals = fewer mappings = lower cost. Tune in env "
-    "(<span face='Courier'>SCRAPE_INTERVAL_HOURS</span>, <span face='Courier'>MAPPING_INTERVAL_MINUTES</span>, "
-    "thresholds <span face='Courier'>IMPORTANCE_THRESHOLD_DEEP/LIGHT</span>). Real measured rate: "
-    "~$0.19/day. Live spend is visible in the <span face='Courier'>pipeline_metrics</span> table and the "
-    "admin Cost dashboard.", SMALL)]
-story += [para("To run with <b>zero</b> ongoing LLM spend, simply don't deploy the scheduler service — the "
+    "With <span face='Courier'>LLM_PROVIDER=off</span>, every LLM-touching path degrades honestly rather "
+    "than erroring — the Analyst chat returns a templated answer (flagged <span face='Courier'>degraded</span>), "
+    "the agentic operator falls back to the deep reasoner, IMINT/geolocate return "
+    "<span face='Courier'>{available:false}</span>, and the consequence-mapping worker skips "
+    "(<span face='Courier'>skipped: no_llm</span>) leaving ingest/cluster/score/exposure fully intact. "
+    "Verified across analyst, operator, imint, geolocate and reasoner: no endpoint 500s with the LLM off.", SMALL)]
+story += [para("To run with <b>zero</b> ongoing LLM work entirely, simply don't deploy the scheduler service — the "
                "api keeps serving the existing data and the deterministic exposure engine.", BODY)]
 
 # ── 8. Verify ────────────────────────────────────────────────────────────────
@@ -221,8 +226,9 @@ story += [code(
 "#   - /admin loads for an admin-tier user\n"
 "#   - burst >120 req/min on an endpoint returns HTTP 429\n"
 "#   - /docs is DISABLED (APP_ENV=production)")]
-story += [para("Verified locally before this runbook: 9/9 backend test files, 3/3 frontend test suites, "
-               "production build, and all 11 main API endpoints returning real data.", SMALL)]
+story += [para("Verified locally before this runbook: the full backend suite (20 standalone test "
+               "modules) and frontend suites (7) green, production build, and the main API endpoints "
+               "returning real data.", SMALL)]
 
 # ── 9. Rollback ──────────────────────────────────────────────────────────────
 story += [para("9 &nbsp; Rollback &amp; ops notes", H1)]

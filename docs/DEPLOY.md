@@ -10,10 +10,11 @@ calls the API at the relative path `/api/v1`, and Vercel rewrites that to Railwa
 ## 0. Gather secrets first
 The pipeline runs free/local by default (Ollama + fastembed) — no AI keys required.
 See `docs/COST.md`. The keys below are **optional** unless you opt into paid providers.
-- **Anthropic** API key (`ANTHROPIC_API_KEY`) — optional; only used when
-  `PAID_APIS_ENABLED=true` and `LLM_PROVIDER=anthropic`.
-- **Voyage** API key (`VOYAGE_API_KEY`) — optional; only used when
-  `PAID_APIS_ENABLED=true` and `EMBEDDINGS_PROVIDER=voyage`.
+- **LLM is local-only** — `LLM_PROVIDER` accepts `ollama` (local/free) or `off`. There is
+  no paid LLM provider (Anthropic was removed); no LLM API key exists or is needed. See
+  §1.3 for the cloud posture, since Railway has no local Ollama.
+- **Voyage** API key (`VOYAGE_API_KEY`) — optional; the only opt-in paid provider, used
+  for embeddings solely when `PAID_APIS_ENABLED=true` and `EMBEDDINGS_PROVIDER=voyage`.
 - The world map needs no token (d3/topojson).
 - **Stripe** (test mode is fine to start): `STRIPE_SECRET_KEY`, a recurring **Price ID**
   (`STRIPE_PRICE_ID`), and later `STRIPE_WEBHOOK_SECRET`.
@@ -33,18 +34,25 @@ See `docs/COST.md`. The keys below are **optional** unless you opt into paid pro
    - `DATABASE_URL` = the Railway Postgres URL, but with the async driver:
      `postgresql+asyncpg://USER:PASS@HOST:PORT/DB` (swap `postgresql://` →
      `postgresql+asyncpg://`).
-   - `REDIS_URL`, `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `SECRET_KEY`.
+   - `REDIS_URL`, `VOYAGE_API_KEY` (optional), `SECRET_KEY`.
    - `APP_ENV=production`, `APP_BASE_URL=https://<your-vercel-domain>`,
      `ALLOWED_ORIGINS=https://<your-vercel-domain>`.
    - Stripe: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID` (webhook secret added in step 4).
-   - **AI Analyst (no Ollama in the cloud):** Railway has no local LLM, so the
-     default `LLM_PROVIDER=ollama` leaves the Analyst chat / consequence mapping
-     with no model. To turn them on, set `LLM_PROVIDER=anthropic`,
-     `PAID_APIS_ENABLED=true`, and a non-zero spend cap
-     (`CLAUDE_HARD_CAP_DAILY_USD` / `CLAUDE_HARD_CAP_MONTHLY_USD` — they default to
-     `0.0`, which blocks all paid calls). Leave `EMBEDDINGS_PROVIDER=local` to keep
-     embeddings free (fastembed). Skip this only if you intend to ship without the
-     AI Analyst.
+   - **AI paths in the cloud (no local Ollama on Railway):** the LLM is local-only, so
+     the default `LLM_PROVIDER=ollama` pointing at `localhost:11434` cannot reach a model
+     in the cloud. Two supported postures:
+     - **Ship without the local-LLM features (simplest, $0):** set `LLM_PROVIDER=off`.
+       Every LLM-touching path degrades honestly rather than erroring — the Analyst chat
+       returns a templated answer (flagged `degraded`), the agentic operator falls back to
+       the deep reasoner, and IMINT/geolocate return `{available: false, reason}`. **No
+       endpoint 500s** with the LLM off (verified across analyst, operator, imint,
+       geolocate, reasoner). Everything else — feeds, map, exposure, scoring — is
+       unaffected.
+     - **Enable the full AI stack:** run Ollama as its own reachable service (a separate
+       Railway service on the `ollama/ollama` image, or an external host) with the models
+       pulled (`llama3.2` for text, `llava` for vision), then point `OLLAMA_BASE_URL` at
+       it. Leave `LLM_PROVIDER=ollama`.
+     Either way leave `EMBEDDINGS_PROVIDER=local` to keep embeddings free (fastembed).
    - **Live-news channels (optional iptv-org expansion):** the in-app player ships
      a curated set of **official** broadcaster streams by default (publisher HLS +
      official YouTube-live embeds — reliable, $0, keyless). The per-country *local*
@@ -55,12 +63,36 @@ See `docs/COST.md`. The keys below are **optional** unless you opt into paid pro
      always win on de-dupe, and a failed iptv-org fetch degrades gracefully to the
      curated set.
 4. **Deploy.** The `api` service runs `alembic ... upgrade head` then gunicorn, and
-   exposes `/health` for the healthcheck. First boot auto-migrates the DB.
-5. **Workers (cost control):** the full `scheduler` runs the paid mapping (Claude) +
-   embedding (Voyage) workers. For a cheap beta, you can **pause** the heavy worker
-   services in Railway and keep only `api` (+ optionally a free-feed loop) running —
-   the live free feeds (quakes/storms/launches/market) still flow via the
-   `hazard_ingest`/`market_ingest` steps.
+   exposes `/health` for the healthcheck. First boot auto-migrates the DB, and every
+   redeploy applies any new migrations automatically (migrations `008`+ are all guarded
+   idempotent DDL, so re-running is safe).
+   - **Upgrading an already-live prod (schema-drift heal):** if this prod was last
+     deployed before mid-July 2026 it is at migration `011`; the deploy will apply `012`
+     (`int_discipline` on events) and `013` (`disciplines[]` on users) on boot — no manual
+     step. **But** a known prior drift left `osint_triage_decisions` (migration `009`)
+     *missing while alembic-version was already past it*. Because that table's DDL is
+     `CREATE TABLE IF NOT EXISTS`, `upgrade head` will **not** re-create it. If the OSINT
+     triage table is absent in prod, heal it by running its idempotent DDL directly once
+     (safe no-op if it already exists):
+     ```sql
+     CREATE TABLE IF NOT EXISTS osint_triage_decisions (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       external_id TEXT NOT NULL, source TEXT NOT NULL, kept BOOLEAN NOT NULL,
+       reason TEXT NOT NULL, method TEXT NOT NULL, category TEXT,
+       confidence DOUBLE PRECISION, importance INTEGER, title TEXT,
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     );
+     ```
+     Check with `SELECT to_regclass('osint_triage_decisions');` (NULL ⇒ run the DDL above).
+5. **Workers (cost control):** the `scheduler` runs the full pipeline — including the
+   consequence **mapping** worker, which now uses the **local LLM** (Ollama, $0), not a
+   paid provider. With `LLM_PROVIDER=off` (the cloud default when no Ollama is reachable)
+   the mapping worker skips cleanly (`skipped: no_llm`) — events still ingest, cluster and
+   score; they just don't get an LLM-written consequence chain. The only optionally-paid
+   worker is embedding, and only if you set `EMBEDDINGS_PROVIDER=voyage`. For a lean beta
+   you can **pause** the heavy worker services in Railway and keep only `api` (+ a
+   free-feed loop) running — the live free feeds (quakes/storms/launches/market) still
+   flow via the `hazard_ingest`/`market_ingest` steps.
 6. Note the public API URL, e.g. `https://narrative-api-production.up.railway.app`.
 
 ---
