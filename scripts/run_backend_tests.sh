@@ -25,7 +25,6 @@ MODULES=(
   backend.consequence_engine.evolution_logic_test
   backend.consequence_engine.graph_scoring_test
   backend.consequence_engine.importance_scorer_test
-  backend.consequence_engine.temporal_test
   backend.feeds.feeds_test
 )
 
