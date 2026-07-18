@@ -16,6 +16,11 @@ The read-out is returned either way. A failure to place the image degrades to
 event.persisted=false with a reason; it never fabricates a coordinate, and it never
 costs the operator the interpretation they already have.
 
+Re-uploads are answered hash-first: the sha256 of the bytes is checked against
+existing IMINT events BEFORE any vision call, so the same photo never burns a second
+pair of multi-minute llava passes — the response carries deduped=true and the
+existing event id instead of a fresh trace.
+
 Scope is honestly bounded: interpretation of provided imagery only — no satellite
 tasking, no commercial-imagery purchase. Paid-tier feature. Runs free on a local
 multimodal model or Claude vision when paid APIs are enabled; degrades to an honest
@@ -41,6 +46,24 @@ router = APIRouter(prefix="/imint", tags=["imint"])
 
 _MAX_BYTES = 8 * 1024 * 1024  # 8 MB — generous for a photo/frame, bounds memory/cost
 _ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+async def _existing_event_id(db, sha: str) -> str | None:
+    """The event a previous upload of this exact image already created, if any.
+
+    A vision pass costs minutes on CPU, and the ingest path's (source, external_id)
+    dedupe only kicks in AFTER both calls have been burned. The sha256 is computed
+    from the uploaded bytes before any model runs, so a re-upload is answered from
+    the database instead. A fold points at its canonical, same as _persist below.
+    """
+    row = (await db.execute(
+        select(NarrativeEvent)
+        .where(NarrativeEvent.source == imint_event.SOURCE)
+        .where(NarrativeEvent.external_id == sha)
+    )).scalars().first()
+    if row is None:
+        return None
+    return str(row.merged_into_id or row.id)
 
 
 async def _persist(interpretation: dict, image_b64: str, media_type: str, sha: str, db) -> dict:
@@ -97,6 +120,26 @@ async def interpret_image(
     if len(data) > _MAX_BYTES:
         raise HTTPException(status_code=413, detail="Image too large (max 8 MB).")
 
+    # Hash-first dedupe, BEFORE any vision call: two llava passes cost minutes on CPU,
+    # so a re-upload of bytes we already interpreted is answered from the database.
+    # Deliberately ahead of the cost guard too — returning an existing event spends
+    # nothing, so it works even while the LLM budget is exhausted. persist=false is
+    # an explicit request for a fresh read-out and skips this.
+    sha = imint_event.image_sha256(data)
+    if persist:
+        existing_id = await _existing_event_id(db, sha)
+        if existing_id is not None:
+            return {
+                "available": True,
+                "deduped": True,
+                "scope": imint.SCOPE_NOTE,
+                "event": {
+                    "persisted": True,
+                    "reason": "This exact image was already interpreted; returning its existing event.",
+                    "event_id": existing_id,
+                },
+            }
+
     # Blocks paid spend unless the active provider is free OR within the hard cap.
     if not await cost_guard.llm_allowed(db):
         raise HTTPException(status_code=503, detail="IMINT is temporarily unavailable (LLM budget or model offline).")
@@ -116,7 +159,6 @@ async def interpret_image(
         return {**interpretation,
                 "event": {"persisted": False, "reason": "No assessment to place."}}
 
-    outcome = await _persist(interpretation, image_b64, media_type,
-                             imint_event.image_sha256(data), db)
+    outcome = await _persist(interpretation, image_b64, media_type, sha, db)
     location = outcome.pop("location", None)
     return {**interpretation, "location": location, "event": outcome}

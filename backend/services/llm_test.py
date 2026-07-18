@@ -131,5 +131,48 @@ ok("negative floors at zero", llm.normalize_confidence(-5) == 0.0)
 ok("garbage → zero, never raises", llm.normalize_confidence("banana") == 0.0)
 ok("None → zero", llm.normalize_confidence(None) == 0.0)
 
+# ── salvage_truncated_json: recover what the model DID finish saying ──────────
+# All three fixtures below are REAL llava output, captured live (2026-07-17) by
+# running the production imint/geolocate prompts against ollama with a low
+# num_predict — the same done_reason=length truncation the 1200-token production
+# ceiling produces, just cheaper to reproduce. Do not "fix" their formatting.
+
+# Cut immediately after a dangling key ("act": {"place": "", "country": ← here).
+_TRUNC_DANGLING_KEY = '{"observe": ["Concrete road with vehicles on both sides", "Green trees lining one side of the road", "Clear sky overhead", "Overcast clouds in the distance"],\n"orient": ["The road curves gently to the right", "No visible signage indicating language or location"],\n"decide": [{"place": "", "country": "", "lat": 0.0, "lng": 0.0, "confidence": 10, "why": "Insufficient visible geographic clues for accurate geolocation."}],\n"act": {"place": "", "country":'
+
+# Cut mid-KEY inside the first decide candidate ("place ← here, quote never closed).
+_TRUNC_MID_KEY = '{\n  "observe": [\n    "The image shows a computer screen with a web page open.",\n    "The title \'world news\' is visible at the top of the screen.",\n    "There are four cards with place names and their corresponding latitude and longitude values, each accompanied by one or two sentences providing a reason for the location",\n    "The text on the image reads \'Welcome to the world, discover what matters most in the world. How does it affect you? Let\'s take a look!\'",\n    "There are icons representing different types of news categories, such as sports, politics, and technology",\n    "The background of the computer screen shows a map with various locations marked."\n  ],\n  "orient": [\n    "The title \'world news\' suggests that the location is likely within an English-speaking country or region, given the term \'world\'"\n  ],\n  "decide": [\n    {\n      "place'
+
+# Cut mid-STRING inside the observe array (the sixth observation never finishes).
+_TRUNC_MID_STRING = '{\n  "observe": [\n    "The image displays a computer screen with an interface for a satellite or aerial photo viewing application.",\n    "There is a text box in the upper left corner that reads \'World news\'.",\n    "On the right side, there are several images and icons with various geographical locations marked on them.",\n    "The image shows different colored regions highlighted on the map. These highlights may indicate specific areas of interest or concern.",\n    "There is a menu bar at the top of the screen with options like \'File\', \'Edit\', \'View\', \'Go\', and \'Tools\'.",\n    "Below this, there is another menu bar with sub-options for'
+
+d = llm.salvage_truncated_json(_TRUNC_DANGLING_KEY)
+ok("dangling key: the complete decide candidate survives",
+   isinstance(d, dict) and d.get("decide", [{}])[0].get("why", "").startswith("Insufficient"))
+ok("dangling key: every finished section survives",
+   d is not None and len(d.get("observe", [])) == 4 and len(d.get("orient", [])) == 2)
+ok("dangling key: the half-emitted pair is dropped, not invented",
+   d is not None and "country" not in d.get("act", {"country": "sentinel"}) or d.get("act") == {"place": ""})
+
+d = llm.salvage_truncated_json(_TRUNC_MID_KEY)
+ok("mid-key: observe and orient survive in full",
+   isinstance(d, dict) and len(d.get("observe", [])) == 6 and len(d.get("orient", [])) == 1)
+ok("mid-key: no phantom decide entry is fabricated",
+   d is not None and all(x for x in d.get("decide", [])))
+
+d = llm.salvage_truncated_json(_TRUNC_MID_STRING)
+ok("mid-string: the five finished observations survive",
+   isinstance(d, dict) and len(d.get("observe", [])) == 5)
+ok("mid-string: the partial sixth observation is dropped, not half-quoted",
+   d is not None and all("sub-options" not in x for x in d.get("observe", [])))
+
+ok("a complete object still parses whole",
+   llm.salvage_truncated_json('{"a": [1, 2], "b": {"c": 3}}') == {"a": [1, 2], "b": {"c": 3}})
+ok("truncated mid-number: the partial value is dropped",
+   llm.salvage_truncated_json('{"lat": 24.7, "confidence": 0.') == {"lat": 24.7})
+ok("no JSON at all → None, never raises", llm.salvage_truncated_json("I think it's a tank") is None)
+ok("nothing salvageable → None", llm.salvage_truncated_json('{"') is None)
+ok("a top-level array is not promoted to a dict", llm.salvage_truncated_json('["a", "b"') is None)
+
 print(f"\nllm: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

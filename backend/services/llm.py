@@ -77,6 +77,66 @@ def normalize_confidence(v) -> float:
     return max(0.0, min(1.0, f))
 
 
+def salvage_truncated_json(text: str) -> dict | None:
+    """Best-effort recovery of a JSON object the model truncated mid-output.
+
+    llava under a token ceiling routinely stops mid-string or mid-value on the long
+    OODA payloads imint/geolocate ask for, and json.loads then throws the ENTIRE
+    read-out away — minutes of CPU vision work lost to a missing close-brace. The
+    rule here is deliberately conservative: trim back to the last COMPLETE value,
+    drop whatever partial token follows, and close the braces/brackets still open.
+    Nothing is ever invented — a salvaged parse contains only key/values the model
+    fully emitted, so the honesty gates downstream still judge real model output.
+
+    Returns the parsed dict, or None when no usable prefix parses (callers keep
+    their existing "did not return a usable X" degrade path).
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+    t = text[start:]
+
+    # One forward pass: every comma OUTSIDE a string is a safe trim point (it always
+    # sits just after a complete value), recorded with the closers open at that spot.
+    cuts: list[tuple[int, str | None]] = []
+    stack: list[str] = []
+    in_str = esc = False
+    for i, ch in enumerate(t):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if stack:
+                stack.pop()
+        elif ch == ",":
+            cuts.append((i, "".join(reversed(stack))))
+    # The full text is also a candidate — unless it ends inside a string, where the
+    # only honest move is trimming back past the partial token (closing the quote
+    # could turn half a key or half a sentence into a "finding").
+    cuts.append((len(t), None if in_str else "".join(reversed(stack))))
+
+    for pos, closers in reversed(cuts):
+        if closers is None:
+            continue
+        candidate = t[:pos].rstrip().rstrip(",") + closers
+        try:
+            data = json.loads(candidate)
+        except (json.JSONDecodeError, ValueError):
+            continue  # e.g. cut landed after a bare key or partial number — try earlier
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 def active_provider() -> str:
     """The provider actually used right now. Reads the runtime override (set via the
     admin Settings panel) falling back to the env default. Only local providers exist,
