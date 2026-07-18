@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 
+from backend.geo import haversine_km
 from backend.taxonomy import DISCIPLINES
 
 # Tuned "secret sauce" — versioned with the model. SERVER-SIDE ONLY.
@@ -34,15 +35,6 @@ CORROB_W = 0.4            # max importance uplift from full corroboration (+40%)
 # the fusion is opt-in and every existing corroboration test holds until it's tuned.
 XDISC_W = 0.0
 _N_DISC = len(DISCIPLINES)
-
-
-def _haversine_km(lat1, lng1, lat2, lng2) -> float:
-    r = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lng2 - lng1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
 def corroborate(events: list[dict], radius_km: float = DEFAULT_RADIUS_KM,
@@ -78,7 +70,7 @@ def corroborate(events: list[dict], radius_km: float = DEFAULT_RADIUS_KM,
                 continue
             if abs(ots - ts) > window_ms:
                 continue
-            if _haversine_km(lat, lng, olat, olng) <= radius_km:
+            if haversine_km(lat, lng, olat, olng) <= radius_km:
                 corroborating.add(osrc)
                 od = o.get("discipline")
                 if od:

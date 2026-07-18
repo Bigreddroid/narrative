@@ -52,18 +52,6 @@ _USER = ("Geolocate this photograph. Extract every usable geographic clue, reaso
          "step, and return the JSON schema exactly. Coordinates must be plausible decimals.")
 
 
-def _clean_json(text: str) -> str:
-    """Strip accidental markdown fences and any prose around the JSON object."""
-    t = text.strip()
-    if t.startswith("```"):
-        t = t.strip("`")
-        nl = t.find("\n")
-        if nl != -1 and t[:nl].strip().lower() in ("json", ""):
-            t = t[nl + 1:]
-    start, end = t.find("{"), t.rfind("}")
-    return t[start:end + 1] if start != -1 and end != -1 else t
-
-
 def _coord(v, lo: float, hi: float):
     try:
         f = float(v)
@@ -145,7 +133,7 @@ def geolocate(image_b64: str, media_type: str = "image/jpeg") -> dict:
         }
 
     try:
-        data = json.loads(_clean_json(result.text))
+        data = json.loads(llm.clean_json(result.text))
     except (json.JSONDecodeError, ValueError):
         # llava truncates long outputs mid-string under the token ceiling; salvage the
         # complete prefix rather than discarding minutes of CPU vision work.

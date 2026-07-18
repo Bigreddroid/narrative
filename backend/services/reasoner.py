@@ -43,22 +43,6 @@ class _CallBudget:
         return True
 
 
-def _clean_json(text: str) -> str:
-    """Strip accidental markdown fences / prose around a JSON value (obj or array)."""
-    t = (text or "").strip()
-    if t.startswith("```"):
-        t = t.strip("`")
-        nl = t.find("\n")
-        if nl != -1 and t[:nl].strip().lower() in ("json", ""):
-            t = t[nl + 1:]
-    # Prefer the outermost object; fall back to an array.
-    for lo, hi in (("{", "}"), ("[", "]")):
-        start, end = t.find(lo), t.rfind(hi)
-        if start != -1 and end != -1 and end > start:
-            return t[start:end + 1]
-    return t
-
-
 async def _llm(db, system: str, user: str, budget: _CallBudget, max_tokens: int,
                json_mode: bool = False) -> str | None:
     """One cost-gated, budget-counted completion. Returns text, or None when the
@@ -120,7 +104,7 @@ async def _orient(db, question: str, context: str, watched: list[str],
     if not raw:
         return []
     try:
-        data = json.loads(_clean_json(raw))
+        data = json.loads(llm.clean_json(raw))
     except (json.JSONDecodeError, ValueError):
         return []
     threads = data.get("threads") if isinstance(data, dict) else data
