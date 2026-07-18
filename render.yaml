@@ -1,0 +1,134 @@
+# ════════════════════════════════════════════════════════════════════════════
+#  Render Blueprint — drop-in parity with railway.toml (escape hatch off Railway)
+#
+#  Topology (identical to Railway): ONE api web service + ONE scheduler worker,
+#  a managed Postgres (pgvector), and a managed Redis. The scheduler is a real
+#  `type: worker` (persistent background loop) — the reason serverless PaaSes
+#  can't host this app unchanged.
+#
+#  Deploy:  Render Dashboard → New → Blueprint → pick this repo.
+#  Render reads this file, provisions all four, and wires the private URLs.
+#
+#  AFTER first deploy, set these two by hand (marked `sync: false`) to your
+#  Vercel domain:  ALLOWED_ORIGINS  and  APP_BASE_URL.
+# ════════════════════════════════════════════════════════════════════════════
+
+databases:
+  - name: narrative-postgres
+    # Render managed Postgres supports the `vector` extension; migration 001 runs
+    # `CREATE EXTENSION vector` + `pg_trgm` on first boot. Use a paid plan for a
+    # persistent disk (the free tier expires after 30 days).
+    plan: basic-256mb
+    postgresMajorVersion: "16"
+    ipAllowList: []          # empty ⇒ internal-only (services reach it privately)
+
+services:
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  - type: redis
+    name: narrative-redis
+    plan: starter
+    ipAllowList: []          # internal-only
+    # Broker/cache workload — do not evict keys the pipeline is mid-processing.
+    maxmemoryPolicy: noeviction
+
+  # ── API (public HTTP) ────────────────────────────────────────────────────────
+  - type: web
+    name: narrative-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: standard
+    healthCheckPath: /health
+    autoDeploy: true
+    # The app feeds DATABASE_URL straight into create_async_engine and does NOT
+    # rewrite the scheme, but Render's managed Postgres only hands out a plain
+    # `postgresql://` URL. So we normalize it to the +asyncpg driver at runtime
+    # (zero code change), then migrate, then serve on Render's injected $PORT.
+    dockerCommand: >-
+      sh -c 'export DATABASE_URL=$(echo "$DATABASE_URL" | sed "s#^postgresql://#postgresql+asyncpg://#")
+      && alembic -c backend/alembic.ini upgrade head
+      && gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker
+      --workers 2 --bind 0.0.0.0:$PORT --timeout 120 --access-logfile -'
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: narrative-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: narrative-redis
+          property: connectionString
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true          # Render mints a strong random JWT key once
+      # AI: no local Ollama on Render → ship degraded-honest ($0). Every
+      # LLM-touching path returns a flagged/templated result instead of 500ing.
+      # To enable full AI, run Ollama as its own reachable host and set
+      # LLM_PROVIDER=ollama + OLLAMA_BASE_URL=<that host>.
+      - key: LLM_PROVIDER
+        value: "off"
+      - key: EMBEDDINGS_PROVIDER
+        value: local                 # fastembed (bge-large), keyless/$0
+      - key: PAID_APIS_ENABLED
+        value: "false"
+      # ── set by hand after first deploy (your Vercel domain) ──
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      # ── optional integrations (leave unset ⇒ feature degrades gracefully) ──
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+
+  # ── Scheduler (persistent background worker — the whole pipeline) ────────────
+  - type: worker
+    name: narrative-scheduler
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: standard              # loads bge-large (~1.3 GB) + runs 16 workers
+    autoDeploy: true
+    dockerCommand: >-
+      sh -c 'export DATABASE_URL=$(echo "$DATABASE_URL" | sed "s#^postgresql://#postgresql+asyncpg://#")
+      && python -m backend.scheduler'
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: narrative-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: narrative-redis
+          property: connectionString
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        fromService:               # share the api's generated key
+          type: web
+          name: narrative-api
+          envVarKey: SECRET_KEY
+      - key: LLM_PROVIDER
+        value: "off"
+      - key: EMBEDDINGS_PROVIDER
+        value: local
+      - key: PAID_APIS_ENABLED
+        value: "false"
+      # Persist the fastembed ONNX model across restarts (else re-downloaded each
+      # boot). Requires a disk mounted at this path (below).
+      - key: FASTEMBED_CACHE_DIR
+        value: /var/fastembed_cache
+    disk:
+      name: fastembed-cache
+      mountPath: /var/fastembed_cache
+      sizeGB: 5
