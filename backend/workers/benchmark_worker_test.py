@@ -133,5 +133,66 @@ ok("as_dict autocast carries bss", ab["bss"] == 0.55)
 ok("as_dict engine_gated present", payload["engine_gated"]["requires_n"] == required)
 ok("as_dict payload pure ASCII", _is_ascii(payload))
 
+# --- ledger publish gate: only the authoritative host publishes ---
+# Railway runs this same LLM-free worker against its own DB; two publishers fork
+# the audit chain. benchmark_publish_enabled=False must skip the publish call
+# entirely (not error) while still persisting a row with the fresh numbers.
+ok("publish flag defaults True", bw.settings.benchmark_publish_enabled is True)
+
+
+class _FakeSession(_FakeDB):
+    """_FakeDB plus the session surface run_benchmark_worker needs."""
+    def __init__(self):
+        super().__init__(rows=[])  # no resolved forecasts -> engine withheld
+        self.added = []
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def _run_worker_with(publish_enabled):
+    """Run the worker fully stubbed (no network/DB/LLM); report if it published."""
+    published = {"called": False}
+
+    async def _fake_publish(*a, **k):
+        published["called"] = True
+        return {"new_entries": 7, "root_hash": "deadbeef", "entry_count": 7}
+
+    session = _FakeSession()
+    orig = (bw._compute_proofs, bw.publish_ledger._run, bw.AsyncSessionLocal,
+            bw.settings.benchmark_publish_enabled)
+    try:
+        bw._compute_proofs = lambda: (_syn_stub, {"source": "real", "n": 100,
+            "model_brier": 0.0948, "bss": 0.55}, "ok")
+        bw.publish_ledger._run = _fake_publish
+        bw.AsyncSessionLocal = lambda: session
+        bw.settings.benchmark_publish_enabled = publish_enabled
+        summary = asyncio.run(bw.run_benchmark_worker())
+    finally:
+        (bw._compute_proofs, bw.publish_ledger._run, bw.AsyncSessionLocal,
+         bw.settings.benchmark_publish_enabled) = orig
+    return summary, published["called"], session
+
+
+summary, did_publish, sess = _run_worker_with(publish_enabled=False)
+ok("disabled: publish NOT called", did_publish is False)
+ok("disabled: run still status ok (not error)", summary["status"] == "ok")
+ok("disabled: ledger_published stays None", summary["ledger_published"] is None)
+ok("disabled: row still persisted", len(sess.added) >= 1)
+
+summary, did_publish, _ = _run_worker_with(publish_enabled=True)
+ok("enabled: publish IS called", did_publish is True)
+ok("enabled: ledger_published surfaced", summary["ledger_published"] == 7)
+
+
 print(f"\nbenchmark_worker: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
