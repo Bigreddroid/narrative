@@ -30,6 +30,7 @@ MODULES=(
   backend.feeds.mastodon_osint_test
   scripts.backfill_prediction_outcomes_test
   scripts.validate_calibration_test
+  scripts.benchmark_score_test
 )
 
 fail=0

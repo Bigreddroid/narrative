@@ -13,6 +13,9 @@ services:
       # pg18 image relocated PGDATA; the volume must mount at
       # /var/lib/postgresql (not /data) or the container exits on startup.
       - postgres_data:/var/lib/postgresql
+    # Survive host reboots so long-horizon outcome accrual (30d maturation bar)
+    # is not silently killed if the machine restarts before predictions mature.
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U narrative"]
       interval: 10s
@@ -25,6 +28,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -51,6 +55,7 @@ services:
       OLLAMA_KEEP_ALIVE: "30m"
     volumes:
       - ollama_data:/root/.ollama
+    restart: unless-stopped
     healthcheck:
       # `ollama list` talks to the local server; succeeds once `ollama serve` is up.
       test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
