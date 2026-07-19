@@ -74,5 +74,34 @@ with TestClient(app) as client:
     # Encoding guardrail.
     ok("payload is pure ASCII", _is_ascii(d))
 
+    # --- Phase 2: forward prediction ledger endpoints (no 500 without DB) ---
+    r = client.get("/api/v1/benchmark/ledger")
+    ok("ledger 200 (no 500 without DB)", r.status_code == 200)
+    led = r.json()
+    ok("ledger returns an entries list", isinstance(led.get("entries"), list))
+    ok("ledger count matches entries", led["count"] == len(led["entries"]))
+
+    r = client.get("/api/v1/benchmark/ledger/manifest/2026-07-19")
+    ok("manifest 200 (no 500 without DB)", r.status_code == 200)
+    man = r.json()
+    ok("manifest reports found bool", isinstance(man.get("found"), bool))
+
+    r = client.get("/api/v1/benchmark/ledger/manifest/not-a-date")
+    ok("manifest rejects junk date without 500", r.status_code == 200 and r.json()["found"] is False)
+
+    # Engine skill is GATED: below n>=20 it must withhold the number entirely.
+    r = client.get("/api/v1/benchmark/engine-skill")
+    ok("engine-skill 200 (no 500 without DB)", r.status_code == 200)
+    skill = r.json()
+    ok("engine-skill required=20", skill["required"] == calibration.MIN_CALIBRATION_POINTS == 20)
+    if skill["resolved_n"] < skill["required"]:
+        ok("engine-skill withheld below gate", skill["status"] == "withheld")
+        ok("no skill number leaked below gate",
+           "brier_skill_score" not in skill and "brier" not in skill)
+    else:
+        ok("engine-skill ready at/above gate", skill["status"] == "ready")
+
+    ok("ledger payloads pure ASCII", _is_ascii(led) and _is_ascii(man) and _is_ascii(skill))
+
 print(f"\nbenchmark_route: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

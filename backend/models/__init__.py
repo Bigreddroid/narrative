@@ -13,6 +13,7 @@ from backend.models.exposure_snapshot import ExposureSnapshot
 from backend.models.market_snapshot import MarketSnapshot
 from backend.models.osint_triage_decision import OsintTriageDecision
 from backend.models.app_config import AppConfig
+from backend.models.benchmark_ledger import LedgerEntry, BenchmarkManifest
 
 __all__ = [
     "Source",
@@ -32,4 +33,6 @@ __all__ = [
     "MarketSnapshot",
     "OsintTriageDecision",
     "AppConfig",
+    "LedgerEntry",
+    "BenchmarkManifest",
 ]

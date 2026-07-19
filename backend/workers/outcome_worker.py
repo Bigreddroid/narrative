@@ -24,13 +24,14 @@ import time
 import uuid
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from backend.config import get_settings
 from backend.consequence_engine import calibration
 from backend.services import cost_guard, llm
 from backend.database import AsyncSessionLocal
 from backend.models.article import Article
+from backend.models.benchmark_ledger import LedgerEntry
 from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.narrative_event import NarrativeEvent
 from backend.models.pipeline_metrics import PipelineMetric
@@ -189,6 +190,23 @@ async def run_outcome_worker() -> dict:
                     evaluated_at=datetime.now(timezone.utc),
                 ))
                 evaluated += 1
+
+                # Backfill the public forward-ledger entry for this forecast (if it
+                # was published) so its resolved Brier becomes third-party
+                # verifiable against the committed manifest. No-op when the map was
+                # never published or is already resolved. content_hash/created_at
+                # are untouched (write-once) - only resolution fields are set.
+                await db.execute(
+                    update(LedgerEntry)
+                    .where(LedgerEntry.consequence_map_id == cmap.id)
+                    .where(LedgerEntry.resolved_at.is_(None))
+                    .values(
+                        outcome=outcome,
+                        observed_probability=obs,
+                        brier_score=calibration.brier_score(p, obs),
+                        resolved_at=datetime.now(timezone.utc),
+                    )
+                )
 
             except Exception as exc:
                 logger.error("Outcome eval error for event %s: %s", event.id, exc)

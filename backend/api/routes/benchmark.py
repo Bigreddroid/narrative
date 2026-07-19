@@ -19,12 +19,14 @@ that scripts/backtest_cpe.py and scripts/benchmark_score.py already hold.
 """
 import logging
 import os
+from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from sqlalchemy import func, select
 
 from backend.api.dependencies import DbDep
 from backend.consequence_engine import calibration
+from backend.models.benchmark_ledger import BenchmarkManifest, LedgerEntry
 from backend.models.prediction_outcome import PredictionOutcome
 from scripts import benchmark_score as bs
 
@@ -152,3 +154,170 @@ async def get_benchmark_score(db: DbDep) -> dict:
         "engine domain skill (BSS on its own predictions) accruing toward n>=20."
     )
     return payload
+
+
+# --------------------------------------------------------------------------
+# Phase 2: the public, tamper-evident forward prediction ledger.
+#
+# These serve PERSISTED rows only (written by scripts/publish_ledger.py +
+# graded by outcome_worker) - no request-time compute, no network. Engine
+# skill stays gated at n>=20; below the gate the endpoint returns
+# status:"withheld" and NO Brier/BSS number.
+# --------------------------------------------------------------------------
+
+LEDGER_MAX_LIMIT = 500
+
+
+def _parse_since(value: str | None) -> datetime | None:
+    """Best-effort ISO-8601 parse for the ?since= filter (returns None on junk)."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _entry_dict(e: LedgerEntry) -> dict:
+    """One ledger entry, public shape. Pre-resolution rows carry null outcomes."""
+    return {
+        "consequence_map_id": str(e.consequence_map_id),
+        "question_text": e.question_text,
+        "prediction_score": e.prediction_score,
+        "created_at": e.created_at.isoformat() if e.created_at else None,
+        "content_hash": e.content_hash,
+        "manifest_date": e.manifest_date.isoformat() if e.manifest_date else None,
+        "resolved": e.resolved_at is not None,
+        "outcome": e.outcome,
+        "observed_probability": e.observed_probability,
+        "brier_score": e.brier_score,
+        "resolved_at": e.resolved_at.isoformat() if e.resolved_at else None,
+    }
+
+
+@router.get("/ledger")
+async def get_ledger(
+    db: DbDep,
+    since: str | None = Query(None, description="ISO-8601; only forecasts created at/after this time"),
+    limit: int = Query(100, ge=1, le=LEDGER_MAX_LIMIT),
+) -> dict:
+    """Published forecasts + their content hashes (pre- and post-resolution).
+
+    This is the auditable record: every forecast was hashed and committed BEFORE
+    its outcome was known (verify against /ledger/manifest/{date}). Best-effort DB
+    read - degrades to an empty list rather than a 500 if the DB is unreachable.
+    """
+    since_dt = _parse_since(since)
+    entries: list[dict] = []
+    try:
+        stmt = select(LedgerEntry).order_by(LedgerEntry.created_at.desc()).limit(limit)
+        if since_dt is not None:
+            stmt = stmt.where(LedgerEntry.created_at >= since_dt)
+        rows = (await db.execute(stmt)).scalars().all()
+        entries = [_entry_dict(e) for e in rows]
+    except Exception as exc:
+        log.warning("benchmark: ledger read failed (%s)", exc)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+    return {
+        "count": len(entries),
+        "since": since_dt.isoformat() if since_dt else None,
+        "entries": entries,
+        "note": (
+            "Each entry's content_hash = sha256(question|score|created_at), committed "
+            "before the outcome was known. Verify a day's set against its manifest root."
+        ),
+    }
+
+
+@router.get("/ledger/manifest/{manifest_date}")
+async def get_manifest(db: DbDep, manifest_date: str) -> dict:
+    """The daily manifest root - the audit anchor a third party recomputes.
+
+    Returns the stored root_hash + entry_count for the date plus that day's sorted
+    content hashes, so anyone can recompute sha256(sorted hashes joined) and match
+    it against docs/benchmark/manifest-<date>.txt committed to git.
+    """
+    day = _parse_since(manifest_date) or _parse_since(manifest_date + "T00:00:00")
+    if day is None:
+        return {"manifest_date": manifest_date, "found": False,
+                "error": "unparseable date (want YYYY-MM-DD)"}
+    d = day.date()
+    try:
+        manifest = (await db.execute(
+            select(BenchmarkManifest).where(BenchmarkManifest.manifest_date == d)
+        )).scalar_one_or_none()
+        if manifest is None:
+            return {"manifest_date": d.isoformat(), "found": False}
+        hashes = [
+            h for (h,) in (await db.execute(
+                select(LedgerEntry.content_hash).where(LedgerEntry.manifest_date == d)
+            )).all()
+        ]
+        return {
+            "manifest_date": d.isoformat(),
+            "found": True,
+            "root_hash": manifest.root_hash,
+            "entry_count": manifest.entry_count,
+            "content_hashes": sorted(hashes),
+            "note": "root_hash = sha256 of the sorted content_hashes concatenated.",
+        }
+    except Exception as exc:
+        log.warning("benchmark: manifest read failed (%s)", exc)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return {"manifest_date": d.isoformat(), "found": False, "error": "db_unavailable"}
+
+
+@router.get("/engine-skill")
+async def get_engine_skill(db: DbDep) -> dict:
+    """Engine Brier Skill Score over RESOLVED ledger forecasts - GATED at n>=20.
+
+    The clean, forward-looking skill claim: forecasts hashed before resolution,
+    graded later. Below the gate we return status:"withheld" and NO number - the
+    same refusal scripts/backtest_cpe.py holds. Never fabricates.
+    """
+    required = calibration.MIN_CALIBRATION_POINTS
+    pairs: list[tuple[float, float]] = []
+    try:
+        rows = (await db.execute(
+            select(LedgerEntry.prediction_score, LedgerEntry.observed_probability)
+            .where(LedgerEntry.resolved_at.isnot(None))
+            .where(LedgerEntry.observed_probability.isnot(None))
+        )).all()
+        pairs = [(s / 100.0, float(o)) for s, o in rows]
+    except Exception as exc:
+        log.warning("benchmark: engine-skill read failed (%s)", exc)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+    n = len(pairs)
+    if n < required:
+        return {
+            "status": "withheld",
+            "resolved_n": n,
+            "required": required,
+            "note": (
+                "Engine Brier Skill Score is withheld until n>=20 resolved forecasts. "
+                "Any number below the gate is anecdote, not skill."
+            ),
+        }
+    bss = calibration.brier_skill_score(pairs)  # None if the baseline is degenerate
+    return {
+        "status": "ready",
+        "resolved_n": n,
+        "required": required,
+        "brier": round(sum(calibration.brier_score(p, o) for p, o in pairs) / n, 4),
+        "brier_skill_score": round(bss, 4) if bss is not None else None,
+        "note": (
+            "Brier Skill Score over the engine's own forward forecasts, each hashed "
+            "and committed before its outcome was known. Leak-proof by construction."
+        ),
+    }

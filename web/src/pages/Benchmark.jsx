@@ -63,12 +63,22 @@ export default function Benchmark() {
   const { user } = useUser();
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
+  const [ledger, setLedger] = useState(null);   // the hash-anchored forward ledger
+  const [skill, setSkill] = useState(null);      // gated engine BSS (or "withheld")
 
   useEffect(() => {
     api.get("/benchmark/score")
       .then(setData)
       .catch((e) => setErr(e.message || "Failed to load benchmark"));
   }, []);
+
+  // Per-prediction ledger detail: only fetched for signed-in viewers. Endpoints
+  // are public + precomputed, so these are cheap and degrade to empty on error.
+  useEffect(() => {
+    if (!user) return;
+    api.get("/benchmark/ledger?limit=25").then(setLedger).catch(() => setLedger({ entries: [] }));
+    api.get("/benchmark/engine-skill").then(setSkill).catch(() => setSkill(null));
+  }, [user]);
 
   if (err) {
     return (
@@ -224,9 +234,7 @@ export default function Benchmark() {
                 <Metric k="crowd ECE" v={auto.ece} />
                 <Metric k="crowd coin Brier" v={auto.coin_brier} />
               </div>
-              <p className="text-[10.5px] text-ink/35 mt-4">
-                Per-prediction ledger (timestamped, hash-anchored forecasts) arrives with the forward ledger.
-              </p>
+              <LedgerPanel ledger={ledger} skill={skill} />
             </div>
           ) : (
             <div className="border border-dashed border-ink/20 p-6 text-center">
@@ -266,6 +274,68 @@ function Metric({ k, v }) {
     <div>
       <p className="text-ink/40 text-[10px] uppercase tracking-widest mb-0.5">{k}</p>
       <p>{v == null ? "—" : Number(v).toFixed(4)}</p>
+    </div>
+  );
+}
+
+// The per-prediction forward ledger: forecasts hashed + committed BEFORE their
+// outcome was known (verifiable against the daily manifest root in git). Engine
+// skill (BSS) stays gated at n>=20 — we render "withheld" below the gate, never
+// a premature number.
+function LedgerPanel({ ledger, skill }) {
+  const entries = ledger?.entries ?? [];
+  return (
+    <div className="mt-6 border-t border-ink/8 pt-5">
+      <div className="flex items-baseline justify-between mb-3">
+        <p className="text-[9px] font-bold uppercase tracking-[0.4em] text-ink/30">
+          Forward prediction ledger · hash-anchored
+        </p>
+        {skill && (
+          <span className="text-[11px] font-mono text-ink/55">
+            {skill.status === "ready"
+              ? `engine BSS ${skill.brier_skill_score} (n=${skill.resolved_n})`
+              : `engine skill withheld · ${skill.resolved_n ?? 0}/${skill.required}`}
+          </span>
+        )}
+      </div>
+      <p className="text-[10.5px] text-ink/40 leading-snug mb-4">
+        Each forecast below was hashed (sha256 of question · score · created_at) and rolled into a daily
+        manifest root committed to git — published before its outcome was known, so a resolved score
+        cannot be back-dated. Verify: <span className="font-mono">GET /benchmark/ledger/manifest/&#123;date&#125;</span>.
+      </p>
+      {entries.length === 0 ? (
+        <p className="text-[11px] text-ink/40">
+          No forecasts published yet — the ledger fills as confident forecasts accrue
+          (<span className="font-mono">scripts/publish_ledger.py</span>).
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px] text-left border-collapse">
+            <thead>
+              <tr className="text-ink/40 uppercase text-[9px] tracking-widest">
+                <th className="py-1.5 pr-3 font-semibold">Forecast</th>
+                <th className="py-1.5 pr-3 font-semibold">Score</th>
+                <th className="py-1.5 pr-3 font-semibold">Hash</th>
+                <th className="py-1.5 pr-3 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono text-ink/70">
+              {entries.map((e) => (
+                <tr key={e.content_hash} className="border-t border-ink/8 align-top">
+                  <td className="py-1.5 pr-3 max-w-[240px] truncate font-sans">{e.question_text}</td>
+                  <td className="py-1.5 pr-3">{e.prediction_score}</td>
+                  <td className="py-1.5 pr-3 text-ink/45" title={e.content_hash}>{e.content_hash.slice(0, 12)}…</td>
+                  <td className="py-1.5 pr-3">
+                    {e.resolved
+                      ? <span className="text-ink/70">Brier {e.brier_score?.toFixed(3)} · {e.outcome}</span>
+                      : <span className="text-ink/35">pending</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
