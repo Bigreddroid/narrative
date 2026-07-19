@@ -162,6 +162,11 @@ class Settings(BaseSettings):
     openweather_api_key: str = ""  # global weather (optional; NWS/NHC need none)
     outcome_eval_interval_days: int = 7
     archive_interval_hours: int = 24
+    # Benchmark scoreboard cache refresh (Phase 3): the LLM-free worker recomputes
+    # the real Autocast crowd Brier, auto-publishes the forward ledger, and caches
+    # a benchmark_runs row that /benchmark/score serves without request-time work.
+    benchmark_interval_days: int = 7
+    benchmark_publish_limit: int = 1000   # forwarded to scripts.publish_ledger._run
 
     # Cost control
     claude_daily_cost_alert_usd: float = 20.0    # soft alert (email only), Voyage spend
