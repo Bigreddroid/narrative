@@ -167,6 +167,13 @@ class Settings(BaseSettings):
     # a benchmark_runs row that /benchmark/score serves without request-time work.
     benchmark_interval_days: int = 7
     benchmark_publish_limit: int = 1000   # forwarded to scripts.publish_ledger._run
+    # The worker is LLM-free, so it also runs on Railway against Railway's SEPARATE
+    # Postgres. Only ONE stack should own the authoritative forward ledger + manifest;
+    # otherwise the two publish divergent audit chains. Keep True on the authoritative
+    # host (local Docker stack) and set BENCHMARK_PUBLISH_ENABLED=false on Railway so it
+    # still refreshes the synthetic/crowd/engine numbers but never publishes a competing
+    # ledger. Synthetic/Autocast/engine-skill computation is unaffected either way.
+    benchmark_publish_enabled: bool = True
 
     # Cost control
     claude_daily_cost_alert_usd: float = 20.0    # soft alert (email only), Voyage spend

@@ -98,15 +98,22 @@ async def run_benchmark_worker() -> dict:
     syn, auto, status = _compute_proofs()
 
     # Auto-publish the forward ledger (own asyncpg connection, idempotent).
+    # Gated so only the authoritative host publishes: Railway runs this same
+    # LLM-free worker against its own DB, and two publishers would fork the audit
+    # chain. When disabled we still refresh synthetic/crowd/engine numbers below;
+    # only the ledger write + manifest anchor is skipped (not an error).
     ledger_published = ledger_root = ledger_count = None
-    try:
-        res = await publish_ledger._run(limit=settings.benchmark_publish_limit, dry_run=False)
-        ledger_published = res.get("new_entries")
-        ledger_root = res.get("root_hash")
-        ledger_count = res.get("entry_count")
-    except Exception as exc:
-        logger.error("benchmark_worker: ledger publish failed (%s)", exc)
-        status = "error"
+    if settings.benchmark_publish_enabled:
+        try:
+            res = await publish_ledger._run(limit=settings.benchmark_publish_limit, dry_run=False)
+            ledger_published = res.get("new_entries")
+            ledger_root = res.get("root_hash")
+            ledger_count = res.get("entry_count")
+        except Exception as exc:
+            logger.error("benchmark_worker: ledger publish failed (%s)", exc)
+            status = "error"
+    else:
+        logger.info("benchmark_worker: ledger publish disabled (benchmark_publish_enabled=false)")
 
     async with AsyncSessionLocal() as db:
         engine_n, engine_bss, gate_met = await _engine_skill(db)
