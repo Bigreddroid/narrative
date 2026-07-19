@@ -169,7 +169,25 @@ def report(pairs: list[tuple[float, float]]) -> None:
     )
 
 
+def _print_pipeline_validation_banner() -> None:
+    """Offline headline: the calibration-pipeline validation SCORE (no DB/network).
+
+    Separate from and ABOVE the engine's own skill gate below, so the two are never
+    conflated: this proves the scoring MATH is correct; PATH A proves (once n>=20)
+    whether the engine's OWN predictions have skill."""
+    try:
+        from scripts.benchmark_score import synthetic_proof
+        syn = synthetic_proof()
+        p, t = syn["passed"], syn["total"]
+        print(f"Pipeline validation: {p}/{t} controls PASS "
+              f"(see scripts/benchmark_score.py for the full benchmark + real-data Brier).")
+    except Exception as exc:  # never let the headline block the backtest
+        print(f"Pipeline validation: unavailable ({exc}).")
+
+
 async def main() -> None:
+    print("################  PIPELINE VALIDATION (scoring math, $0, no data gate)  ################")
+    _print_pipeline_validation_banner()
     print("\n################  PATH A — real graded outcomes (prediction_outcomes)  ################")
     report(await load_pairs())
     pathb = await load_pairs_pathb()

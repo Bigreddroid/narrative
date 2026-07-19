@@ -119,10 +119,29 @@ surface in `scripts/backtest_cpe.py` and are reproduced in CI on the validation 
 - Gneiting, T. & Raftery, A.E. (2007). *Strictly proper scoring rules, prediction, and estimation.* JASA.
 - Barnston, A.G. (1992) / WMO forecast-verification practice — **Brier Skill Score** vs climatology.
 - Ayer, M. et al. (1955); Zadrozny & Elkan (2002) — **isotonic regression / PAVA** for probability calibration.
+- Zou, A. et al. (2022). *Forecasting Future World Events with Neural Networks* (the **Autocast** dataset). NeurIPS.
 
 > **No overclaiming:** BSS and the Murphy decomposition on the *engine* are still gated on n ≥ 20 real
 > graded outcomes. Until then they run on the validation controls — proving the *metrics themselves* are
 > implemented correctly — exactly as `backtest_cpe.py` refuses a verdict below n = 20.
+
+### 3e. Validation benchmark score — one command, two independent proofs
+
+`python scripts/benchmark_score.py` rolls the whole thing into a single headline verdict:
+
+| Proof | What it validates | Result |
+|---|---|---|
+| **A — synthetic controls** | the scoring + isotonic-recovery math, deterministically | **5 / 5 controls PASS** (locked < 1e-12): overconfident Brier 0.193 → 0.168, ECE 0.132 → 0.000; no harm on calibrated data |
+| **B — Autocast real data** | the *same* math on **real** forecasts (Zou et al., 2022; Metaculus / GJOpen / CSET crowds) | n = 2003 resolved binary questions, crowd Brier **0.0948**, **BSS 0.547** vs base-rate Brier 0.209 — BEATS the baseline |
+
+Proof B is a **real Brier on real forecasts**, so the pipeline is validated beyond synthetic streams.
+It is **crowd** calibration (other forecasters'), an independent sanity check on our scoring code —
+**not** the engine's own skill, which stays gated on n ≥ 20 (§2). CI and air-gapped runs use
+`--offline` (a deterministic self-test fixture, clearly labeled) when the dataset is unreachable; the
+Autocast file is fetched keylessly and cached to a temp dir, never committed.
+
+**Headline verdict:** *calibration pipeline VALIDATED — 5/5 synthetic controls + real-data Brier
+0.095; engine domain accuracy (BSS on its own predictions) accruing toward n ≥ 20.*
 
 ---
 
@@ -146,10 +165,14 @@ presented as ground truth.
 ## 5. Reproduce it
 
 ```
+# Headline validation benchmark — 5/5 synthetic controls + real Autocast Brier
+python scripts/benchmark_score.py            # fetches Autocast (keyless) for a real Brier
+python scripts/benchmark_score.py --offline  # deterministic, no network (selftest fixture)
+
 # Pipeline proof (offline, <1s, deterministic)
 python scripts/validate_calibration.py --report calibration_report.txt
 
-# Full test suite (23 modules)
+# Full test suite (25 modules)
 bash scripts/run_backend_tests.sh
 
 # Engine calibration once outcomes exist (needs a populated DB + running scheduler w/ LLM)

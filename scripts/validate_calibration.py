@@ -89,6 +89,21 @@ def fmt(s: dict) -> str:
     )
 
 
+def control_checks(cal: dict, over: dict) -> list[tuple[str, bool]]:
+    """The 5 assertions that make the synthetic controls a PROOF, not a printout.
+
+    Pure: takes two `summarize()` dicts, returns [(check_name, passed)]. Single
+    source of truth shared by `run()` here and scripts/benchmark_score.py so the
+    headline validation score can never drift from what this script asserts."""
+    return [
+        ("calibrated data reads as calibrated (ECE < 0.05)", cal["ece"] < 0.05),
+        ("isotonic ~keeps calibrated Brier (no harm, <+0.005)", cal["brier_recal"] <= cal["brier"] + 0.005),
+        ("overconfident data flagged (ECE > 0.05)", over["ece"] > 0.05),
+        ("isotonic RECOVERS overconfident Brier (strictly lower)", over["brier_recal"] < over["brier"]),
+        ("isotonic reduces overconfident ECE", over["ece_recal"] < over["ece"]),
+    ]
+
+
 def read_pairs(path: str) -> list[tuple[float, float]]:
     def rows():
         if path.lower().endswith(".json"):
@@ -121,13 +136,7 @@ def run(pairs: list[tuple[float, float]] | None, report_path: str | None) -> int
         lines += [fmt(cal), fmt(over)]
 
         # Assertions that make this a PROOF, not just a printout.
-        checks = [
-            ("calibrated data reads as calibrated (ECE < 0.05)", cal["ece"] < 0.05),
-            ("isotonic ~keeps calibrated Brier (no harm, <+0.005)", cal["brier_recal"] <= cal["brier"] + 0.005),
-            ("overconfident data flagged (ECE > 0.05)", over["ece"] > 0.05),
-            ("isotonic RECOVERS overconfident Brier (strictly lower)", over["brier_recal"] < over["brier"]),
-            ("isotonic reduces overconfident ECE", over["ece_recal"] < over["ece"]),
-        ]
+        checks = control_checks(cal, over)
         lines.append("--- PIPELINE CORRECTNESS CHECKS ---")
         ok = True
         for name, passed in checks:
