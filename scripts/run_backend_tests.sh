@@ -9,6 +9,8 @@ MODULES=(
   backend.config_test
   backend.api.auth_test
   backend.api.security_headers_test
+  backend.api.rate_limit_test
+  backend.api.benchmark_route_test
   backend.api.imint_route_test
   backend.services.analyst_test
   backend.services.llm_test
@@ -26,11 +28,13 @@ MODULES=(
   backend.consequence_engine.evolution_logic_test
   backend.consequence_engine.graph_scoring_test
   backend.consequence_engine.importance_scorer_test
+  backend.models.benchmark_ledger_test
   backend.feeds.feeds_test
   backend.feeds.mastodon_osint_test
   scripts.backfill_prediction_outcomes_test
   scripts.validate_calibration_test
   scripts.benchmark_score_test
+  scripts.external_benchmark_test
 )
 
 fail=0

@@ -143,6 +143,36 @@ Autocast file is fetched keylessly and cached to a temp dir, never committed.
 **Headline verdict:** *calibration pipeline VALIDATED — 5/5 synthetic controls + real-data Brier
 0.095; engine domain accuracy (BSS on its own predictions) accruing toward n ≥ 20.*
 
+### 3f. The third axis — testing the engine *outside*, and the leakage trap
+
+Proofs A/B validate the *scoring math*. Testing our own **engine** on outside questions has one
+integrity trap: our local model has a training cutoff, so any externally-resolved question that
+resolved **before** that cutoff may already be "known" to the model — a good score there is hindsight,
+not skill, and must never be compared to superforecasters. Two surfaces, hard-labeled:
+
+- **Retrospective external (diagnostic only).** `python scripts/external_benchmark.py --dataset
+  autocast` runs `consensus_mapper.forecast_binary` over resolved external questions and partitions
+  every run by `--model-cutoff` into `pre_cutoff` (`leakage:"exposed"`) and `post_cutoff`
+  (`leakage:"post_cutoff_clean"`). The pre-cutoff bucket is a **diagnostic** that proves the engine
+  ingests an arbitrary outside question and emits a scored forecast end-to-end — **not** a skill claim.
+  For Autocast (all pre-2023) the clean bucket is essentially empty, which is the honest answer.
+
+- **Forward prediction ledger (the clean engine benchmark).** The only leak-proof engine score: a
+  forecast made **now**, published + hashed **before** its outcome is known, graded **later**.
+  `scripts/publish_ledger.py` writes each confident forecast (`prediction_score ≥ 60`) to
+  `benchmark_ledger` with a write-once `content_hash = sha256(question | score | created_at)`, rolls
+  the day's hashes into a `benchmark_manifests` root, and commits that root to git as
+  `docs/benchmark/manifest-YYYY-MM-DD.txt`. When `outcome_worker` later grades the prediction against
+  evidence that did not exist at forecast time, it backfills the entry's resolved Brier. A third party
+  recomputes `sha256(sorted content_hashes)` and matches it against the committed root — proving we did
+  not back-date or edit any forecast after seeing how it resolved. **Engine skill (BSS over resolved
+  ledger entries) stays gated at n ≥ 20**; `GET /api/v1/benchmark/engine-skill` returns
+  `status:"withheld"` with no number below the gate.
+
+Public, precomputed, no-auth endpoints (they serve persisted rows only — never a request-time download
+or LLM call): `GET /api/v1/benchmark/ledger?since=`, `GET /api/v1/benchmark/ledger/manifest/{date}`,
+`GET /api/v1/benchmark/engine-skill`.
+
 ---
 
 ## 4. The claims we make (verbatim, safe to quote)
@@ -155,6 +185,9 @@ Autocast file is fetched keylessly and cached to a temp dir, never committed.
 
 > "Live outcome grading is **accruing**; we do not claim a production accuracy number until enough
 > real outcomes have resolved."
+
+> "Every forecast is **hashed and published before its outcome is known**, and the daily manifest root
+> is committed to git — so our resolved scores are third-party verifiable and cannot be back-dated."
 
 Claims we deliberately do **not** make: any single production Brier presented as "engine accuracy"
 before n≥20 real graded outcomes; any calibration number derived from soft/status-only labels
@@ -172,8 +205,16 @@ python scripts/benchmark_score.py --offline  # deterministic, no network (selfte
 # Pipeline proof (offline, <1s, deterministic)
 python scripts/validate_calibration.py --report calibration_report.txt
 
-# Full test suite (25 modules)
+# Full test suite
 bash scripts/run_backend_tests.sh
+
+# Engine on OUTSIDE resolved questions (leakage-partitioned diagnostic)
+python scripts/external_benchmark.py --dataset autocast --limit 50
+python scripts/external_benchmark.py --offline          # stub forecaster, no LLM/network
+
+# Publish the forward prediction ledger + daily manifest root (needs a populated DB)
+python -m scripts.publish_ledger --dry-run              # report only
+python -m scripts.publish_ledger                        # writes docs/benchmark/manifest-<date>.txt
 
 # Engine calibration once outcomes exist (needs a populated DB + running scheduler w/ LLM)
 python scripts/backtest_cpe.py

@@ -17,6 +17,8 @@ const Settings = lazy(() => import("./pages/Settings.jsx"));
 const Analyst = lazy(() => import("./pages/Analyst.jsx"));
 const GeoLocate = lazy(() => import("./pages/GeoLocate.jsx"));
 const IntFusion = lazy(() => import("./pages/IntFusion.jsx"));
+// Public calibration scoreboard — citable, no login (Phase 0 benchmark surface).
+const Benchmark = lazy(() => import("./pages/Benchmark.jsx"));
 // Customer demo dashboard — direct URL only (/wipro), intentionally not in the nav.
 const WiproDemo = lazy(() => import("./pages/WiproDemo.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
@@ -70,6 +72,7 @@ export default function App() {
         {/* Public */}
         <Route path="/"     element={<Landing />} />
         <Route path="/auth" element={<Auth />} />
+        <Route path="/benchmark" element={<Benchmark />} />
 
         {/* Protected */}
         <Route path="/onboarding"      element={<PrivateRoute><Onboarding /></PrivateRoute>} />
