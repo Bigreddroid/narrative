@@ -32,6 +32,7 @@ MODULES=(
   scripts.backfill_prediction_outcomes_test
   scripts.validate_calibration_test
   scripts.benchmark_score_test
+  scripts.external_benchmark_test
 )
 
 fail=0

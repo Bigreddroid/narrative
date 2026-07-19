@@ -241,3 +241,71 @@ def map_cluster(
     )
 
     return parsed
+
+
+# ── Binary forecasting (external-benchmark path) ───────────────────────────────
+# Deliberately separate from map_cluster: the benchmark harness needs the engine's
+# reasoning core to answer an arbitrary yes/no question with ONE auditable
+# probability, not a full consequence map. Reuses the same llm.complete plumbing.
+BINARY_FORECAST_SYSTEM = """You are a calibrated probabilistic forecaster.
+Given a yes/no question and its background, output your probability that the
+answer resolves YES. Be well-calibrated: use the full 0-100 range, avoid false
+confidence, and reflect genuine uncertainty. Return valid JSON only. No preamble,
+no markdown, no backticks."""
+
+BINARY_FORECAST_USER = """QUESTION: {question}
+
+BACKGROUND: {background}
+
+Return this exact JSON:
+{{
+  "probability": <integer 0-100, your probability the answer is YES>,
+  "reasoning": "1-2 sentences of the key drivers"
+}}"""
+
+
+def forecast_binary(question_text: str, background: str = "") -> dict:
+    """Ask the engine's reasoning core a single yes/no question.
+
+    Returns {"probability": int 0-100, "reasoning": str, "_meta": {...}}. Raises
+    ValueError if the model returns unparseable JSON or no usable probability, so
+    the harness can skip the item rather than score a garbage forecast.
+    """
+    user = BINARY_FORECAST_USER.format(
+        question=question_text.strip(),
+        background=(background or "").strip() or "(none provided)",
+    )
+    result = llm.complete(system=BINARY_FORECAST_SYSTEM, user=user, max_tokens=512, json_mode=True)
+
+    raw = result.text
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        # Reuse the shared salvage path if present (truncated/wrapped JSON).
+        cleaner = getattr(llm, "clean_json", None) or getattr(llm, "salvage_truncated_json", None)
+        if cleaner is None:
+            raise ValueError(f"binary forecast returned non-JSON: {raw[:200]}")
+        parsed = cleaner(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"binary forecast returned non-JSON: {raw[:200]}")
+
+    p = parsed.get("probability")
+    try:
+        p = float(p)
+    except (TypeError, ValueError):
+        raise ValueError(f"binary forecast missing numeric probability: {parsed!r}")
+    # Tolerate a 0-1 fraction OR a 0-100 percent; normalize to an int 0-100.
+    if 0.0 <= p <= 1.0:
+        p *= 100.0
+    p = max(0, min(100, int(round(p))))
+
+    return {
+        "probability": p,
+        "reasoning": str(parsed.get("reasoning", "")).strip(),
+        "_meta": {
+            "provider": result.provider,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "cost_usd": result.cost_usd,
+        },
+    }

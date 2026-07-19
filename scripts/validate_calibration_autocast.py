@@ -95,6 +95,44 @@ def extract_pairs(questions: list[dict]) -> list[tuple[float, float]]:
     return pairs
 
 
+def extract_records(questions: list[dict]) -> list[dict]:
+    """Autocast questions -> rich records for the external-benchmark harness.
+
+    Unlike extract_pairs (which discards everything but the crowd probability and
+    outcome), this keeps the question TEXT, background, and dates so a forecaster
+    can actually be asked the question. Same filter: RESOLVED binary questions
+    only. Pure/testable, no I/O.
+
+    Each record: {id, question_text, background, publish_date, resolution_date,
+    outcome (0.0/1.0), crowd_prob (may be None), source}.
+    """
+    records: list[dict] = []
+    for q in questions or []:
+        if not isinstance(q, dict):
+            continue
+        qtype = str(q.get("qtype") or q.get("type") or "").lower()
+        if qtype and qtype not in ("t/f", "tf", "binary", "true/false"):
+            continue
+        outcome = _answer_to_outcome(q.get("answer"))
+        if outcome is None:
+            continue
+        text = (q.get("question") or q.get("title") or "").strip()
+        if not text:
+            continue
+        records.append({
+            "id": q.get("id") or q.get("question_id"),
+            "question_text": text,
+            "background": (q.get("background") or q.get("description") or "").strip(),
+            # Autocast uses publish_time / close_time; tolerate alternates.
+            "publish_date": q.get("publish_time") or q.get("published") or q.get("begin_time"),
+            "resolution_date": q.get("close_time") or q.get("resolve_time") or q.get("end_time"),
+            "outcome": outcome,
+            "crowd_prob": _crowd_prob_yes(q.get("crowd")),
+            "source": "autocast",
+        })
+    return records
+
+
 def report(pairs: list[tuple[float, float]]) -> dict:
     """Run OUR calibration math over (p, outcome) pairs — the code under validation."""
     n = len(pairs)
