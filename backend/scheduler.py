@@ -52,6 +52,7 @@ async def main():
     from backend.workers.feed_worker import run_feed_worker
     from backend.workers.alert_worker import run_alert_worker
     from backend.workers.outcome_worker import run_outcome_worker
+    from backend.workers.benchmark_worker import run_benchmark_worker
     from backend.workers.archive_worker import run_archive_worker
     from backend.workers.exposure_snapshot_worker import run_exposure_snapshot_worker
     from backend.workers.hazard_ingest_worker import run_hazard_ingest_worker
@@ -88,6 +89,9 @@ async def main():
         ),
         asyncio.create_task(
             _run_with_interval("outcome_worker", run_outcome_worker, s.outcome_eval_interval_days * 86400)
+        ),
+        asyncio.create_task(
+            _run_with_interval("benchmark_worker", run_benchmark_worker, s.benchmark_interval_days * 86400)
         ),
         asyncio.create_task(
             _run_with_interval("archive_worker", run_archive_worker, s.archive_interval_hours * 3600)

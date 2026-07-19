@@ -29,6 +29,7 @@ MODULES=(
   backend.consequence_engine.graph_scoring_test
   backend.consequence_engine.importance_scorer_test
   backend.models.benchmark_ledger_test
+  backend.workers.benchmark_worker_test
   backend.feeds.feeds_test
   backend.feeds.mastodon_osint_test
   scripts.backfill_prediction_outcomes_test

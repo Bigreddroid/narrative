@@ -173,6 +173,18 @@ Public, precomputed, no-auth endpoints (they serve persisted rows only — never
 or LLM call): `GET /api/v1/benchmark/ledger?since=`, `GET /api/v1/benchmark/ledger/manifest/{date}`,
 `GET /api/v1/benchmark/engine-skill`.
 
+### 3g. Continuous refresh — the board stays live on its own
+
+`backend/workers/benchmark_worker.py` runs every `benchmark_interval_days` (default 7) in the scheduler
+and, in one LLM-free pass, recomputes the real Autocast crowd Brier, auto-publishes the forward ledger
+(so new confident forecasts get hashed + manifested without a manual `publish_ledger` run), recomputes
+the gated engine skill, and writes one `benchmark_runs` cache row. `GET /api/v1/benchmark/score` serves
+the **latest cached row** — zero request-time compute or network — and because the row lives in Postgres
+(not the `/tmp` Autocast cache) the real crowd number **survives a container `--force-recreate`**. Until
+the first worker row exists (fresh DB / CI), the endpoint falls back to the deterministic offline proofs,
+so it never fabricates and never 500s. The worker calls no LLM, so it behaves identically on the local
+Docker stack and on Railway; `engine_bss` is persisted as NULL until the n ≥ 20 gate is met.
+
 ---
 
 ## 4. The claims we make (verbatim, safe to quote)
@@ -215,6 +227,10 @@ python scripts/external_benchmark.py --offline          # stub forecaster, no LL
 # Publish the forward prediction ledger + daily manifest root (needs a populated DB)
 python -m scripts.publish_ledger --dry-run              # report only
 python -m scripts.publish_ledger                        # writes docs/benchmark/manifest-<date>.txt
+
+# Continuous refresh: recompute crowd Brier, auto-publish the ledger, cache a
+# benchmark_runs row that /benchmark/score serves (LLM-free; needs a populated DB)
+python -m backend.workers.benchmark_worker
 
 # Engine calibration once outcomes exist (needs a populated DB + running scheduler w/ LLM)
 python scripts/backtest_cpe.py

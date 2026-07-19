@@ -27,6 +27,7 @@ from sqlalchemy import func, select
 from backend.api.dependencies import DbDep
 from backend.consequence_engine import calibration
 from backend.models.benchmark_ledger import BenchmarkManifest, LedgerEntry
+from backend.models.benchmark_runs import BenchmarkRun
 from backend.models.prediction_outcome import PredictionOutcome
 from scripts import benchmark_score as bs
 
@@ -134,24 +135,57 @@ async def _engine_accrual(db: DbDep) -> dict:
     }
 
 
+async def _latest_run(db: DbDep) -> BenchmarkRun | None:
+    """Latest cached benchmark_runs row (Phase 3), or None.
+
+    Best-effort like _engine_accrual: a DB hiccup (or a fresh DB / CI with no
+    Postgres, or the worker not having run yet) must not take down the public
+    scoreboard, so we fall back to request-time compute rather than 500.
+    """
+    try:
+        row = (await db.execute(
+            select(BenchmarkRun).order_by(BenchmarkRun.run_at.desc()).limit(1)
+        )).scalars().first()
+        return row
+    except Exception as exc:
+        log.warning("benchmark: latest-run read failed (%s)", exc)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return None
+
+
 @router.get("/score")
 async def get_benchmark_score(db: DbDep) -> dict:
     """The consolidated public scoreboard payload.
 
-    Reuses scripts/benchmark_score.py's proofs verbatim (as_dict) so the API can
-    never drift from the CLI/CI numbers, and adds the reference bars, citations,
-    and the live engine-accrual meter.
+    Serves the latest cached benchmark_runs row (refreshed by benchmark_worker at
+    benchmark_interval_days) with zero request-time compute or network. Until the
+    first worker row exists (fresh DB / CI), it falls back to request-time proofs
+    so the endpoint always returns the same shape. Either way it reuses
+    benchmark_score.as_dict verbatim so the API can never drift from the CLI/CI
+    numbers, and adds the reference bars, citations, and live engine-accrual meter.
     """
-    syn = _synthetic()
-    auto = _autocast_no_network()
-    payload = bs.as_dict(syn, auto)  # {synthetic, autocast, engine_gated}
+    run = await _latest_run(db)
+    if run is not None and run.payload:
+        payload = dict(run.payload)  # cached as_dict shape (synthetic/autocast/engine_gated)
+        payload["cached_at"] = run.run_at.isoformat() if run.run_at else None
+        payload["ledger_root_hash"] = run.ledger_root_hash
+    else:
+        # No cached row yet: compute now (never downloads in-request - guardrail #4).
+        syn = _synthetic()
+        auto = _autocast_no_network()
+        payload = bs.as_dict(syn, auto)  # {synthetic, autocast, engine_gated}
+        payload["cached_at"] = None
     payload["engine_accrual"] = await _engine_accrual(db)
     payload["reference_bars"] = REFERENCE_BARS
     payload["citations"] = CITATIONS
     payload["layers"] = LAYERS
+    syn_block = payload.get("synthetic", {})
     payload["headline"] = (
-        f"Calibration pipeline VALIDATED - {syn['passed']}/{syn['total']} synthetic controls; "
-        "engine domain skill (BSS on its own predictions) accruing toward n>=20."
+        f"Calibration pipeline VALIDATED - {syn_block.get('passed')}/{syn_block.get('total')} "
+        "synthetic controls; engine domain skill (BSS on its own predictions) accruing toward n>=20."
     )
     return payload
 

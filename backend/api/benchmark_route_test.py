@@ -71,6 +71,11 @@ with TestClient(app) as client:
     ok("citations present", len(d["citations"]) >= 5)
     ok("three honesty layers", len(d["layers"]) == 3)
 
+    # Phase 3: the endpoint serves a cached benchmark_runs row when present and
+    # falls back to request-time proofs otherwise. Either way `cached_at` is a
+    # declared key (None on the fallback path this test exercises without a DB).
+    ok("cached_at key present", "cached_at" in d)
+
     # Encoding guardrail.
     ok("payload is pure ASCII", _is_ascii(d))
 
