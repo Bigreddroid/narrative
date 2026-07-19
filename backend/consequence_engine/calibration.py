@@ -77,6 +77,72 @@ def ece(pairs: list[tuple[float, float]], n_bins: int = 10) -> float:
     return sum((b["count"] / n) * abs(b["mean_pred"] - b["obs_freq"]) for b in reliability_curve(pairs, n_bins))
 
 
+def brier_skill_score(pairs: list[tuple[float, float]], reference_prob: float | None = None) -> float | None:
+    """Brier Skill Score — the forecast-verification standard for skill over a baseline.
+
+        BSS = 1 - Brier_model / Brier_reference
+
+    The reference is the climatological forecast: always predict `reference_prob`,
+    which defaults to the base rate (mean observed outcome) — the standard
+    climatology reference. BSS > 0 means genuine skill over that baseline;
+    0 = no better than climatology; 1 = perfect; < 0 = worse than the baseline.
+
+    This turns the raw "model Brier beats base-rate Brier" comparison into one
+    normalized, quotable number. Returns None when there are no pairs, or when the
+    reference is itself perfect (Brier_reference = 0) — skill is undefined against a
+    zero-error baseline (e.g. a degenerate set with a single outcome value).
+    """
+    if not pairs:
+        return None
+    if reference_prob is None:
+        reference_prob = sum(o for _, o in pairs) / len(pairs)
+    brier_model = sum(brier_score(p, o) for p, o in pairs) / len(pairs)
+    brier_ref = sum(brier_score(reference_prob, o) for _, o in pairs) / len(pairs)
+    if brier_ref <= EPS:
+        return None
+    return 1.0 - brier_model / brier_ref
+
+
+def murphy_decomposition(pairs: list[tuple[float, float]]) -> dict:
+    """Murphy (1973) 3-component decomposition of the Brier score:
+
+        Brier = Reliability - Resolution + Uncertainty
+
+    Forecasts are grouped by distinct predicted value (each distinct forecast is
+    its own bin), which makes the identity EXACT for binary outcomes o in {0,1}.
+
+      • reliability (REL): mean squared gap between a forecast value and the outcome
+        frequency observed at that value — 0 is perfectly reliable (lower better).
+      • resolution (RES): how far each group's outcome rate spreads from the base
+        rate — the forecaster's ability to separate cases (higher better).
+      • uncertainty (UNC): base-rate variance o(1-o), inherent to the events and
+        independent of the forecast.
+
+    Returns {"reliability", "resolution", "uncertainty", "brier"} where `brier` is
+    the reconstruction REL - RES + UNC. For binary outcomes this equals the mean
+    Brier score to floating precision (the within-group outcome variance is exactly
+    UNC - RES). With soft (0.5) labels the reconstruction is the binary-form identity
+    rather than the raw mean Brier, so the CPE decisive path scores on {0,1} labels.
+    """
+    if not pairs:
+        return {"reliability": 0.0, "resolution": 0.0, "uncertainty": 0.0, "brier": 0.0}
+    n = len(pairs)
+    obar = sum(o for _, o in pairs) / n
+    groups: dict[float, list[float]] = {}
+    for p, o in pairs:
+        groups.setdefault(p, []).append(o)
+    rel = res = 0.0
+    for p, outs in groups.items():
+        k = len(outs)
+        obar_k = sum(outs) / k
+        rel += k * (p - obar_k) ** 2
+        res += k * (obar_k - obar) ** 2
+    rel /= n
+    res /= n
+    unc = obar * (1.0 - obar)
+    return {"reliability": rel, "resolution": res, "uncertainty": unc, "brier": rel - res + unc}
+
+
 def fit_isotonic(pairs: list[tuple[float, float]]) -> dict:
     """Pool-Adjacent-Violators isotonic fit ⇒ monotonic recalibration map.
 
