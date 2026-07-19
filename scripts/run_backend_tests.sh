@@ -9,6 +9,7 @@ MODULES=(
   backend.config_test
   backend.api.auth_test
   backend.api.security_headers_test
+  backend.api.rate_limit_test
   backend.api.benchmark_route_test
   backend.api.imint_route_test
   backend.services.analyst_test

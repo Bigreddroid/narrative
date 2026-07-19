@@ -6,9 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 
-from backend.api.rate_limit import limiter
+from backend.api.rate_limit import limiter, ResilientSlowAPIMiddleware
 from backend.api.routes import admin, aircraft, auth, benchmark, chat, events, exposure, feed, follows, geolocate, graph, imint, market, meta, notifications, osint, search, stripe_routes, users, vessels
 from backend.config import get_settings
 from backend.database import engine
@@ -45,7 +44,9 @@ app = FastAPI(
 # outermost layer and 429 responses still carry CORS headers for browser clients.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
+# Resilient variant: fails OPEN if the limiter store (Redis) is unreachable
+# instead of 500-ing every undecorated route. See backend/api/rate_limit.py.
+app.add_middleware(ResilientSlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
