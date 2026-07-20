@@ -32,6 +32,7 @@ MODULES=(
   backend.workers.benchmark_worker_test
   backend.feeds.feeds_test
   backend.feeds.mastodon_osint_test
+  backend.feeds.weather_global_test
   scripts.backfill_prediction_outcomes_test
   scripts.validate_calibration_test
   scripts.benchmark_score_test

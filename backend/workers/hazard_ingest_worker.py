@@ -18,7 +18,7 @@ from backend import taxonomy
 from backend.consequence_engine import title_dedup
 from backend.consequence_engine.embedder import embed_texts
 from backend.database import AsyncSessionLocal
-from backend.feeds import cyber, gdacs, launches, synthesize, usgs, weather
+from backend.feeds import cyber, gdacs, launches, synthesize, usgs, weather, weather_global
 from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.narrative_event import NarrativeEvent
 
@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 # NOTE: gdelt.fetch_gdelt is intentionally NOT wired — the GDELT GEO 2.0 endpoint
 # returns 404 from our hosts (the DOC API works but has no per-point coords).
 # The module + tests remain; re-add once a working geocoded endpoint is confirmed.
-SOURCES = [usgs.fetch_earthquakes, weather.fetch_weather, gdacs.fetch_gdacs,
-           launches.fetch_launches]
+SOURCES = [usgs.fetch_earthquakes, weather.fetch_weather, weather_global.fetch_weather_global,
+           gdacs.fetch_gdacs, launches.fetch_launches]
 
 # Non-geo sources (lat/lng=None): ingested without coordinates. Filtered to
 # high-signal items only (NONGEO_MIN_IMPORTANCE) to keep the feed clean — e.g.
