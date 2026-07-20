@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useFollowing } from "../../hooks/useFollowing.js";
+import { FEATURES } from "../../lib/features.js";
 
 const TABS = [
   {
@@ -76,7 +77,7 @@ const TABS = [
   {
     id: "tracked",
     path: "/following",
-    label: "Tracked",
+    label: "Watched",
     icon: (active) => (
       <svg width="20" height="20" viewBox="0 0 20 20" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? 2 : 1.5} strokeLinecap="round">
         <path d="M10 2.5C7.5 2.5 5 4.5 5 7.5c0 4 5 10 5 10s5-6 5-10c0-3-2.5-5-5-5z" />
@@ -101,6 +102,10 @@ export default function MobileNav() {
   const location = useLocation();
   const { followed } = useFollowing();
 
+  // Photo geolocation is hidden from the v1 buyer (docs/SURFACE-AUDIT.md); drop its
+  // tab unless the feature flag re-enables it. Route-level guard lives in App.jsx.
+  const tabs = TABS.filter((t) => t.id !== "locate" || FEATURES.geolocate);
+
   const activeId =
     location.pathname === "/int" ? "fusion"
     : location.pathname === "/analyst" ? "analyst"
@@ -121,7 +126,7 @@ export default function MobileNav() {
       }}
     >
       <div className="flex items-stretch">
-        {TABS.map(tab => {
+        {tabs.map(tab => {
           const active = activeId === tab.id;
           return (
             <button

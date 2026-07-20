@@ -5,6 +5,7 @@ import Auth from "./pages/Auth.jsx";
 import PrivateRoute from "./components/auth/PrivateRoute.jsx";
 import MobileNav from "./components/layout/MobileNav.jsx";
 import { useUser } from "./hooks/useUser.js";
+import { FEATURES } from "./lib/features.js";
 
 // Lazy-load everything behind the public entry (Landing/Auth). This moves the
 // heavy map/d3 deps (WorldView, EventDetail) and the rarely-used admin console
@@ -80,7 +81,10 @@ export default function App() {
         <Route path="/event/:eventId"  element={<PrivateRoute><EventDetail /></PrivateRoute>} />
         <Route path="/following"       element={<PrivateRoute><Following /></PrivateRoute>} />
         <Route path="/analyst"         element={<PrivateRoute><Analyst /></PrivateRoute>} />
-        <Route path="/geolocate"       element={<PrivateRoute><GeoLocate /></PrivateRoute>} />
+        {/* Photo geolocation is hidden from the v1 (GSOC/duty-of-care) buyer — see
+            docs/SURFACE-AUDIT.md. Kept behind a flag (FEATURES.geolocate), not deleted;
+            when off, the route redirects to /world so old links don't dead-end. */}
+        <Route path="/geolocate"       element={FEATURES.geolocate ? <PrivateRoute><GeoLocate /></PrivateRoute> : <Navigate to="/world" replace />} />
         <Route path="/int"             element={<PrivateRoute><IntFusion /></PrivateRoute>} />
         <Route path="/wipro"           element={<PrivateRoute><WiproDemo /></PrivateRoute>} />
         <Route path="/osint"           element={<OsintRedirect />} />
