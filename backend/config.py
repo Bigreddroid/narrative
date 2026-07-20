@@ -160,6 +160,10 @@ class Settings(BaseSettings):
     # Free feed keys (optional — most sources need none)
     firms_map_key: str = ""        # NASA FIRMS wildfires
     openweather_api_key: str = ""  # global weather (optional; NWS/NHC need none)
+    # Benchmark external-dataset keys (Phase 4). Manifold + the file adapter are
+    # keyless; Metaculus is opt-in. Empty token => the metaculus dataset honestly
+    # refuses rather than fabricating (mirrors the harness's no-LLM/no-data skips).
+    metaculus_token: str = ""      # https://www.metaculus.com/accounts/settings/
     outcome_eval_interval_days: int = 7
     archive_interval_hours: int = 24
     # Benchmark scoreboard cache refresh (Phase 3): the LLM-free worker recomputes

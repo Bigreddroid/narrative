@@ -73,5 +73,62 @@ ok("extract_records keeps 1", len(recs) == 1)
 ok("extract_records keeps text", recs[0]["question_text"] == "Q1?")
 ok("extract_records outcome", recs[0]["outcome"] == 1.0)
 
+# --- Phase 4: pure dataset adapters (no network — parse fixtures only) --------
+
+# Manifold: keep only RESOLVED YES/NO BINARY; drop partial(MKT)/multi-choice/open.
+markets = [
+    {"id": "1", "outcomeType": "BINARY", "isResolved": True, "resolution": "YES",
+     "question": "q1", "createdTime": 1_700_000_000_000,
+     "resolutionTime": 1_710_000_000_000, "probability": 0.7},
+    {"id": "2", "outcomeType": "BINARY", "isResolved": True, "resolution": "NO", "question": "q2"},
+    {"id": "3", "outcomeType": "BINARY", "isResolved": True, "resolution": "MKT", "question": "partial"},
+    {"id": "4", "outcomeType": "MULTIPLE_CHOICE", "isResolved": True, "resolution": "YES", "question": "mc"},
+    {"id": "5", "outcomeType": "BINARY", "isResolved": False, "question": "open"},
+]
+mp = eb.parse_manifold_markets(markets)
+ok("manifold keeps 2", len(mp) == 2)
+ok("manifold outcomes", [m["outcome"] for m in mp] == [1.0, 0.0])
+ok("manifold ms->iso", mp[0]["publish_date"].startswith("2023-11-14"))
+ok("manifold source", mp[0]["source"] == "manifold")
+
+# Metaculus: handle both nested (`question`) and flat shapes; drop annulled.
+results = [
+    {"id": 10, "question": {"title": "mq1", "resolution": "yes",
+                            "created_time": "2024-01-01", "actual_resolve_time": "2024-06-01"}},
+    {"id": 11, "title": "mq2", "resolution": False},
+    {"id": 12, "title": "annulled", "resolution": "annulled"},
+]
+mq = eb.parse_metaculus_questions(results)
+ok("metaculus keeps 2", len(mq) == 2)
+ok("metaculus outcomes", [q["outcome"] for q in mq] == [1.0, 0.0])
+
+# Metaculus adapter refuses honestly with no token (no fabricated/empty result).
+try:
+    eb.metaculus_adapter("")
+    ok("metaculus no-token refuses", False)
+except SystemExit:
+    ok("metaculus no-token refuses", True)
+
+# file adapter: CSV/JSON gold set; drop rows missing text or a clean 0/1 outcome.
+import json as _json
+import tempfile
+import os as _os
+
+_fd, _p = tempfile.mkstemp(suffix=".json")
+try:
+    with _os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+        _json.dump([
+            {"question_text": "Did A resolve yes?", "outcome": "yes"},
+            {"question_text": "Did B resolve no?", "outcome": 0},
+            {"question_text": "", "outcome": 1},          # no text -> drop
+            {"question_text": "ambiguous", "outcome": "maybe"},  # bad outcome -> drop
+        ], _fh)
+    fr = eb.file_adapter(_p)
+    ok("file keeps 2", len(fr) == 2)
+    ok("file outcomes", [r["outcome"] for r in fr] == [1.0, 0.0])
+    ok("file source", fr[0]["source"] == "file")
+finally:
+    _os.unlink(_p)
+
 print(f"\nexternal_benchmark: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

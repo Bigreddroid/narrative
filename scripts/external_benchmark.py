@@ -24,8 +24,22 @@ THE LEAKAGE GUARD (read this before quoting any number):
     The clean, forward-looking engine benchmark lives in the prediction ledger,
     not here.
 
+Datasets (Phase 4 — each is an adapter behind the same record interface):
+    autocast   keyless crowd dataset; all pre-2023, so post_cutoff is ~empty.
+    manifold   keyless public API; RECENTLY-resolved binary markets, so its
+               post_cutoff_clean bucket actually populates (the point of adding it).
+    metaculus  opt-in (settings.metaculus_token); resolved binary questions.
+    file       a hand-curated CSV/JSON gold set of resolved binary questions.
+
+Every adapter returns records shaped {id, question_text, background, publish_date,
+resolution_date, outcome in {0,1}, source} — the leakage partition + scoring below
+are dataset-agnostic and unchanged.
+
 Usage:
     python scripts/external_benchmark.py --dataset autocast --limit 50
+    python scripts/external_benchmark.py --dataset manifold --max-fetch 1000 --limit 30
+    python scripts/external_benchmark.py --dataset metaculus --limit 30   # needs token
+    python scripts/external_benchmark.py --dataset file --file gold.json
     python scripts/external_benchmark.py --offline            # stub forecaster, no LLM/network
     python scripts/external_benchmark.py --json --report out.txt
     python scripts/external_benchmark.py --model-cutoff 2023-11-01
@@ -145,20 +159,190 @@ def stub_forecaster(record: dict) -> float | None:
     return float(cp) if cp is not None else 0.5
 
 
-def load_records(dataset: str, autocast_file: str | None, offline: bool) -> tuple[list[dict], str]:
-    """Return (records, source_label). Only 'autocast' is wired today (keyless)."""
+# --- Phase 4: additional keyless / opt-in dataset adapters -------------------
+# Each adapter turns an external source into the record interface above. The pure
+# parse_* helpers are unit-tested against fixtures (no network, no LLM); the thin
+# *_adapter wrappers do the one keyless HTTP GET.
+
+def _http_get_json(url: str, headers: dict | None = None, timeout: int = 60):
+    """Minimal keyless GET -> parsed JSON (urllib only, matching benchmark_score)."""
+    import urllib.request
+    hdrs = {"User-Agent": "narrative-benchmark"}
+    hdrs.update(headers or {})
+    req = urllib.request.Request(url, headers=hdrs)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _ms_to_iso(ms) -> str | None:
+    """Epoch-milliseconds (Manifold's time format) -> ISO string, or None."""
+    if ms is None:
+        return None
+    try:
+        return datetime.fromtimestamp(float(ms) / 1000.0, tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def parse_manifold_markets(markets: list[dict]) -> list[dict]:
+    """Pure: Manifold market objects -> records. Resolved YES/NO binary only.
+
+    MKT (partial), CANCEL and other resolutions are dropped — we score clean 0/1.
+    `probability` (the market's last implied probability) is kept as crowd_prob.
+    """
+    out = []
+    for m in markets:
+        if m.get("outcomeType") != "BINARY" or not m.get("isResolved"):
+            continue
+        res = str(m.get("resolution") or "").upper()
+        if res not in ("YES", "NO"):
+            continue
+        q = str(m.get("question") or "").strip()
+        if not q:
+            continue
+        out.append({
+            "id": f"manifold:{m.get('id')}",
+            "question_text": q,
+            "background": str(m.get("textDescription") or "").strip(),
+            "publish_date": _ms_to_iso(m.get("createdTime")),
+            "resolution_date": _ms_to_iso(m.get("resolutionTime") or m.get("closeTime")),
+            "outcome": 1.0 if res == "YES" else 0.0,
+            "crowd_prob": m.get("probability"),
+            "source": "manifold",
+        })
+    return out
+
+
+def manifold_adapter(max_fetch: int = 500, timeout: int = 60) -> list[dict]:
+    """Keyless: newest RESOLVED binary markets (sorted by resolve date, so recent
+    -> post-cutoff-clean). Uses the public search endpoint; no auth, no key."""
+    url = ("https://api.manifold.markets/v0/search-markets"
+           f"?term=&filter=resolved&contractType=BINARY&sort=resolve-date&limit={int(max_fetch)}")
+    return parse_manifold_markets(_http_get_json(url, timeout=timeout))
+
+
+def _metaculus_outcome(res) -> float | None:
+    """Map a Metaculus binary resolution to 0/1; annulled/ambiguous -> None."""
+    if res is True or res in (1, 1.0, "1") or (isinstance(res, str) and res.strip().lower() == "yes"):
+        return 1.0
+    if res is False or res in (0, 0.0, "0") or (isinstance(res, str) and res.strip().lower() == "no"):
+        return 0.0
+    return None
+
+
+def parse_metaculus_questions(results: list[dict]) -> list[dict]:
+    """Pure: Metaculus API question objects -> records. Resolved binary only.
+
+    Defensive about API shape: newer responses nest fields under `question`.
+    """
+    out = []
+    for item in results:
+        q = item.get("question") if isinstance(item.get("question"), dict) else item
+        outcome = _metaculus_outcome(q.get("resolution", item.get("resolution")))
+        title = str(q.get("title") or item.get("title") or "").strip()
+        if not title or outcome is None:
+            continue
+        out.append({
+            "id": f"metaculus:{item.get('id') or q.get('id')}",
+            "question_text": title,
+            "background": str(q.get("description") or "").strip(),
+            "publish_date": q.get("created_time") or item.get("created_time"),
+            "resolution_date": (q.get("actual_resolve_time") or q.get("resolve_time")
+                                or item.get("resolve_time")),
+            "outcome": outcome,
+            "crowd_prob": None,
+            "source": "metaculus",
+        })
+    return out
+
+
+def metaculus_adapter(token: str, max_fetch: int = 200, timeout: int = 60) -> list[dict]:
+    """Opt-in (needs a free token). Resolved binary questions, newest first. No
+    token => honest refusal rather than a fabricated or empty 'result'."""
+    if not token:
+        raise SystemExit("dataset 'metaculus' needs settings.metaculus_token "
+                         "(env METACULUS_TOKEN). It's opt-in; without it there is nothing to score.")
+    url = ("https://www.metaculus.com/api2/questions/"
+           f"?forecast_type=binary&status=resolved&order_by=-resolve_time&limit={int(max_fetch)}")
+    data = _http_get_json(url, headers={"Authorization": f"Token {token}"}, timeout=timeout)
+    results = data.get("results", []) if isinstance(data, dict) else data
+    return parse_metaculus_questions(results)
+
+
+def _read_local_records(path: str) -> list[dict]:
+    """Read a CSV (header row) or JSON array of row objects into dicts."""
+    if path.lower().endswith(".json"):
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, list):
+            raise SystemExit("file dataset JSON must be an array of row objects")
+        return [dict(r) for r in data]
+    import csv
+    with open(path, newline="", encoding="utf-8") as fh:
+        return [dict(r) for r in csv.DictReader(fh)]
+
+
+def _coerce_outcome(v) -> float | None:
+    """Coerce a gold-set outcome cell to 1.0/0.0; anything else -> None (dropped)."""
+    if v is True or v in (1, 1.0, "1") or (isinstance(v, str) and v.strip().lower() in ("yes", "true")):
+        return 1.0
+    if v is False or v in (0, 0.0, "0") or (isinstance(v, str) and v.strip().lower() in ("no", "false")):
+        return 0.0
+    return None
+
+
+def file_adapter(path: str) -> list[dict]:
+    """Load a hand-curated CSV/JSON gold set of resolved binary questions.
+
+    Columns: question_text (or question), outcome (0/1/yes/no); optional id,
+    background, publish_date, resolution_date, crowd_prob. Rows missing text or a
+    clean 0/1 outcome are dropped.
+    """
+    out = []
+    for i, r in enumerate(_read_local_records(path)):
+        outcome = _coerce_outcome(r.get("outcome"))
+        q = str(r.get("question_text") or r.get("question") or "").strip()
+        if not q or outcome is None:
+            continue
+        cp = r.get("crowd_prob")
+        out.append({
+            "id": str(r.get("id") or f"file:{i}"),
+            "question_text": q,
+            "background": str(r.get("background") or "").strip(),
+            "publish_date": r.get("publish_date"),
+            "resolution_date": r.get("resolution_date"),
+            "outcome": outcome,
+            "crowd_prob": float(cp) if cp not in (None, "") else None,
+            "source": "file",
+        })
+    return out
+
+
+def load_records(dataset: str, autocast_file: str | None, offline: bool,
+                 *, max_fetch: int = 500, file_path: str | None = None
+                 ) -> tuple[list[dict], str]:
+    """Return (records, source_label). Dispatches to the per-dataset adapter."""
     if offline:
         return list(_SELFTEST_RECORDS), "selftest"
-    if dataset != "autocast":
-        raise SystemExit(f"unknown dataset '{dataset}' (only 'autocast' is wired)")
-    # Reuse benchmark_score's keyless, cached, never-committed Autocast fetch.
-    path = autocast_file or os.environ.get("AUTOCAST_QUESTIONS")
-    if not path:
-        path = bs._download_autocast()
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
-    questions = data if isinstance(data, list) else data.get("questions", data.get("data", []))
-    return ac.extract_records(questions), "real"
+    if dataset == "autocast":
+        # Reuse benchmark_score's keyless, cached, never-committed Autocast fetch.
+        path = autocast_file or os.environ.get("AUTOCAST_QUESTIONS")
+        if not path:
+            path = bs._download_autocast()
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        questions = data if isinstance(data, list) else data.get("questions", data.get("data", []))
+        return ac.extract_records(questions), "autocast"
+    if dataset == "manifold":
+        return manifold_adapter(max_fetch), "manifold"
+    if dataset == "metaculus":
+        from backend.config import settings  # lazy: offline/tests never import config
+        return metaculus_adapter(settings.metaculus_token, max_fetch), "metaculus"
+    if dataset == "file":
+        if not file_path:
+            raise SystemExit("dataset 'file' needs --file PATH (a CSV or JSON gold set)")
+        return file_adapter(file_path), "file"
+    raise SystemExit(f"unknown dataset '{dataset}' (autocast|manifold|metaculus|file)")
 
 
 _EXPOSED_CAVEAT = ("leakage-exposed: resolved before the model cutoff, so a good "
@@ -213,8 +397,13 @@ def render(result: dict) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Score the engine on external resolved questions.")
-    ap.add_argument("--dataset", default="autocast", help="external dataset (only 'autocast' wired)")
+    ap.add_argument("--dataset", default="autocast",
+                    help="external dataset: autocast|manifold|metaculus|file")
     ap.add_argument("--autocast-file", help="path to autocast_questions.json (else auto-download)")
+    ap.add_argument("--max-fetch", type=int, default=500,
+                    help="rows to pull from a network dataset before scoring (manifold/metaculus)")
+    ap.add_argument("--file", dest="file_path",
+                    help="path to a CSV/JSON gold set (required for --dataset file)")
     ap.add_argument("--offline", action="store_true", help="stub forecaster + fixture; no LLM/network")
     ap.add_argument("--limit", type=int, help="cap questions scored per bucket (LLM calls cost time)")
     ap.add_argument("--model-cutoff", default=DEFAULT_CUTOFF, help="YYYY-MM-DD training cutoff")
@@ -223,7 +412,8 @@ def main() -> int:
     args = ap.parse_args()
 
     cutoff = _parse_date(args.model_cutoff)
-    records, source = load_records(args.dataset, args.autocast_file, args.offline)
+    records, source = load_records(args.dataset, args.autocast_file, args.offline,
+                                   max_fetch=args.max_fetch, file_path=args.file_path)
     forecaster = stub_forecaster if args.offline else engine_forecaster
     result = run(records, forecaster, cutoff, args.limit, source)
 
