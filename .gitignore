@@ -57,3 +57,6 @@ Thumbs.db
 # generated install-guide artifacts
 INSTALL_GUIDE.html
 INSTALL_GUIDE.pdf
+
+# Claude Code local tooling state (per-developer: allowlist, worktrees, plugins)
+.claude/
