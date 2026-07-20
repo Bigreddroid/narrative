@@ -6,6 +6,7 @@ import PrivateRoute from "./components/auth/PrivateRoute.jsx";
 import MobileNav from "./components/layout/MobileNav.jsx";
 import { useUser } from "./hooks/useUser.js";
 import { FEATURES } from "./lib/features.js";
+import wiproConfig from "./data/customers/wipro.json";
 
 // Lazy-load everything behind the public entry (Landing/Auth). This moves the
 // heavy map/d3 deps (WorldView, EventDetail) and the rarely-used admin console
@@ -20,8 +21,9 @@ const GeoLocate = lazy(() => import("./pages/GeoLocate.jsx"));
 const IntFusion = lazy(() => import("./pages/IntFusion.jsx"));
 // Public calibration scoreboard — citable, no login (Phase 0 benchmark surface).
 const Benchmark = lazy(() => import("./pages/Benchmark.jsx"));
-// Customer demo dashboard — direct URL only (/wipro), intentionally not in the nav.
-const WiproDemo = lazy(() => import("./pages/WiproDemo.jsx"));
+// Customer deck — config-driven dashboard over the live backend; direct URL only
+// (/wipro), intentionally not in the nav. Next tenant = another config + route.
+const CustomerDeck = lazy(() => import("./pages/CustomerDeck.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
 const PipelineMonitor = lazy(() => import("./admin/PipelineMonitor.jsx"));
 const CostDashboard = lazy(() => import("./admin/CostDashboard.jsx"));
@@ -86,7 +88,7 @@ export default function App() {
             when off, the route redirects to /world so old links don't dead-end. */}
         <Route path="/geolocate"       element={FEATURES.geolocate ? <PrivateRoute><GeoLocate /></PrivateRoute> : <Navigate to="/world" replace />} />
         <Route path="/int"             element={<PrivateRoute><IntFusion /></PrivateRoute>} />
-        <Route path="/wipro"           element={<PrivateRoute><WiproDemo /></PrivateRoute>} />
+        <Route path="/wipro"           element={<PrivateRoute><CustomerDeck config={wiproConfig} /></PrivateRoute>} />
         <Route path="/osint"           element={<OsintRedirect />} />
         <Route path="/settings"        element={<PrivateRoute><Settings /></PrivateRoute>} />
 
