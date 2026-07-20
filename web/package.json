@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:lib": "node src/lib/propagation.test.mjs && node src/lib/temporal.test.mjs && node src/lib/geoAssoc.test.mjs",
+    "test:lib": "node src/lib/propagation.test.mjs && node src/lib/temporal.test.mjs && node src/lib/geoAssoc.test.mjs && node src/lib/officeContext.test.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
