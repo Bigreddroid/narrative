@@ -130,5 +130,27 @@ try:
 finally:
     _os.unlink(_p)
 
+# --- Phase 4 (supplement): helper units + adapter field/flow-through ----------
+
+# _ms_to_iso: Manifold epoch-ms -> ISO; None -> None.
+ok("_ms_to_iso ms->str", isinstance(eb._ms_to_iso(1_700_000_000_000), str))
+ok("_ms_to_iso None", eb._ms_to_iso(None) is None)
+
+# _metaculus_outcome / _coerce_outcome: binary mapping; ambiguous -> None.
+ok("metaculus_outcome 1", eb._metaculus_outcome(1) == 1.0)
+ok("metaculus_outcome no", eb._metaculus_outcome("no") == 0.0)
+ok("metaculus_outcome ambiguous None", eb._metaculus_outcome(0.5) is None)
+ok("coerce_outcome yes", eb._coerce_outcome("yes") == 1.0)
+ok("coerce_outcome junk None", eb._coerce_outcome("maybe") is None)
+
+# Adapter records carry the namespaced id + source the ledger/labels rely on.
+ok("manifold id namespaced", mp[0]["id"].startswith("manifold:"))
+ok("metaculus id namespaced", mq[0]["id"].startswith("metaculus:"))
+ok("file id defaulted", fr[0]["id"].startswith("file:"))
+
+# Adapter output flows through the existing scorer/partition unchanged.
+fresult = eb.run(mp + fr, eb.stub_forecaster, cutoff, None, "manifold")
+ok("adapter records score end-to-end", fresult["total_records"] == len(mp) + len(fr))
+
 print(f"\nexternal_benchmark: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

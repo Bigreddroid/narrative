@@ -157,6 +157,18 @@ not skill, and must never be compared to superforecasters. Two surfaces, hard-la
   ingests an arbitrary outside question and emits a scored forecast end-to-end — **not** a skill claim.
   For Autocast (all pre-2023) the clean bucket is essentially empty, which is the honest answer.
 
+  Four datasets sit behind one adapter interface (`load_records`), so the leakage partition and
+  scoring are dataset-agnostic:
+  - `--dataset autocast` — keyless crowd dataset; all pre-2023, so `post_cutoff` stays empty.
+  - `--dataset manifold` — **keyless** public API of *recently*-resolved binary markets, so the
+    leak-free `post_cutoff_clean` bucket **actually populates** (the reason it was added). Data-quality
+    caveat: Manifold includes personal/jokey markets, so treat any single small-n number as noisy — the
+    honest engine-skill claim still lives on the forward ledger, gated at n ≥ 20.
+  - `--dataset metaculus` — opt-in (`settings.metaculus_token`); resolved binary questions. No token →
+    an honest refusal, never a fabricated or empty result.
+  - `--dataset file --file gold.json` — a hand-curated CSV/JSON gold set of resolved binary questions,
+    for scoring any private benchmark set through the same pipeline.
+
 - **Forward prediction ledger (the clean engine benchmark).** The only leak-proof engine score: a
   forecast made **now**, published + hashed **before** its outcome is known, graded **later**.
   `scripts/publish_ledger.py` writes each confident forecast (`prediction_score ≥ 60`) to
@@ -222,6 +234,9 @@ bash scripts/run_backend_tests.sh
 
 # Engine on OUTSIDE resolved questions (leakage-partitioned diagnostic)
 python scripts/external_benchmark.py --dataset autocast --limit 50
+python scripts/external_benchmark.py --dataset manifold --max-fetch 1000 --limit 30  # keyless; clean bucket populates
+python scripts/external_benchmark.py --dataset metaculus --limit 30   # opt-in: needs METACULUS_TOKEN
+python scripts/external_benchmark.py --dataset file --file gold.json  # score a private gold set
 python scripts/external_benchmark.py --offline          # stub forecaster, no LLM/network
 
 # Publish the forward prediction ledger + daily manifest root (needs a populated DB)
