@@ -150,6 +150,7 @@ async def _source_grade(db, event) -> dict | None:
                 "lat": e.geo_centroid_lat,
                 "lng": e.geo_centroid_lng,
                 "ts": e.first_detected_at.timestamp() * 1000 if e.first_detected_at else None,
+                "embedding": e.embedding,  # enables corroboration's relatedness gate
             }
             for e in rows.scalars().all()
         ]
@@ -190,6 +191,7 @@ async def events_corroboration(
             "lat": e.geo_centroid_lat,
             "lng": e.geo_centroid_lng,
             "ts": e.first_detected_at.timestamp() * 1000 if e.first_detected_at else None,
+            "embedding": e.embedding,  # enables corroboration's relatedness gate
         }
         for e in result.scalars().all()
     ]
