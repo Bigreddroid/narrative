@@ -197,6 +197,32 @@ the first worker row exists (fresh DB / CI), the endpoint falls back to the dete
 so it never fabricates and never 500s. The worker calls no LLM, so it behaves identically on the local
 Docker stack and on Railway; `engine_bss` is persisted as NULL until the n ≥ 20 gate is met.
 
+### 3h. Forward-mode external forecasts — leak-proof *and* fast, with a crowd baseline
+
+The forward ledger (3f) is leak-proof but slow: internal predictions must age ~30 days before
+`outcome_worker` can grade them, so the n ≥ 20 gate is calendar-bound. **Forward external forecasts**
+close both gaps. `scripts/publish_external_forecasts.py` pulls **open** binary Manifold markets
+(keyless), has the engine (`consensus_mapper.forecast_binary`) forecast each one **now**, and writes it
+to the *same* `benchmark_ledger` with `source='manifold'` — the same write-once `content_hash` and the
+same daily manifest root, so external and internal entries are audited identically.
+
+- **Leak-proof by construction.** An open question has no outcome yet, so the model cannot have
+  memorized it — no cutoff partition is even needed (contrast the retrospective diagnostic in 3f).
+- **Fast to the gate.** A load-bearing quality filter (`parse_manifold_open_markets`: BINARY, public,
+  closes within `--horizon-days`, ≥ `--min-traders` unique bettors, ≥ `--min-volume`) selects liquid,
+  short-horizon markets, so the external bucket can reach n ≥ 20 in days, not months. **This filter is
+  the make-or-break of the axis** — without it the engine forecasts jokey/personal markets (noise).
+- **An honest crowd baseline.** Each market ships a probability at forecast time (`crowd_prob`), giving
+  a true **engine-vs-crowd** comparison — the strongest honest framing available.
+
+`backend/workers/external_resolution_worker.py` (LLM-free, every `external_resolution_interval_hours`)
+re-queries each market by `external_ref` and, only on a clean YES/NO, backfills the resolved Brier
+(MKT/partial/cancelled/open ⇒ left open, never forced to 0/1). `GET /api/v1/benchmark/engine-skill` then
+reports a **`by_source`** breakdown and an **`engine_vs_crowd`** delta, **each gated at n ≥ 20
+separately** — the headline stays the internal ledger; external skill is never blended into it, and the
+crowd delta is never quoted below the gate. External forecasts publish only where the LLM runs (local
+stack); the resolution poller and skill scoring are LLM-free and safe on any host.
+
 ---
 
 ## 4. The claims we make (verbatim, safe to quote)
@@ -242,6 +268,12 @@ python scripts/external_benchmark.py --offline          # stub forecaster, no LL
 # Publish the forward prediction ledger + daily manifest root (needs a populated DB)
 python -m scripts.publish_ledger --dry-run              # report only
 python -m scripts.publish_ledger                        # writes docs/benchmark/manifest-<date>.txt
+
+# Forward-mode EXTERNAL forecasts (leak-proof + fast, with a crowd baseline)
+python -m scripts.publish_external_forecasts --dry-run --limit 5 --horizon-days 3  # keyless; no LLM, no write
+python -m scripts.publish_external_forecasts --limit 20 --min-traders 20           # forecast + publish (needs local LLM + DB)
+python -m backend.workers.external_resolution_worker    # LLM-free: grade resolved external entries
+# GET /api/v1/benchmark/engine-skill now carries by_source + engine_vs_crowd, each gated n>=20
 
 # Continuous refresh: recompute crowd Brier, auto-publish the ledger, cache a
 # benchmark_runs row that /benchmark/score serves (LLM-free; needs a populated DB)

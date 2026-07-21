@@ -108,5 +108,28 @@ with TestClient(app) as client:
 
     ok("ledger payloads pure ASCII", _is_ascii(led) and _is_ascii(man) and _is_ascii(skill))
 
+# summarize_engine_skill (pure): source separation + per-bucket gating + crowd delta.
+from backend.api.routes.benchmark import summarize_engine_skill
+
+req = calibration.MIN_CALIBRATION_POINTS  # 20
+
+# Below the gate in every bucket -> nothing leaks.
+small = summarize_engine_skill([(70, 1.0, "engine", None), (30, 0.0, "manifold", 0.4)], req)
+ok("headline withheld below gate", small["status"] == "withheld" and "brier" not in small)
+ok("by_source manifold withheld", small["by_source"]["manifold"]["status"] == "withheld"
+   and "brier" not in small["by_source"]["manifold"])
+
+# Enough external rows to clear the gate; internal stays below -> headline still withheld
+# (external NEVER blends into the headline) but by_source.manifold is ready.
+rows = [(80, 1.0, "manifold", 0.55) for _ in range(req)]
+rows += [(20, 0.0, "manifold", 0.45) for _ in range(req)]
+big = summarize_engine_skill(rows, req)
+ok("headline still withheld (internal n=0)", big["status"] == "withheld")
+ok("by_source manifold ready above gate", big["by_source"]["manifold"]["status"] == "ready")
+ok("manifold bucket has a brier", "brier" in big["by_source"]["manifold"])
+ok("engine_vs_crowd present + gated ready", big["engine_vs_crowd"]["manifold"]["status"] == "ready")
+ok("engine beat crowd here (positive delta)", big["engine_vs_crowd"]["manifold"]["delta"] > 0)
+ok("summarize payload ASCII", _is_ascii(big))
+
 print(f"\nbenchmark_route: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -152,5 +152,56 @@ ok("file id defaulted", fr[0]["id"].startswith("file:"))
 fresult = eb.run(mp + fr, eb.stub_forecaster, cutoff, None, "manifold")
 ok("adapter records score end-to-end", fresult["total_records"] == len(mp) + len(fr))
 
+# --- Forward mode: OPEN manifold questions + resolution helper -----------------
+
+# A fixed "now" so the horizon window is deterministic. soon=+2d, far=+60d.
+from datetime import timedelta as _td
+_now = datetime(2026, 7, 21, tzinfo=timezone.utc)
+_soon_ms = int((_now + _td(days=2)).timestamp() * 1000)
+_far_ms = int((_now + _td(days=60)).timestamp() * 1000)
+_past_ms = int((_now - _td(days=1)).timestamp() * 1000)
+
+open_markets = [
+    # good: binary, open, public, closes soon, liquid.
+    {"id": "o1", "outcomeType": "BINARY", "isResolved": False, "visibility": "public",
+     "question": "Will X happen by Friday?", "closeTime": _soon_ms, "probability": 0.62,
+     "uniqueBettorCount": 40, "volume": 500, "url": "https://manifold.markets/o1"},
+    {"id": "o2", "outcomeType": "BINARY", "isResolved": False, "visibility": "public",
+     "question": "far horizon", "closeTime": _far_ms, "probability": 0.5,
+     "uniqueBettorCount": 40, "volume": 500},                                   # too far -> drop
+    {"id": "o3", "outcomeType": "BINARY", "isResolved": False, "visibility": "public",
+     "question": "thin", "closeTime": _soon_ms, "probability": 0.5,
+     "uniqueBettorCount": 3, "volume": 500},                                    # too few traders -> drop
+    {"id": "o4", "outcomeType": "BINARY", "isResolved": False, "visibility": "public",
+     "question": "low volume", "closeTime": _soon_ms, "probability": 0.5,
+     "uniqueBettorCount": 40, "volume": 10},                                    # too little volume -> drop
+    {"id": "o5", "outcomeType": "BINARY", "isResolved": False, "visibility": "unlisted",
+     "question": "private", "closeTime": _soon_ms, "probability": 0.5,
+     "uniqueBettorCount": 40, "volume": 500},                                   # not public -> drop
+    {"id": "o6", "outcomeType": "BINARY", "isResolved": True, "visibility": "public",
+     "question": "already resolved", "closeTime": _soon_ms, "probability": 1.0,
+     "uniqueBettorCount": 40, "volume": 500},                                   # resolved -> drop
+    {"id": "o7", "outcomeType": "BINARY", "isResolved": False, "visibility": "public",
+     "question": "closed in past", "closeTime": _past_ms, "probability": 0.5,
+     "uniqueBettorCount": 40, "volume": 500},                                   # already closed -> drop
+]
+op = eb.parse_manifold_open_markets(open_markets, min_traders=15, min_volume=50,
+                                    max_horizon_days=14, now=_now)
+ok("open keeps only the clean one", len(op) == 1)
+ok("open carries external_ref", op[0]["external_ref"] == "manifold:o1")
+ok("open carries crowd_prob", op[0]["crowd_prob"] == 0.62)
+ok("open has no outcome key", "outcome" not in op[0])
+ok("open source", op[0]["source"] == "manifold")
+
+# resolution_from_manifold_market: only clean YES/NO -> 0/1; else None (leave open).
+ok("resolve YES->1", eb.resolution_from_manifold_market(
+    {"isResolved": True, "resolution": "YES"}) == 1.0)
+ok("resolve NO->0", eb.resolution_from_manifold_market(
+    {"isResolved": True, "resolution": "NO"}) == 0.0)
+ok("resolve MKT->None", eb.resolution_from_manifold_market(
+    {"isResolved": True, "resolution": "MKT"}) is None)
+ok("resolve open->None", eb.resolution_from_manifold_market(
+    {"isResolved": False, "resolution": None}) is None)
+
 print(f"\nexternal_benchmark: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

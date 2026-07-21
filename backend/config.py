@@ -178,6 +178,11 @@ class Settings(BaseSettings):
     # still refreshes the synthetic/crowd/engine numbers but never publishes a competing
     # ledger. Synthetic/Autocast/engine-skill computation is unaffected either way.
     benchmark_publish_enabled: bool = True
+    # Forward-mode external forecasts (Manifold): the LLM-free resolution poller
+    # re-queries the source and grades published external ledger entries. Safe on
+    # any host (it only acts on rows that exist locally); short-horizon markets
+    # resolve fast, so a few-hours cadence keeps the external skill bucket current.
+    external_resolution_interval_hours: int = 6
 
     # Cost control
     claude_daily_cost_alert_usd: float = 20.0    # soft alert (email only), Voyage spend
