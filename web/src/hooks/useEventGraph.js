@@ -14,10 +14,14 @@ export function useEventGraph(eventId) {
     setLoading(true);
     setError(null);
 
+    // These back the flagship /event/:id drill-in and hit LLM-generated
+    // consequence maps/graphs — give them real headroom instead of the 3.5s
+    // api.js default, which aborts on any cold cache and blanks the page.
+    const opts = { timeoutMs: 15000 };
     Promise.all([
-      api.get(`/events/${eventId}`),
-      api.get(`/graph/event/${eventId}`),
-      api.get(`/events/${eventId}/revisions`).catch(() => ({ revisions: [] })),
+      api.get(`/events/${eventId}`, opts),
+      api.get(`/graph/event/${eventId}`, opts),
+      api.get(`/events/${eventId}/revisions`, opts).catch(() => ({ revisions: [] })),
     ])
       .then(([eventData, graphData, revisionsData]) => {
         setEvent(eventData);

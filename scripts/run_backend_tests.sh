@@ -20,6 +20,9 @@ MODULES=(
   backend.services.source_reliability_test
   backend.services.operator_test
   backend.services.reasoner_test
+  backend.services.osint_extract_test
+  backend.services.osint_enrich_test
+  backend.consequence_engine.tracer_test
   backend.consequence_engine.propagation_test
   backend.consequence_engine.calibration_test
   backend.consequence_engine.cluster_logic_test
@@ -40,6 +43,7 @@ MODULES=(
   scripts.benchmark_score_test
   scripts.external_benchmark_test
   scripts.publish_external_forecasts_test
+  scripts.test_registration_test
 )
 
 fail=0

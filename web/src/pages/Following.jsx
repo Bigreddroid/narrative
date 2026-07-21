@@ -12,29 +12,33 @@ const TYPE_COLORS = {
   SPECULATIVE: "#6A3090",
 };
 
-const FALLBACK_CHAIN = [
-  { type: "VERIFIED",    content: "Event confirmed by multiple primary sources." },
-  { type: "INFERRED",    content: "Secondary effects propagating through connected systems." },
-  { type: "SPECULATIVE", content: "Long-term implications remain uncertain pending further developments." },
-];
-
 function useEventDetail(eventId) {
-  const [data, setData] = useState(null);
+  const [data, setData]     = useState(null);
+  const [status, setStatus] = useState("loading"); // loading | loaded | error
   useEffect(() => {
     if (!eventId) return;
-    api.get(`/events/${eventId}`).then(setData).catch(() => {});
+    let live = true;
+    setStatus("loading");
+    // Consequence maps are LLM-generated; give the fetch real headroom rather than
+    // the 3.5s api.js default, which aborts under live latency.
+    api.get(`/events/${eventId}`, { timeoutMs: 15000 })
+      .then((d) => { if (live) { setData(d); setStatus("loaded"); } })
+      .catch(() => { if (live) setStatus("error"); });
+    return () => { live = false; };
   }, [eventId]);
-  return data;
+  return { data, status };
 }
 
 function TrackedEvent({ event, onUnfollow, onOpenAnalysis }) {
   const [expanded, setExpanded] = useState(true);
-  const detail   = useEventDetail(event.id);
+  const { data: detail, status } = useEventDetail(event.id);
   const color    = getCategoryColor(event.category);
   const since    = new Date(event.followedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const isLive   = event.current_status === "escalating" || event.current_status === "developing";
 
-  const chain    = detail?.consequence_map?.consequence_chain || FALLBACK_CHAIN;
+  // Real chain only — never a canned placeholder. If the live map isn't available,
+  // say so honestly instead of fabricating a consequence chain.
+  const chain    = detail?.consequence_map?.consequence_chain || [];
   const articles = detail?.articles || [];
 
   return (
@@ -99,36 +103,46 @@ function TrackedEvent({ event, onUnfollow, onOpenAnalysis }) {
                 Consequence Chain
               </p>
 
-              <div className="space-y-0">
-                {chain.map((step, i) => {
-                  const tc = TYPE_COLORS[step.type] || TYPE_COLORS[step.evidence_type] || "#6A6A60";
-                  const text = step.content || step.text || "";
-                  return (
-                    <div key={i} className="flex gap-3">
-                      <div className="flex flex-col items-center flex-shrink-0 w-5">
-                        <div
-                          className="w-5 h-5 flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                          style={{ backgroundColor: tc + "15", color: tc, border: `1px solid ${tc}35` }}
-                        >
-                          {i + 1}
+              {chain.length > 0 ? (
+                <div className="space-y-0">
+                  {chain.map((step, i) => {
+                    const tc = TYPE_COLORS[step.type] || TYPE_COLORS[step.evidence_type] || "#6A6A60";
+                    const text = step.content || step.text || "";
+                    return (
+                      <div key={i} className="flex gap-3">
+                        <div className="flex flex-col items-center flex-shrink-0 w-5">
+                          <div
+                            className="w-5 h-5 flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                            style={{ backgroundColor: tc + "15", color: tc, border: `1px solid ${tc}35` }}
+                          >
+                            {i + 1}
+                          </div>
+                          {i < chain.length - 1 && (
+                            <div className="w-px flex-1 mt-1 mb-1" style={{ backgroundColor: tc + "20", minHeight: 12 }} />
+                          )}
                         </div>
-                        {i < chain.length - 1 && (
-                          <div className="w-px flex-1 mt-1 mb-1" style={{ backgroundColor: tc + "20", minHeight: 12 }} />
-                        )}
+                        <div className="flex-1 pb-3 min-w-0">
+                          <span
+                            className="inline-block text-[9px] font-mono uppercase tracking-widest border px-1.5 py-px mb-1.5"
+                            style={{ color: tc, borderColor: tc + "30" }}
+                          >
+                            {step.type || step.evidence_type || "—"}
+                          </span>
+                          <p className="text-[13px] text-ink/80 leading-relaxed">{text}</p>
+                        </div>
                       </div>
-                      <div className="flex-1 pb-3 min-w-0">
-                        <span
-                          className="inline-block text-[9px] font-mono uppercase tracking-widest border px-1.5 py-px mb-1.5"
-                          style={{ color: tc, borderColor: tc + "30" }}
-                        >
-                          {step.type || step.evidence_type || "—"}
-                        </span>
-                        <p className="text-[13px] text-ink/80 leading-relaxed">{text}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[12px] text-ink/40 leading-relaxed py-1">
+                  {status === "loading"
+                    ? "Loading the consequence chain from the live feed…"
+                    : status === "error"
+                    ? "Couldn't load this event from the live feed. Open Full Analysis to retry."
+                    : "No consequence chain has been built for this event yet."}
+                </p>
+              )}
 
               {articles.length > 0 && (
                 <>
@@ -241,7 +255,7 @@ export default function Following() {
   // The standing watchlist (sites/regions) lives on the user profile; pull it so
   // this page leads with "what you protect", then the developments touching it.
   useEffect(() => {
-    api.get("/users/me")
+    api.get("/users/me", { timeoutMs: 15000 })
       .then((d) => {
         setAssets(d.watched_assets || []);
         setRegions(d.regions || []);

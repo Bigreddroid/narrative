@@ -211,6 +211,20 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env == "production"
 
+    @property
+    def is_using_insecure_secret(self) -> bool:
+        return self.secret_key.strip() in ("", _INSECURE_SECRET)
+
+    @property
+    def dev_features_allowed(self) -> bool:
+        """Whether dev-only backdoors (/dev-login and the shared beta accounts) may run.
+        Deliberately keyed on BOTH signals rather than app_env alone: any environment
+        that has a real SECRET_KEY set is treated as a genuine deployment and gets these
+        OFF — so a single missing/mistyped APP_ENV cannot leave /dev-login open on a
+        live host. Local dev keeps them on with zero extra config (it runs on the
+        insecure default secret). Fail-closed by construction."""
+        return (not self.is_production) and self.is_using_insecure_secret
+
     @model_validator(mode="after")
     def _require_real_secret_in_prod(self) -> "Settings":
         # Fail closed: a production boot must not run on the public dev SECRET_KEY (or

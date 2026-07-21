@@ -105,7 +105,9 @@ async def dev_login(body: DevLoginRequest, db: DbDep) -> dict:
     Dev-only endpoint. Disabled in production.
     Find or create user by email and return a signed JWT.
     """
-    if settings.is_production:
+    # Fail-closed on BOTH signals, not APP_ENV alone: a real SECRET_KEY (set on any
+    # genuine deploy) disables this backdoor even if APP_ENV was never set to production.
+    if not settings.dev_features_allowed:
         raise HTTPException(status_code=404, detail="Not found")
 
     email = body.email.strip().lower()
@@ -177,11 +179,13 @@ async def login(request: Request, body: CredentialsRequest, db: DbDep) -> dict:
 
     # Beta-test accounts (e.g. enterprise@narrative.dev) are provisioned on demand so they
     # work on the deployed build, where /dev-login is disabled. They're shared hardcoded
-    # credentials, so in PRODUCTION they only work when beta_accounts_enabled is set — non-
-    # prod always allows them (local demos). When gated off, fall through to the normal
+    # credentials, so on any genuine deploy they only work when beta_accounts_enabled is
+    # explicitly set — local dev always allows them (demos). dev_features_allowed keys off
+    # BOTH app_env and a real SECRET_KEY, so a mistyped APP_ENV can't silently re-enable
+    # these shared logins on a live host. When gated off, fall through to the normal
     # credential check (which 401s unless a real matching account exists).
     beta = _BETA_ACCOUNTS.get(email)
-    if beta is not None and (settings.beta_accounts_enabled or not settings.is_production):
+    if beta is not None and (settings.beta_accounts_enabled or settings.dev_features_allowed):
         user = await _provision_beta_account(email, body.password, db, beta)
         if user is None:
             raise HTTPException(status_code=401, detail="Incorrect email or password")
