@@ -36,7 +36,9 @@ export function useEventFeed({ category = null, status = null, limit = 50 } = {}
       // FastAPI emits an absolute Location (the API origin). Cross-origin
       // redirects (dev proxy :5173→:8000, prod Vercel→Railway) strip the
       // Authorization header per the fetch spec, yielding a 401.
-      return api.get(`/events/?${q}`)
+      // The main /world feed; a cold DB query can exceed the 3.5s api.js default
+      // and abort into an empty feed. Give it headroom.
+      return api.get(`/events/?${q}`, { timeoutMs: 12000 })
         .then((data) => {
           if (cancelled) return;
           const raw = Array.isArray(data) ? data : data.events || [];

@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 
 from backend.geo import haversine_km
+from backend.consequence_engine.graph_scoring import cosine
 from backend.taxonomy import DISCIPLINES
 
 # Tuned "secret sauce" — versioned with the model. SERVER-SIDE ONLY.
@@ -35,6 +36,13 @@ CORROB_W = 0.4            # max importance uplift from full corroboration (+40%)
 # the fusion is opt-in and every existing corroboration test holds until it's tuned.
 XDISC_W = 0.0
 _N_DISC = len(DISCIPLINES)
+# Relatedness gate: independent feeds converging in space+time only corroborate when
+# they're about the SAME situation. When both events carry an embedding, a candidate
+# corroborator must clear this cosine floor; without embeddings we degrade to the old
+# geo+time behaviour (legacy-safe — every embedding-free caller and test is unchanged).
+# Mirrors graph_scoring.SEMANTIC_FLOOR used for causal edges, so "corroborated by N
+# feeds" means N feeds reporting the same event, not N events that happened nearby.
+SEMANTIC_FLOOR = 0.30
 
 
 def corroborate(events: list[dict], radius_km: float = DEFAULT_RADIUS_KM,
@@ -54,6 +62,7 @@ def corroborate(events: list[dict], radius_km: float = DEFAULT_RADIUS_KM,
         if eid is None:
             continue
         lat, lng, ts, src = e.get("lat"), e.get("lng"), e.get("ts"), e.get("source")
+        emb_e = e.get("embedding")
         if lat is None or lng is None or ts is None:
             out[eid] = {"index": 0.0, "count": 0, "sources": [], "disciplines": []}
             continue
@@ -70,11 +79,21 @@ def corroborate(events: list[dict], radius_km: float = DEFAULT_RADIUS_KM,
                 continue
             if abs(ots - ts) > window_ms:
                 continue
-            if haversine_km(lat, lng, olat, olng) <= radius_km:
-                corroborating.add(osrc)
-                od = o.get("discipline")
-                if od:
-                    corr_disc.add(od)
+            if haversine_km(lat, lng, olat, olng) > radius_km:
+                continue
+            # Relatedness gate: proximity in space+time is necessary but not
+            # sufficient. When both events carry embeddings, require they're about
+            # the same situation (cosine ≥ SEMANTIC_FLOOR); a nearby-but-unrelated
+            # event (e.g. a heatwave alert next to a tanker fire) is not corroboration.
+            emb_o = o.get("embedding")
+            if emb_e is not None and emb_o is not None:
+                cos = cosine(emb_e, emb_o)
+                if cos is not None and cos < SEMANTIC_FLOOR:
+                    continue
+            corroborating.add(osrc)
+            od = o.get("discipline")
+            if od:
+                corr_disc.add(od)
         n = len(corroborating)
         # Distinct disciplines converging on this event (its own + corroborators').
         disc_set = set(corr_disc)

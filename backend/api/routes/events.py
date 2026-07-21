@@ -1,4 +1,6 @@
+import math
 import uuid
+from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -106,6 +108,61 @@ async def list_events(
     }
 
 
+async def _source_grade(db, event) -> dict | None:
+    """NATO Admiralty grade for this ONE event's primary source, carrying its live
+    corroboration count from geo+time convergence — the same deterministic engine
+    (`corroboration.corroborate` + `source_reliability.grade`) that grades the
+    view-scoped /corroboration set and the /wipro fusion strip. Surfacing it on the
+    single-event drill-in answers the buyer's #1 pain (official-source verification)
+    exactly where they inspect one event. Degrades to an uncorroborated grade (never
+    500s) when the event lacks coordinates or a timestamp to converge on."""
+    if not event.source:
+        return None
+    count, sources, index = 0, [], 0.0
+    if (event.first_detected_at and event.geo_centroid_lat is not None
+            and event.geo_centroid_lng is not None):
+        window = timedelta(hours=corroboration.DEFAULT_WINDOW_HOURS)
+        # Spatially bound the candidate query to a bounding box ~radius around the
+        # event, so the true corroborators are always in the set — an unbounded
+        # ±72h window on a busy feed holds thousands of events and a blind LIMIT
+        # would sample past the actual siblings. corroborate() then applies the
+        # exact haversine ≤ radius; the box is a generous superset of that circle.
+        lat_pad = corroboration.DEFAULT_RADIUS_KM / 111.0
+        lng_pad = corroboration.DEFAULT_RADIUS_KM / (
+            111.0 * max(0.15, math.cos(math.radians(event.geo_centroid_lat))))
+        rows = await db.execute(
+            select(NarrativeEvent).where(
+                NarrativeEvent.first_detected_at.between(
+                    event.first_detected_at - window, event.first_detected_at + window),
+                NarrativeEvent.geo_centroid_lat.between(
+                    event.geo_centroid_lat - lat_pad, event.geo_centroid_lat + lat_pad),
+                NarrativeEvent.geo_centroid_lng.between(
+                    event.geo_centroid_lng - lng_pad, event.geo_centroid_lng + lng_pad),
+                NarrativeEvent.geo_centroid_lng.isnot(None),
+                NarrativeEvent.merged_into_id.is_(None),
+            ).limit(500)
+        )
+        payload = [
+            {
+                "id": str(e.id),
+                "source": e.source,
+                "discipline": e.int_discipline,
+                "lat": e.geo_centroid_lat,
+                "lng": e.geo_centroid_lng,
+                "ts": e.first_detected_at.timestamp() * 1000 if e.first_detected_at else None,
+                "embedding": e.embedding,  # enables corroboration's relatedness gate
+            }
+            for e in rows.scalars().all()
+        ]
+        entry = corroboration.corroborate(payload).get(str(event.id))
+        if entry:
+            count, sources, index = entry["count"], entry["sources"], entry["index"]
+    history = await source_reliability.source_history_map(db, [event.source])
+    g = source_reliability.grade(event.source, count, history.get(event.source))
+    g["corroboration"] = {"index": index, "count": count, "sources": sources}
+    return g
+
+
 # NOTE: must stay declared before the dynamic /{event_id} route below.
 @router.get("/corroboration")
 async def events_corroboration(
@@ -134,6 +191,7 @@ async def events_corroboration(
             "lat": e.geo_centroid_lat,
             "lng": e.geo_centroid_lng,
             "ts": e.first_detected_at.timestamp() * 1000 if e.first_detected_at else None,
+            "embedding": e.embedding,  # enables corroboration's relatedness gate
         }
         for e in result.scalars().all()
     ]
@@ -218,6 +276,8 @@ async def get_event(
         }
         for row in articles_result.all()
     ]
+
+    data["source_grade"] = await _source_grade(db, event)
 
     return data
 

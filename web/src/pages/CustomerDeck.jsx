@@ -7,49 +7,39 @@ import { api } from "../lib/api.js";
 import DeckView from "../components/DeckView.jsx";
 import { getDisciplineColor } from "../lib/colors.js";
 import { haversineKm as _havKm } from "../lib/geoAssoc.js";
+import { officeContext, topSignal, LAYER_KEYS, LAYER_LABELS, levelColor } from "../lib/officeContext.js";
 import { useTheme } from "../hooks/useTheme.js";
-import assetsData from "../data/wipro/assets.json";
-import travelData from "../data/wipro/travel.json";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Wipro customer demo — a customer-centric dashboard over the SAME live Narrative
-// backend the rest of the app runs on. Zero new backend: every panel is computed
-// client-side from GET /events/ + GET /exposure plus a static demo asset register
-// (assets.json) and travel manifest (travel.json).
+// CustomerDeck — a config-driven customer dashboard over the SAME live Narrative
+// backend the rest of the app runs on. Zero customer-specific backend: every panel
+// is computed client-side from GET /events/ + GET /exposure, driven entirely by a
+// customer config object (branding / assets / trips / regions / advisories / flags).
+// `/wipro` is just <CustomerDeck config={wipro} />; the next tenant is a new JSON.
 //
 // Competitive framing (QBR teardown): country risk ratings + a client-set "risk
 // appetite" (Canvas parity), asset & travel advisories (GSOC-advisory parity,
 // honestly minus physical response), an UNLIMITED ask-the-analyst (vs a 21/yr
 // quota), and the wedge — cross-discipline fusion the human-analyst firm could
-// only hand-wave. Direct URL only (/wipro); intentionally not in the main nav.
+// only hand-wave. 100% live: no seed slice, honest "clear" offices allowed.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const ASSETS = assetsData.assets;
-const TRIPS = travelData.trips;
 
 // ── Geometry + region helpers (client-side only — no engine constants) ───────
 // (lat,lng) adapter over the shared (lng,lat) core in geoAssoc.js — one copy of
 // the great-circle math app-wide (adds the domain clamp the local copy lacked).
 const haversineKm = (lat1, lng1, lat2, lng2) => _havKm(lng1, lat1, lng2, lat2);
 
-// Region cards match the client's footprint. Order matters: first match wins
-// (UAE/Saudi before the broad Europe/Americas boxes).
-const REGIONS = [
-  { key: "India", names: ["india"], box: { latMin: 6, latMax: 36, lngMin: 68, lngMax: 98 } },
-  { key: "UAE", names: ["united arab emirates", "uae", "dubai", "abu dhabi"], box: { latMin: 22, latMax: 26.5, lngMin: 51, lngMax: 56.5 } },
-  { key: "Saudi Arabia", names: ["saudi"], box: { latMin: 16, latMax: 33, lngMin: 34.5, lngMax: 56 } },
-  { key: "Europe", names: ["europe", "united kingdom", "uk", "germany", "france", "romania", "poland", "ukraine", "italy", "spain", "netherlands"], box: { latMin: 35, latMax: 71, lngMin: -11, lngMax: 40 } },
-  { key: "Americas", names: ["united states", "usa", "canada", "brazil", "mexico"], box: { latMin: -56, latMax: 72, lngMin: -170, lngMax: -30 } },
-];
-
-function regionOf(event) {
+// Region assignment for an event, scoped to the customer's footprint (config
+// `regions`). Order matters: first match wins (UAE/Saudi before broad boxes) —
+// so the config lists the narrow regions first.
+function regionOf(event, regions) {
   const geo = (event.geographic_relevance || []).map((g) => String(g).toLowerCase());
-  for (const r of REGIONS) {
+  for (const r of regions) {
     if (r.names.some((n) => geo.some((g) => g.includes(n)))) return r.key;
   }
   const lat = event.geo_centroid_lat, lng = event.geo_centroid_lng;
   if (lat == null || lng == null) return null;
-  for (const r of REGIONS) {
+  for (const r of regions) {
     const b = r.box;
     if (lat >= b.latMin && lat <= b.latMax && lng >= b.lngMin && lng <= b.lngMax) return r.key;
   }
@@ -72,27 +62,29 @@ function ratingFor(score, factor) {
 }
 
 // ── Shared data layer: one events fetch + one exposure fetch for every panel ─
-function useLiveData() {
-  const [state, setState] = useState({ loading: true, events: [], corrob: {}, sectors: [], error: null });
+// 100% live — no seed slice. Offices with no nearby signal read an honest "clear".
+// Also pulls the per-country public-holiday calendar (GET /context/calendar) so the
+// office layers can carry holidays; a missing calendar degrades to the curated map.
+function useLiveData(countryCodes) {
+  const [state, setState] = useState({ loading: true, events: [], corrob: {}, sectors: [], holidaysByCode: {}, error: null });
+  const codes = useMemo(
+    () => [...new Set(Object.values(countryCodes || {}))].join(","),
+    [countryCodes],
+  );
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [evs, ex, demo] = await Promise.allSettled([
-        api.get("/events/?limit=100"),
+      // Events gets a generous timeout (not the api client's 3.5s fail-fast): it
+      // shares the proxy with the heavy /exposure call and must not abort under load.
+      const [evs, ex] = await Promise.allSettled([
+        api.get("/events/?limit=100", { timeoutMs: 15000 }),
         api.get("/exposure", { timeoutMs: 20000 }),
-        // The live window is importance-sorted, so a hot news cycle crowds the
-        // seeded scenario (importance 55–72, calibrated to the panel thresholds)
-        // out of the top-100 — fetch the scenario slice explicitly so the demo
-        // beats never depend on a quiet day.
-        api.get("/events/?source_prefix=wipro_demo&limit=50"),
       ]);
       if (cancelled) return;
       const parse = (r) => r.status === "fulfilled"
         ? (Array.isArray(r.value) ? r.value : r.value?.events || [])
         : [];
-      const live = parse(evs);
-      const seen = new Set(live.map((e) => e.id));
-      const events = live.concat(parse(demo).filter((e) => !seen.has(e.id)));
+      const events = parse(evs);
       const exposure = ex.status === "fulfilled" ? ex.value : null;
       // Fusion over the events actually in view — /exposure corroborates the
       // global top-importance slice, which can exclude everything this page
@@ -100,7 +92,7 @@ function useLiveData() {
       let corrob = exposure?.corroboration || {};
       if (events.length) {
         try {
-          const vc = await api.get(`/events/corroboration?ids=${events.map((e) => e.id).join(",")}`);
+          const vc = await api.get(`/events/corroboration?ids=${events.map((e) => e.id).join(",")}`, { timeoutMs: 15000 });
           if (vc?.corroboration) corrob = vc.corroboration;
         } catch { /* keep the global exposure map */ }
       }
@@ -112,18 +104,33 @@ function useLiveData() {
         .slice()
         .sort((a, b) => (b.net ?? b.score ?? b.exposure ?? 0) - (a.net ?? a.score ?? a.exposure ?? 0))
         .slice(0, 3);
-      const expired = [evs, ex, demo].some((r) => r.status === "rejected" && r.reason?.status === 401);
-      setState({
+      const expired = [evs, ex].some((r) => r.status === "rejected" && r.reason?.status === 401);
+      // Functional update so the decoupled calendar effect's holidaysByCode isn't clobbered.
+      setState((s) => ({
+        ...s,
         loading: false,
         events,
         corrob,
         sectors,
         error: expired ? "auth"
           : evs.status === "rejected" && ex.status === "rejected" ? "unreachable" : null,
-      });
+      }));
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Public-holiday calendar — decoupled from the critical events/exposure batch so
+  // its slow cold-cache upstream (Nager.Date across ~7 countries) can neither delay
+  // nor abort the events fetch. A miss degrades to the config's curated holidays.
+  useEffect(() => {
+    if (!codes) return undefined;
+    let cancelled = false;
+    api.get(`/context/calendar?countries=${codes}&days=60`, { timeoutMs: 15000 })
+      .then((cal) => { if (!cancelled && cal?.holidays) setState((s) => ({ ...s, holidaysByCode: cal.holidays })); })
+      .catch(() => { /* curated map covers the footprint */ });
+    return () => { cancelled = true; };
+  }, [codes]);
+
   return state;
 }
 
@@ -190,12 +197,12 @@ function EmptyNote({ text }) {
 }
 
 // ── a. C-Suite Executive Brief ───────────────────────────────────────────────
-function ExecBrief({ data, fusionCount }) {
+function ExecBrief({ data, fusionCount, assets, trips }) {
   const { loading, events, sectors } = data;
-  const activeTrips = TRIPS.filter((t) => new Date(t.returnISO) >= new Date()).length;
+  const activeTrips = trips.filter((t) => new Date(t.returnISO) >= new Date()).length;
   const topEvent = events[0];
   const tiles = [
-    { n: ASSETS.length, label: "Assets monitored", so: "Every site checked against the live event graph." },
+    { n: assets.length, label: "Assets monitored", so: "Every site checked against the live event graph." },
     { n: activeTrips, label: "Travelers in motion", so: "Each itinerary scored against events at destination." },
     { n: loading ? "…" : fusionCount, label: "Multi-INT convergences", so: "Independent disciplines agreeing in space & time." },
     { n: loading ? "…" : events.length, label: "Live events in view", so: topEvent ? `Top: ${(topEvent.canonical_title || "").slice(0, 60)}` : "No live events reachable." },
@@ -225,17 +232,17 @@ function ExecBrief({ data, fusionCount }) {
 }
 
 // ── b. Country risk ratings + risk-appetite slider (Canvas parity) ───────────
-function CountryRisk({ data, appetite, setAppetite }) {
+function CountryRisk({ data, appetite, setAppetite, regions }) {
   const { loading, events } = data;
   const factor = 0.5 + appetite / 100; // 0.5 (cautious) → 1.5 (tolerant)
   const cards = useMemo(() => {
-    const scores = Object.fromEntries(REGIONS.map((r) => [r.key, 0]));
+    const scores = Object.fromEntries(regions.map((r) => [r.key, 0]));
     for (const e of events) {
-      const r = regionOf(e);
+      const r = regionOf(e, regions);
       if (r) scores[r] += (e.global_importance_score || 0) / 10;
     }
-    return REGIONS.map((r) => ({ key: r.key, score: scores[r.key], level: ratingFor(scores[r.key], factor) }));
-  }, [events, factor]);
+    return regions.map((r) => ({ key: r.key, score: scores[r.key], level: ratingFor(scores[r.key], factor) }));
+  }, [events, factor, regions]);
 
   return (
     <SectionCard
@@ -271,6 +278,8 @@ function CountryRisk({ data, appetite, setAppetite }) {
 // ── World presence map — every site, itinerary and signal on one map ─────────
 const WORLD_TOPO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const STATUS_COLORS = { Alert: "#B4462F", Watch: "#C08A2E", Clear: "#4E9A5A" };
+const CAP = { alert: "Alert", watch: "Watch", clear: "Clear" };
+const DISCIPLINE_LABELS = { HUMINT: "HUMINT", SIGINT: "SIGINT", IMINT: "IMINT", GEOINT: "GEOINT", MASINT: "MASINT", FININT: "FININT", CYBINT: "CYBINT" };
 
 function nearestGeoSignal(geoEvents, lat, lng, radiusKm) {
   let best = null;
@@ -282,7 +291,17 @@ function nearestGeoSignal(geoEvents, lat, lng, radiusKm) {
   return best;
 }
 
-function WorldPresence({ data, appetite, onOpen }) {
+// A compact metric for the summary strip above the map.
+function Stat({ n, label, tint }) {
+  return (
+    <div className="flex flex-col">
+      <span className="text-[20px] font-bold tabular-nums leading-none" style={{ color: tint || "currentColor" }}>{n}</span>
+      <span className="text-[9px] font-bold uppercase tracking-widest text-ink/45 mt-1">{label}</span>
+    </div>
+  );
+}
+
+function WorldPresence({ data, appetite, onOpen, assets, trips, contexts }) {
   const { loading, events } = data;
   const factor = 0.5 + appetite / 100;
   const [world, setWorld] = useState(null);
@@ -297,9 +316,9 @@ function WorldPresence({ data, appetite, onOpen }) {
   }, []);
 
   const W = 960, H = 470;
-  const { path, project } = useMemo(() => {
+  const { path, project, graticule } = useMemo(() => {
     const projection = d3.geoNaturalEarth1().fitSize([W, H], { type: "Sphere" });
-    return { path: d3.geoPath(projection), project: projection };
+    return { path: d3.geoPath(projection), project: projection, graticule: d3.geoGraticule10() };
   }, []);
 
   const geoEvents = useMemo(
@@ -307,21 +326,43 @@ function WorldPresence({ data, appetite, onOpen }) {
     [events],
   );
 
-  const sites = useMemo(() => ASSETS.map((a) => {
-    const best = nearestGeoSignal(geoEvents, a.lat, a.lng, 400);
-    const label = !best ? "Clear" : best.imp >= 70 * factor ? "Alert" : best.imp >= 40 * factor ? "Watch" : "Clear";
-    return { asset: a, best, label };
-  }), [geoEvents, factor]);
+  // Site status now comes from the SAME per-office rollup the matrix uses (worst of
+  // all eight layers), so the map and the matrix can never disagree.
+  const sites = useMemo(() => contexts.map((c) => ({
+    asset: c.office, label: CAP[c.worst], top: topSignal(c),
+  })), [contexts]);
 
-  const trips = useMemo(() => TRIPS.map((t) => {
+  const tripDots = useMemo(() => trips.map((t) => {
     const best = nearestGeoSignal(geoEvents, t.toLat, t.toLng, 300);
     const label = best && best.imp >= 70 * factor ? "Alert" : best && best.imp >= 40 * factor ? "Watch" : "Clear";
     return { trip: t, best, label };
-  }), [geoEvents, factor]);
+  }), [geoEvents, factor, trips]);
+
+  // Unique festivals that are active or imminent, for map markers + the tally.
+  const festMarkers = useMemo(() => {
+    const seen = new Map();
+    for (const c of contexts) for (const f of c.festivals) {
+      if ((f.active || f.soon) && f.lat != null && !seen.has(f.id)) seen.set(f.id, f);
+    }
+    return [...seen.values()];
+  }, [contexts]);
+
+  // Discipline tally + site status counts for the summary strip.
+  const summary = useMemo(() => {
+    const disc = {};
+    for (const e of geoEvents) { const d = (e.int_discipline || "").toUpperCase(); if (DISCIPLINE_LABELS[d]) disc[d] = (disc[d] || 0) + 1; }
+    const status = { Alert: 0, Watch: 0, Clear: 0 };
+    for (const s of sites) status[s.label] = (status[s.label] || 0) + 1;
+    const activeTrips = trips.filter((t) => new Date(t.returnISO) >= new Date()).length;
+    return {
+      status, activeTrips,
+      disc: Object.entries(disc).sort((a, b) => b[1] - a[1]),
+    };
+  }, [geoEvents, sites, trips]);
 
   return (
     <SectionCard title="World presence"
-      subtitle="Every site, itinerary and live signal on one map — sites sized by headcount and coloured by status, signals coloured by discipline and sized by importance."
+      subtitle="Every site, itinerary and live signal on one map — sites sized by headcount and coloured by their worst live layer; signals coloured by discipline and sized by importance; ✦ marks a festival or gathering underway."
       right={loading ? null : <Pill label={`${geoEvents.length} signals`} color="#C80028" />}>
       {world === "error" ? (
         <EmptyNote text="World geometry unavailable — the panels above carry the same picture." />
@@ -329,16 +370,40 @@ function WorldPresence({ data, appetite, onOpen }) {
         <EmptyNote text="Projecting sites and signals…" />
       ) : (
         <div className="px-2 py-2 text-ink">
+          {/* summary strip — the picture in numbers before the map */}
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-3 px-3 py-3 mb-1 border-b border-ink/8">
+            <Stat n={sites.length} label="Sites monitored" />
+            <Stat n={summary.status.Alert} label="Sites in alert" tint={summary.status.Alert ? STATUS_COLORS.Alert : undefined} />
+            <Stat n={summary.status.Watch} label="Sites on watch" tint={summary.status.Watch ? STATUS_COLORS.Watch : undefined} />
+            <Stat n={summary.activeTrips} label="Travelers in motion" />
+            <Stat n={geoEvents.length} label="Live signals" />
+            <Stat n={festMarkers.length} label="Gatherings active" tint={festMarkers.length ? "#C08A2E" : undefined} />
+            {summary.disc.length > 0 && (
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-ink/45">Signals by discipline</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {summary.disc.map(([d, n]) => (
+                    <span key={d} className="flex items-center gap-1 text-[10px] text-ink/70">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getDisciplineColor(d) }} />
+                      {d}<span className="text-ink/35 tabular-nums">{n}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img"
-            aria-label="World map of Wipro sites, travel destinations and live signals">
+            aria-label="World map of customer sites, travel destinations and live signals">
             <g fill="currentColor" opacity="0.1">
               {world.features.map((f, i) => <path key={i} d={path(f)} />)}
             </g>
+            {/* graticule — a faint operational grid behind the land */}
+            <path d={path(graticule)} fill="none" stroke="currentColor" strokeOpacity="0.06" strokeWidth="0.5" />
             {/* itineraries — great-circle arcs origin → destination, coloured by verdict.
                 Trips carry only the destination coordinates; origins are company cities,
                 so resolve them from the asset register (skip the arc when none matches). */}
-            {trips.map(({ trip, label }) => {
-              const origin = ASSETS.find((a) => a.city.startsWith(trip.from));
+            {tripDots.map(({ trip, label }) => {
+              const origin = assets.find((a) => a.city.startsWith(trip.from));
               const [dx, dy] = project([trip.toLng, trip.toLat]) || [];
               return (
                 <g key={trip.id}>
@@ -366,24 +431,35 @@ function WorldPresence({ data, appetite, onOpen }) {
                 </circle>
               );
             })}
+            {/* festivals / gatherings underway — amber stars near the affected sites */}
+            {festMarkers.map((f) => {
+              const [x, y] = project([f.lng, f.lat]) || [];
+              if (x == null) return null;
+              return (
+                <text key={f.id} x={x} y={y + 3} textAnchor="middle" fontSize="11" fill="#C08A2E" opacity="0.9"
+                  style={{ cursor: "default", pointerEvents: "all" }}>
+                  ✦<title>{`${f.name} — ${f.place || ""}${f.active ? " (underway)" : ` (in ${f.startsIn}d)`}`}</title>
+                </text>
+              );
+            })}
             {/* site → nearest-signal links for anything not Clear */}
-            {sites.filter((s) => s.best && s.label !== "Clear").map(({ asset, best, label }) => (
+            {sites.filter((s) => s.top && s.label !== "Clear").map(({ asset, top, label }) => (
               <path key={`link-${asset.id}`}
-                d={path({ type: "LineString", coordinates: [[asset.lng, asset.lat], [best.event.geo_centroid_lng, best.event.geo_centroid_lat]] })}
+                d={path({ type: "LineString", coordinates: [[asset.lng, asset.lat], [top.event.geo_centroid_lng, top.event.geo_centroid_lat]] })}
                 fill="none" stroke={STATUS_COLORS[label]} strokeWidth="1.2" opacity="0.7" />
             ))}
             {/* sites — diamonds sized by headcount, coloured by status */}
-            {sites.map(({ asset, best, label }) => {
+            {sites.map(({ asset, top, label }) => {
               const [x, y] = project([asset.lng, asset.lat]) || [];
               if (x == null) return null;
               const r = 3 + Math.sqrt(asset.headcount) / 45;
               return (
                 <g key={asset.id} transform={`translate(${x},${y}) rotate(45)`}
-                  style={{ cursor: best ? "pointer" : "default" }}
-                  onClick={() => best && onOpen(best.event.id)}>
+                  style={{ cursor: top ? "pointer" : "default" }}
+                  onClick={() => top && onOpen(top.event.id)}>
                   <rect x={-r} y={-r} width={r * 2} height={r * 2}
                     fill={STATUS_COLORS[label]} opacity="0.9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="0.8" />
-                  <title>{`${asset.name} — ${label}${best ? ` · ${best.event.canonical_title}` : ""}`}</title>
+                  <title>{`${asset.name} — ${label}${top ? ` · ${top.event.canonical_title}` : ""}`}</title>
                 </g>
               );
             })}
@@ -395,7 +471,7 @@ function WorldPresence({ data, appetite, onOpen }) {
               </span>
             ))}
             <span className="text-[9px] uppercase tracking-widest text-ink/40">
-              · dots = live signals (discipline colour) · dashes = itineraries
+              · dots = live signals (discipline colour) · ✦ = gathering · dashes = itineraries
             </span>
           </div>
         </div>
@@ -404,13 +480,133 @@ function WorldPresence({ data, appetite, onOpen }) {
   );
 }
 
+// ── World presence · Site security matrix (the "no-gap" per-office rollup) ────
+// Every office carried across all eight layers to a single status. A quiet layer
+// reads "clear ✓", never blank — the founder's "no reason not to get in". This is
+// where the derived-traffic layer (slice 6) and the holiday/festival calendar
+// (slice 5) surface; incidents come straight off the live graph.
+const LEVEL_WORD = { clear: "Clear", watch: "Watch", alert: "Alert" };
+
+// One layer → its cell: status level, short display text, hover detail, and the
+// event to open (if any). Keeps the classification logic out of the JSX.
+function cellFor(key, layer) {
+  if (key === "traffic") {
+    const detail = layer.drivers.length
+      ? `Derived road disruption ~${layer.pct}%\n${layer.drivers.map((d) => `• ${d.label}`).join("\n")}`
+      : "No road-disruption drivers near this site";
+    return { level: layer.level, text: layer.level === "clear" ? "Clear" : `~${layer.pct}%`, title: detail,
+      eventId: layer.drivers.find((d) => d.id)?.id || null };
+  }
+  if (key === "holidays") {
+    if (layer.today) return { level: layer.level, text: layer.today.name, title: `${layer.today.name} — public holiday today` };
+    if (layer.next) return { level: "clear", text: `+${layer.next.in_days}d`, title: `Next holiday: ${layer.next.name} in ${layer.next.in_days} day(s)` };
+    return { level: "clear", text: "Clear", title: "No public holiday in the next 60 days" };
+  }
+  if (key === "festivals") {
+    if (layer.active) return { level: layer.level, text: layer.active.name, title: `${layer.active.name} underway — ${layer.active.note || "crowds & closures"}` };
+    if (layer.soon) return { level: layer.level, text: `${layer.soon.name} +${layer.soon.startsIn}d`, title: layer.soon.note || layer.soon.name };
+    return { level: "clear", text: "Clear", title: "No gathering near this site in the window" };
+  }
+  const b = layer.best;
+  if (!b) return { level: "clear", text: "Clear", title: "No signal in range" };
+  return { level: layer.level, text: LEVEL_WORD[layer.level], eventId: b.event.id,
+    title: `${b.event.canonical_title}\n${Math.round(b.km)} km · importance ${Math.round(b.imp)}` };
+}
+
+function LayerCell({ cell, onOpen }) {
+  const color = levelColor(cell.level);
+  const clear = cell.level === "clear";
+  const body = (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+      <span className="truncate text-[10px]" style={{ color: clear ? "rgba(0,0,0,0)" : color }}>
+        {clear ? "" : cell.text}
+      </span>
+      {clear && <span className="text-[10px] text-ink/25">✓</span>}
+    </span>
+  );
+  if (cell.eventId) {
+    return (
+      <button type="button" title={cell.title} onClick={() => onOpen(cell.eventId)}
+        className="w-full text-left hover:opacity-80 transition-opacity">{body}</button>
+    );
+  }
+  return <span title={cell.title} className="block">{body}</span>;
+}
+
+function SiteMatrix({ contexts, onOpen }) {
+  const rows = useMemo(
+    () => contexts.slice().sort((a, b) => {
+      const rank = { alert: 2, watch: 1, clear: 0 };
+      return rank[b.worst] - rank[a.worst];
+    }),
+    [contexts],
+  );
+  const counts = useMemo(() => {
+    const c = { alert: 0, watch: 0, clear: 0 };
+    for (const r of rows) c[r.worst] += 1;
+    return c;
+  }, [rows]);
+
+  return (
+    <SectionCard
+      title="Site security matrix"
+      subtitle="Every office carried across all eight layers to one status — geopolitics · cyber · market · hazards · weather · holiday · festival · derived road traffic. A quiet layer reads clear ✓, never blank."
+      right={
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {counts.alert > 0 && <Pill label={`${counts.alert} alert`} color="#B4462F" />}
+          {counts.watch > 0 && <Pill label={`${counts.watch} watch`} color="#C08A2E" />}
+          <Pill label={`${counts.clear} clear`} color="#4E9A5A" />
+        </div>
+      }
+    >
+      {contexts.length === 0 ? (
+        <EmptyNote text="No offices in this customer config." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="text-[9px] font-bold uppercase tracking-widest text-ink/40 border-b border-ink/8">
+                <th className="px-4 py-2 sticky left-0 bg-paper z-10">Office</th>
+                <th className="px-3 py-2">Status</th>
+                {LAYER_KEYS.map((k) => <th key={k} className="px-2.5 py-2">{LAYER_LABELS[k]}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ office, layers, worst }) => (
+                <tr key={office.id} className="border-b border-ink/6 hover:bg-ink/[0.02]">
+                  <td className="px-4 py-2.5 sticky left-0 bg-paper z-10">
+                    <div className="text-[12px] font-medium text-ink whitespace-nowrap">{office.name}</div>
+                    <div className="text-[10px] text-ink/40 whitespace-nowrap">{office.city} · {office.country}</div>
+                  </td>
+                  <td className="px-3 py-2.5"><Pill label={LEVEL_WORD[worst]} color={levelColor(worst)} /></td>
+                  {LAYER_KEYS.map((k) => (
+                    <td key={k} className="px-2.5 py-2.5 max-w-[130px]">
+                      <LayerCell cell={cellFor(k, layers[k])} onOpen={onOpen} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="px-4 py-2.5 text-[9px] text-ink/35 border-t border-ink/8 leading-relaxed">
+        Incidents (geopolitics/cyber/market/hazards/weather) are the nearest live graph event in range, scored against your risk appetite.
+        Holiday &amp; festival layers come from the public-holiday calendar and the curated gathering list. Traffic is <em>derived</em> — road
+        disruption implied by festivals, holidays, severe weather and major incidents near the site (bounded, never a paid live feed here).
+      </p>
+    </SectionCard>
+  );
+}
+
 // ── c. Real estate & asset exposure ──────────────────────────────────────────
-function AssetExposure({ data, appetite, onOpen }) {
+function AssetExposure({ data, appetite, onOpen, assets }) {
   const { loading, events } = data;
   const factor = 0.5 + appetite / 100;
   const rows = useMemo(() => {
     const geoEvents = events.filter((e) => e.geo_centroid_lat != null && e.geo_centroid_lng != null);
-    return ASSETS.map((a) => {
+    return assets.map((a) => {
       let best = null;
       for (const e of geoEvents) {
         const km = haversineKm(a.lat, a.lng, e.geo_centroid_lat, e.geo_centroid_lng);
@@ -423,11 +619,11 @@ function AssetExposure({ data, appetite, onOpen }) {
         : { label: "Clear", color: "#4E9A5A", rank: 0 };
       return { asset: a, best, status };
     }).sort((x, y) => y.status.rank - x.status.rank || (y.best?.imp || 0) - (x.best?.imp || 0));
-  }, [events, factor]);
+  }, [events, factor, assets]);
 
   return (
     <SectionCard title="Real estate & asset exposure"
-      subtitle={`${ASSETS.length} sites checked against every geolocated live event within 400 km.`}>
+      subtitle={`${assets.length} sites checked against every geolocated live event within 400 km.`}>
       {loading ? <EmptyNote text="Checking sites against the live graph…" /> : (
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -473,12 +669,12 @@ function AssetExposure({ data, appetite, onOpen }) {
 }
 
 // ── d. Travel security ───────────────────────────────────────────────────────
-function TravelSecurity({ data, appetite, onOpen }) {
+function TravelSecurity({ data, appetite, onOpen, trips }) {
   const { loading, events } = data;
   const factor = 0.5 + appetite / 100;
   const rows = useMemo(() => {
     const geoEvents = events.filter((e) => e.geo_centroid_lat != null && e.geo_centroid_lng != null);
-    return TRIPS.map((t) => {
+    return trips.map((t) => {
       let best = null;
       for (const e of geoEvents) {
         const km = haversineKm(t.toLat, t.toLng, e.geo_centroid_lat, e.geo_centroid_lng);
@@ -490,7 +686,7 @@ function TravelSecurity({ data, appetite, onOpen }) {
         : { label: "Proceed", color: "#4E9A5A" };
       return { trip: t, best, verdict };
     });
-  }, [events, factor]);
+  }, [events, factor, trips]);
 
   return (
     <SectionCard title="Travel security"
@@ -741,18 +937,30 @@ function SignalDeck({ onOpen }) {
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-export default function WiproDemo() {
+export default function CustomerDeck({ config }) {
   const navigate = useNavigate();
   const { isDark, toggle } = useTheme();
-  const data = useLiveData();
+
+  const branding = config.branding || {};
+  const accent = branding.accent || "#C80028";
+  const assets = config.assets || [];
+  const trips = config.flags?.travel === false ? [] : (config.trips || []);
+  const regions = config.regions || [];
+  const flags = config.flags || {};
+  const countryCodes = config.countryCodes || {};
+
+  const data = useLiveData(countryCodes);
+
+  // Per-tenant appetite key so two customers on one browser don't share a slider.
+  const appetiteKey = `deck_risk_appetite_${config.id || "default"}`;
   const [appetite, setAppetiteState] = useState(() => {
     // Number(null) is 0, which passes the range check — an unset key must fall
     // through to the 50 default, not silently pin the slider to most-cautious.
-    const raw = localStorage.getItem("wipro_risk_appetite");
+    const raw = localStorage.getItem(appetiteKey);
     const v = raw === null ? NaN : Number(raw);
     return Number.isFinite(v) && v >= 0 && v <= 100 ? v : 50;
   });
-  const setAppetite = (v) => { setAppetiteState(v); localStorage.setItem("wipro_risk_appetite", String(v)); };
+  const setAppetite = (v) => { setAppetiteState(v); localStorage.setItem(appetiteKey, String(v)); };
 
   const onOpen = (id) => navigate(`/event/${id}`);
   const fusionCount = useMemo(
@@ -760,17 +968,33 @@ export default function WiproDemo() {
     [data.corrob],
   );
 
+  // One per-office rollup snapshot, shared by the world map and the site matrix so
+  // the two surfaces always agree on a site's status.
+  const contexts = useMemo(() => {
+    const ctx = {
+      events: data.events,
+      festivals: config.festivals || [],
+      holidaysByCode: data.holidaysByCode || {},
+      countryCodes,
+      curatedHolidays: config.curatedHolidays || {},
+      appetite,
+    };
+    return assets.map((a) => officeContext(a, ctx));
+  }, [data.events, data.holidaysByCode, config, countryCodes, assets, appetite]);
+
   return (
     <div className="min-h-screen bg-paper flex flex-col">
       <header style={{ backgroundColor: "#111111" }} className="sticky top-0 z-40">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-2.5 flex items-center justify-between">
           <div>
             <h1 className="font-display text-[1.5rem] md:text-[2rem] tracking-tighter leading-none" style={{ color: "#F0EDE8" }}>
-              WIPRO <span style={{ color: "#C80028" }}>SECURITY PICTURE</span>
+              {branding.name} <span style={{ color: accent }}>{branding.accentTitle}</span>
             </h1>
-            <p className="text-[7px] md:text-[8px] tracking-[0.35em] uppercase mt-0.5 hidden md:block" style={{ color: "rgba(240,237,232,0.3)" }}>
-              Customer demo · live Narrative backend · assets, people, connections
-            </p>
+            {branding.tagline && (
+              <p className="text-[7px] md:text-[8px] tracking-[0.35em] uppercase mt-0.5 hidden md:block" style={{ color: "rgba(240,237,232,0.3)" }}>
+                {branding.tagline}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <span className="hidden md:flex items-center gap-1.5 text-[9px] uppercase tracking-wider" style={{ color: "rgba(240,237,232,0.3)" }}>
@@ -802,15 +1026,18 @@ export default function WiproDemo() {
           </p>
         )}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
-          <ExecBrief data={data} fusionCount={fusionCount} />
+          <ExecBrief data={data} fusionCount={fusionCount} assets={assets} trips={trips} />
           <FusionStrip data={data} onOpen={onOpen} />
-          <WorldPresence data={data} appetite={appetite} onOpen={onOpen} />
-          <CountryRisk data={data} appetite={appetite} setAppetite={setAppetite} />
-          <AssetExposure data={data} appetite={appetite} onOpen={onOpen} />
-          <TravelSecurity data={data} appetite={appetite} onOpen={onOpen} />
+          <WorldPresence data={data} appetite={appetite} onOpen={onOpen} assets={assets} trips={trips} contexts={contexts} />
+          <SiteMatrix contexts={contexts} onOpen={onOpen} />
+          <CountryRisk data={data} appetite={appetite} setAppetite={setAppetite} regions={regions} />
+          <AssetExposure data={data} appetite={appetite} onOpen={onOpen} assets={assets} />
+          {flags.travel !== false && (
+            <TravelSecurity data={data} appetite={appetite} onOpen={onOpen} trips={trips} />
+          )}
           <SignalDeck onOpen={onOpen} />
           <div className="grid gap-5 lg:grid-cols-2">
-            <AskAnalyst />
+            {flags.askAnalyst !== false && <AskAnalyst />}
             <EventTimeline data={data} onOpen={onOpen} />
           </div>
         </motion.div>

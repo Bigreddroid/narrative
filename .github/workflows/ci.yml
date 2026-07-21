@@ -38,6 +38,38 @@ jobs:
   backend:
     name: Backend (engine + feeds tests)
     runs-on: ubuntu-latest
+
+    # A real Postgres (with pgvector) + Redis so migrations are exercised in CI
+    # instead of running for the first time on prod boot. pgvector image ships the
+    # `vector` extension the first migration's CREATE EXTENSION needs.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: narrative
+          POSTGRES_PASSWORD: narrative
+          POSTGRES_DB: narrative_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U narrative"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://narrative:narrative@localhost:5432/narrative_test
+      REDIS_URL: redis://localhost:6379
+
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +81,9 @@ jobs:
 
       - name: Install deps
         run: pip install -r backend/requirements.txt
+
+      - name: Run migrations (validate schema against a real DB)
+        run: alembic -c backend/alembic.ini upgrade head
 
       - name: Run test modules
         run: bash scripts/run_backend_tests.sh

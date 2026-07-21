@@ -178,6 +178,11 @@ class Settings(BaseSettings):
     # still refreshes the synthetic/crowd/engine numbers but never publishes a competing
     # ledger. Synthetic/Autocast/engine-skill computation is unaffected either way.
     benchmark_publish_enabled: bool = True
+    # Forward-mode external forecasts (Manifold): the LLM-free resolution poller
+    # re-queries the source and grades published external ledger entries. Safe on
+    # any host (it only acts on rows that exist locally); short-horizon markets
+    # resolve fast, so a few-hours cadence keeps the external skill bucket current.
+    external_resolution_interval_hours: int = 6
 
     # Cost control
     claude_daily_cost_alert_usd: float = 20.0    # soft alert (email only), Voyage spend
@@ -205,6 +210,20 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def is_using_insecure_secret(self) -> bool:
+        return self.secret_key.strip() in ("", _INSECURE_SECRET)
+
+    @property
+    def dev_features_allowed(self) -> bool:
+        """Whether dev-only backdoors (/dev-login and the shared beta accounts) may run.
+        Deliberately keyed on BOTH signals rather than app_env alone: any environment
+        that has a real SECRET_KEY set is treated as a genuine deployment and gets these
+        OFF — so a single missing/mistyped APP_ENV cannot leave /dev-login open on a
+        live host. Local dev keeps them on with zero extra config (it runs on the
+        insecure default secret). Fail-closed by construction."""
+        return (not self.is_production) and self.is_using_insecure_secret
 
     @model_validator(mode="after")
     def _require_real_secret_in_prod(self) -> "Settings":

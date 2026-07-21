@@ -105,5 +105,22 @@ finally:
     C.XDISC_W = _saved
 ok("XDISC_W restored to default after test", C.XDISC_W == 0.0)
 
+# 11. semantic relatedness gate — near in space+time is necessary but not sufficient.
+# Unrelated content (low embedding cosine) must NOT corroborate; related content must.
+def mke(id, source, emb, lat, lng, ts=T):
+    return {"id": id, "source": source, "embedding": emb, "lat": lat, "lng": lng, "ts": ts}
+
+related = C.corroborate([mke("t", "usgs", [1.0, 0.0], 0, 0),
+                         mke("c", "gdacs", [0.9, 0.1], 0.4, 0.4)])  # cos ≈ 0.99
+ok("related content (high cosine) corroborates", related["t"]["count"] == 1)
+
+unrelated = C.corroborate([mke("t", "usgs", [1.0, 0.0], 0, 0),
+                           mke("c", "gdacs", [0.0, 1.0], 0.4, 0.4)])  # orthogonal ⇒ cos 0
+ok("unrelated content (low cosine) does NOT corroborate", unrelated["t"]["count"] == 0)
+
+# degrade-safe: a missing embedding falls back to geo+time (legacy behaviour holds)
+mixed = C.corroborate([mke("t", "usgs", [1.0, 0.0], 0, 0), mk("c", "gdacs", 0.4, 0.4)])
+ok("missing embedding ⇒ geo+time fallback still corroborates", mixed["t"]["count"] == 1)
+
 print(f"\ncorroboration: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

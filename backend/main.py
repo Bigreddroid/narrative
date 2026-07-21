@@ -8,7 +8,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from backend.api.rate_limit import limiter, ResilientSlowAPIMiddleware
-from backend.api.routes import admin, aircraft, auth, benchmark, chat, events, exposure, feed, follows, geolocate, graph, imint, market, meta, notifications, osint, search, stripe_routes, users, vessels
+from backend.api.routes import admin, aircraft, auth, benchmark, chat, context, events, exposure, feed, follows, geolocate, graph, imint, market, meta, notifications, osint, search, stripe_routes, users, vessels
 from backend.config import get_settings
 from backend.database import engine
 
@@ -84,6 +84,7 @@ app.include_router(benchmark.router, prefix="/api/v1")
 app.include_router(graph.router, prefix="/api/v1")
 app.include_router(exposure.router, prefix="/api/v1")
 app.include_router(market.router, prefix="/api/v1")
+app.include_router(context.router, prefix="/api/v1")
 app.include_router(vessels.router, prefix="/api/v1")
 app.include_router(aircraft.router, prefix="/api/v1")
 app.include_router(feed.router, prefix="/api/v1")
