@@ -149,6 +149,7 @@ export default function ExecDeck() {
   const [filters, setFilters] = useState(emptyFilters());
   const [selected, setSelected] = useState(null);   // site id
   const [signal, setSignal] = useState(null);       // event object open in the drawer
+  const [mapFilter, setMapFilter] = useState(null); // "alert" | "watch" | "clear" | null
   const [query, setQuery] = useState("");
 
   const appetite = ORG_TOLERANCE;
@@ -243,7 +244,6 @@ export default function ExecDeck() {
     { key: "dest", label: "Destination", values: (r) => r.trip?.country ?? r.country ?? null },
   ], []);
 
-  const dims = view === "People" ? TRAVEL_DIMS : SITE_DIMS;
 
   // Free-text search composes with the filters rather than replacing them.
   const q = query.trim().toLowerCase();
@@ -394,24 +394,50 @@ export default function ExecDeck() {
               {/* Map key. Filtering lives in the bar above — five bands there, three
                   colours here, because 214 dots cannot carry five hues legibly.
                   Counts follow the filtered view so the key never contradicts the map. */}
+              {/* These chips carry the same border, dot, count and uppercase label as the
+                  real filter chips in the bar above, so they read as controls. They were
+                  inert — the most misleading affordance on the page. ExecGlobe already
+                  accepted a `filter` prop that nothing was driving; now they drive it.
+                  Click again to clear. This dims the MAP only and never touches the
+                  assessment or the counts. */}
               <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
                 {["alert", "watch", "clear"].map((k) => {
                   const count = visibleContexts.filter((c) => c.worst === k).length;
+                  const on = mapFilter === k;
                   return (
-                    <span key={k} className="flex items-center gap-1.5 px-2 py-1 rounded-[2px] border border-[#242424]">
+                    <button
+                      key={k} type="button"
+                      onClick={() => setMapFilter(on ? null : k)}
+                      aria-pressed={on}
+                      disabled={count === 0 && !on}
+                      title={count === 0 && !on ? `No ${SEV[k].label} sites in view`
+                        : on ? "Show all sites on the map" : `Show only ${SEV[k].label} sites on the map`}
+                      className={[
+                        "flex items-center gap-1.5 px-2 py-1 rounded-[2px] border transition-colors",
+                        count === 0 && !on ? "border-[#1A1A1A] cursor-default opacity-50"
+                          : on ? "border-[#6A6A64] bg-[#141414]" : "border-[#242424] hover:border-[#4A4A47]",
+                      ].join(" ")}
+                    >
                       <span className="w-2 h-2 rounded-full" style={{ background: SEV[k].c }} />
                       <span className="font-mono text-[10px] tabular-nums text-[#B8B5AE]">{count}</span>
                       <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[#6A6A64]">{SEV[k].label}</span>
-                    </span>
+                    </button>
                   );
                 })}
-                <span className="font-mono text-[9px] text-[#3A3A38] self-center tracking-[0.1em] uppercase">
-                  Extreme + High = Alert · Moderate = Watch · Low + Minimal = Clear
-                </span>
+                {mapFilter ? (
+                  <button type="button" onClick={() => setMapFilter(null)}
+                    className="font-mono text-[9px] self-center tracking-[0.1em] uppercase text-[#C80028] hover:underline">
+                    Showing {SEV[mapFilter].label} only · show all
+                  </button>
+                ) : (
+                  <span className="font-mono text-[9px] text-[#3A3A38] self-center tracking-[0.1em] uppercase">
+                    Extreme + High = Alert · Moderate = Watch · Low + Minimal = Clear
+                  </span>
+                )}
               </div>
             </div>
 
-            <ExecGlobe contexts={visibleContexts} topSignalOf={topSignal} filter={null}
+            <ExecGlobe contexts={visibleContexts} topSignalOf={topSignal} filter={mapFilter}
               selectedId={selected} onSelect={(c) => { setSelected(c.office.id); setView("Sites"); }} />
           </section>
 
@@ -521,8 +547,10 @@ export default function ExecDeck() {
                 ))}
               </div>
               <p className="text-[11px] text-[#5A5A55] mt-4 leading-relaxed max-w-3xl">
-                Cleared does not mean discarded. Every one of these is listed on its site, with the reason,
-                and any of them can be escalated by moving your risk appetite — the thresholds are yours, not ours.
+                Cleared does not mean discarded. Every one is listed on its site with the reason it
+                was cleared, and opens to its sources — select a site to read them. Thresholds follow
+                the organisation's stated tolerance ({TOLERANCE_WORD.toLowerCase()}), set by your
+                security team rather than adjusted while reading this board.
               </p>
               <div className="flex flex-wrap gap-x-7 gap-y-1.5 mt-5 pt-4 border-t border-[#1C1C1C]">
                 {Object.entries(held.byReason).map(([k, v]) => (
@@ -560,15 +588,35 @@ export default function ExecDeck() {
               <div className="bg-[#0A0A0A] p-6">
                 <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#8A8A82]">What's coming · 60 days</p>
                 <div className="mt-4 space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
-                  {ahead.slice(0, 10).map((f) => (
-                    <div key={`${f.date}|${f.name}`} className="flex items-baseline gap-3">
-                      <span className="font-mono text-[11px] tabular-nums text-[#8A8A82] w-12 flex-shrink-0">{f.inDays}d</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[12px] truncate">{f.name}</div>
-                        <div className="font-mono text-[10px] text-[#6A6A64]">{n(f.people)} people · {f.sites.length} sites</div>
-                      </div>
-                    </div>
-                  ))}
+                  {/* These sat inert directly beside the "changed since last look" rows,
+                      which ARE buttons and look identical — an asymmetry inside one panel
+                      pair. Forward items are scheduled context (holidays, festivals,
+                      departures), not signals, so they open the affected SITE rather than
+                      a signal drawer. */}
+                  {ahead.slice(0, 10).map((f) => {
+                    const siteId = f.sites?.[0]?.office?.id ?? f.sites?.[0]?.id ?? null;
+                    const Tag = siteId ? "button" : "div";
+                    return (
+                      <Tag
+                        key={`${f.date}|${f.name}`}
+                        {...(siteId ? {
+                          type: "button",
+                          onClick: () => { setSelected(siteId); setView("Sites"); },
+                          title: `Open ${f.sites.length} affected site${f.sites.length === 1 ? "" : "s"}`,
+                        } : {})}
+                        className={[
+                          "w-full text-left flex items-baseline gap-3",
+                          siteId ? "hover:text-[#F0EDE8] group" : "",
+                        ].join(" ")}
+                      >
+                        <span className="font-mono text-[11px] tabular-nums text-[#8A8A82] w-12 flex-shrink-0">{f.inDays}d</span>
+                        <div className="min-w-0 flex-1">
+                          <div className={["text-[12px] truncate", siteId ? "group-hover:text-[#F0EDE8]" : ""].join(" ")}>{f.name}</div>
+                          <div className="font-mono text-[10px] text-[#6A6A64]">{n(f.people)} people · {f.sites.length} sites</div>
+                        </div>
+                      </Tag>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -623,14 +671,31 @@ export default function ExecDeck() {
               </div>
               {audit.findings.length > 0 && (
                 <div className="mt-5 space-y-1.5 max-h-[200px] overflow-y-auto">
-                  {audit.findings.slice(0, 40).map((f, i) => (
-                    <div key={`${f.check}-${f.siteId}-${i}`} className="flex flex-wrap items-baseline gap-x-3 text-[11px]">
-                      <span className="font-mono text-[10px] uppercase tracking-[0.1em] w-[130px] flex-shrink-0"
-                        style={{ color: f.severity === "critical" ? SEV.alert.c : SEV.watch.c }}>{f.severity}</span>
-                      <span className="text-[#B8B5AE] w-[210px] flex-shrink-0 truncate">{f.label}</span>
-                      <span className="text-[#5A5A55] flex-1 min-w-[220px]">{f.detail}</span>
-                    </div>
-                  ))}
+                  {/* Each finding names an offending row and already carries its siteId.
+                      Reporting a data-integrity problem without a way to reach the record
+                      makes the audit an accusation rather than a tool. */}
+                  {audit.findings.slice(0, 40).map((f, i) => {
+                    const Tag = f.siteId ? "button" : "div";
+                    return (
+                      <Tag
+                        key={`${f.check}-${f.siteId}-${i}`}
+                        {...(f.siteId ? {
+                          type: "button",
+                          onClick: () => setSelected(f.siteId),
+                          title: "Open the affected site",
+                        } : {})}
+                        className={[
+                          "w-full text-left flex flex-wrap items-baseline gap-x-3 text-[11px]",
+                          f.siteId ? "hover:bg-[#0E0E0E] group" : "",
+                        ].join(" ")}
+                      >
+                        <span className="font-mono text-[10px] uppercase tracking-[0.1em] w-[130px] flex-shrink-0"
+                          style={{ color: f.severity === "critical" ? SEV.alert.c : SEV.watch.c }}>{f.severity}</span>
+                        <span className={["text-[#B8B5AE] w-[210px] flex-shrink-0 truncate", f.siteId ? "group-hover:text-[#F0EDE8]" : ""].join(" ")}>{f.label}</span>
+                        <span className="text-[#5A5A55] flex-1 min-w-[220px]">{f.detail}</span>
+                      </Tag>
+                    );
+                  })}
                 </div>
               )}
               {audit.clean && (
@@ -797,8 +862,20 @@ export default function ExecDeck() {
                         <td className="px-4 py-2.5 text-[12px] text-[#B8B5AE]">{r.trip.from} → {r.trip.to}</td>
                         <td className="px-4 py-2.5 font-mono text-[10px] text-[#6A6A64]">{r.trip.departISO} → {r.trip.returnISO}</td>
                         <td className="px-4 py-2.5 font-mono text-[10px] text-[#8A8A82]">{r.status}</td>
+                        {/* The row keeps its hover tint as a reading aid across seven
+                            columns, but the thing that actually opens is the signal —
+                            the only cell here backed by an event. */}
                         <td className="px-4 py-2.5 text-[11px] text-[#8A8A82] max-w-[260px] truncate">
-                          {r.best ? `${r.best.event.canonical_title} · ${Math.round(r.best.km)} km` : "—"}
+                          {r.best ? (
+                            <button
+                              type="button"
+                              onClick={() => setSignal(r.best.event)}
+                              title="Open the signal driving this verdict"
+                              className="max-w-full truncate text-left hover:text-crimson-light underline decoration-dotted decoration-[#2E2E2C]"
+                            >
+                              {r.best.event.canonical_title} · {Math.round(r.best.km)} km
+                            </button>
+                          ) : "—"}
                         </td>
                         <td className="px-4 py-2.5 font-mono text-[10px]" style={{ color: r.unaccounted ? SEV.alert.c : "#6A6A64" }}>
                           {r.unaccounted ? "no record" : r.lastSeen ? new Date(r.lastSeen).toISOString().slice(0, 16).replace("T", " ") : "—"}
@@ -830,9 +907,23 @@ export default function ExecDeck() {
                 <tbody>
                   {countries.filter((c) => !q || c.country.toLowerCase().includes(q)).map((c) => (
                     <tr key={c.country} className="border-b border-[#151515] hover:bg-[#0E0E0E]">
+                      {/* Drills into the register filtered to this country, reusing the
+                          existing country dimension rather than inventing a second
+                          filtering concept. Replaces (not adds to) any country already
+                          selected, which is what clicking a specific country implies. */}
                       <td className="px-4 py-3">
-                        <div className="text-[12px]">{c.country}</div>
-                        <div className="font-mono text-[10px] text-[#5A5A55]">{c.sites} sites · {n(c.people)} people</div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilters((f) => toggleValue(clearDimension(f, "country"), "country", c.country));
+                            setView("Sites");
+                          }}
+                          title={`Show the ${c.sites} site${c.sites === 1 ? "" : "s"} in ${c.country}`}
+                          className="text-left hover:text-crimson-light group"
+                        >
+                          <div className="text-[12px] group-hover:underline decoration-dotted">{c.country}</div>
+                          <div className="font-mono text-[10px] text-[#5A5A55]">{c.sites} sites · {n(c.people)} people</div>
+                        </button>
                       </td>
                       <td className="px-4 py-3">
                         <span className="font-display text-[1.3rem] leading-none" style={{ color: c.band.color }}>{c.overall.toFixed(1)}</span>
