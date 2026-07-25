@@ -137,6 +137,68 @@ const SITE_COLUMNS = [
   },
 ];
 
+// Traveller register columns. Same contract as SITE_COLUMNS so People gets the sorting,
+// pagination and CSV export the site register already had, instead of a hand-rolled
+// table that could only be filtered by free text.
+//
+// VERDICT_RANK exists because sorting a duty-of-care column alphabetically is actively
+// misleading: "advise" would outrank "reconsider" and the most exposed travellers would
+// sort to the bottom of page one. Sort by risk, display the word.
+const VERDICT_RANK = { proceed: 0, advise: 1, reconsider: 2 };
+const TRAVEL_COLUMNS = [
+  {
+    key: "verdict", label: "Verdict", defaultDir: "desc",
+    value: (r) => r.verdict.label,
+    sortValue: (r) => VERDICT_RANK[r.verdict.key] ?? -1,
+    render: (r) => (
+      <span className="font-mono text-[10px] uppercase tracking-[0.08em]" style={{ color: r.verdict.color }}>
+        {r.verdict.label}
+      </span>
+    ),
+  },
+  {
+    key: "traveller", label: "Traveller", defaultDir: "asc",
+    value: (r) => r.trip.traveler,
+    csvValue: (r) => `${r.trip.traveler} (${r.trip.role})`,
+    render: (r) => (
+      <span className="min-w-0">
+        <span className="truncate block">{r.trip.traveler}</span>
+        <span className="font-mono text-[10px] text-[#5A5A55]">{r.trip.role}</span>
+      </span>
+    ),
+  },
+  {
+    key: "route", label: "Route", defaultDir: "asc",
+    value: (r) => `${r.trip.from} → ${r.trip.to}`,
+    render: (r) => <span className="text-[#B8B5AE]">{r.trip.from} → {r.trip.to}</span>,
+  },
+  {
+    key: "depart", label: "Dates", defaultDir: "asc", mono: true,
+    value: (r) => r.trip.departISO,
+    csvValue: (r) => `${r.trip.departISO} → ${r.trip.returnISO}`,
+    render: (r) => <span className="font-mono text-[10px] text-[#6A6A64]">{r.trip.departISO} → {r.trip.returnISO}</span>,
+  },
+  { key: "status", label: "Status", defaultDir: "asc", mono: true, value: (r) => r.status },
+  {
+    key: "driver", label: "Driving signal",
+    value: (r) => (r.best ? r.best.event.canonical_title : "—"),
+    sortValue: (r) => (r.best ? r.best.km : Number.POSITIVE_INFINITY),
+    csvValue: (r) => (r.best ? `${r.best.event.canonical_title} (${Math.round(r.best.km)} km)` : ""),
+  },
+  {
+    key: "seen", label: "Last check-in", mono: true,
+    // Unaccounted-for travellers must sort to the TOP of a descending check-in sort —
+    // "no record" is the most urgent state in a duty-of-care register, not a blank.
+    value: (r) => (r.unaccounted ? "no record" : r.lastSeen ? new Date(r.lastSeen).toISOString().slice(0, 16).replace("T", " ") : "—"),
+    sortValue: (r) => (r.unaccounted ? Number.POSITIVE_INFINITY : r.lastSeen ? -new Date(r.lastSeen).getTime() : 0),
+    render: (r) => (
+      <span className="font-mono text-[10px]" style={{ color: r.unaccounted ? SEV.alert.c : "#6A6A64" }}>
+        {r.unaccounted ? "no record" : r.lastSeen ? new Date(r.lastSeen).toISOString().slice(0, 16).replace("T", " ") : "—"}
+      </span>
+    ),
+  },
+];
+
 // Organisational risk tolerance. This is a POSTURE, set once by the security team,
 // not a control on the briefing surface — see components/exec/FilterBar.jsx for why
 // the slider that used to live here was removed.
@@ -239,11 +301,13 @@ export default function ExecDeck() {
     { key: "crit", label: "Criticality", values: (r) => r.office.criticality },
   ], []);
 
+  // `verdict` is an object ({key,label,color}), so the dimension must project it down
+  // to its key. Feeding the object straight in produced "[object Object]" chips that
+  // could never match anything.
   const TRAVEL_DIMS = useMemo(() => [
-    { key: "verdict", label: "Verdict", values: (r) => r.verdict },
+    { key: "verdict", label: "Verdict", values: (r) => r.verdict?.key ?? null },
     { key: "dest", label: "Destination", values: (r) => r.trip?.country ?? r.country ?? null },
   ], []);
-
 
   // Free-text search composes with the filters rather than replacing them.
   const q = query.trim().toLowerCase();
@@ -253,14 +317,27 @@ export default function ExecDeck() {
 
   const visibleRows = useMemo(() => applyFilters(searched, filters, SITE_DIMS), [searched, filters, SITE_DIMS]);
   const visibleContexts = useMemo(() => visibleRows.map((r) => r.ctx), [visibleRows]);
-  const travelRows = useMemo(() => applyFilters(travel.trips || [], filters, TRAVEL_DIMS), [travel, filters, TRAVEL_DIMS]);
+
+  // travelPosture() returns `rows` and has no `trips` key at all. Reading `travel.trips`
+  // meant this was permanently [], so the People filter bar showed "none in view" for
+  // every dimension and reported "All 0 shown" directly above 42 rendered itineraries —
+  // a board contradicting itself on screen. Search is folded in here too, so People
+  // composes search with filters exactly like Sites instead of filtering inline in
+  // the table where the counts above could not see it.
+  const travelSearched = useMemo(() => (!q ? travel.rows : travel.rows.filter((r) =>
+    r.trip.traveler.toLowerCase().includes(q) || r.trip.to.toLowerCase().includes(q)
+    || r.trip.country.toLowerCase().includes(q))), [travel.rows, q]);
+  const travelRows = useMemo(
+    () => applyFilters(travelSearched, filters, TRAVEL_DIMS),
+    [travelSearched, filters, TRAVEL_DIMS],
+  );
 
   const facetList = useMemo(
-    () => (view === "People" ? facets(travel.trips || [], filters, TRAVEL_DIMS) : facets(searched, filters, SITE_DIMS)),
-    [view, travel, searched, filters, SITE_DIMS, TRAVEL_DIMS],
+    () => (view === "People" ? facets(travelSearched, filters, TRAVEL_DIMS) : facets(searched, filters, SITE_DIMS)),
+    [view, travelSearched, searched, filters, SITE_DIMS, TRAVEL_DIMS],
   );
   const shown = view === "People" ? travelRows.length : visibleRows.length;
-  const totalRows = view === "People" ? (travel.trips || []).length : searched.length;
+  const totalRows = view === "People" ? travelSearched.length : searched.length;
 
   // Countries recompute from what is actually visible, so a filtered board's country
   // table agrees with its map instead of quietly reporting the unfiltered world.
@@ -840,50 +917,23 @@ export default function ExecDeck() {
             </div>
           </Band>
 
-          <Band label={`Itineraries · ${travel.rows.length}`} note="Every trip scored against signals within each event's own reach. Sorted by verdict, then departure.">
-            <div className="mt-3 max-h-[640px] overflow-y-auto">
-              <table className="w-full text-left">
-                <thead className="sticky top-0 bg-[#0E0E0E]">
-                  <tr className="font-mono text-[9px] tracking-[0.14em] uppercase text-[#6A6A64]">
-                    {["Verdict", "Traveller", "Route", "Dates", "Status", "Driving signal", "Last check-in"].map((h) => (
-                      <th key={h} className="px-4 py-2.5 font-normal border-b border-[#1C1C1C]">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...travel.rows]
-                    .filter((r) => !q || r.trip.traveler.toLowerCase().includes(q) || r.trip.to.toLowerCase().includes(q) || r.trip.country.toLowerCase().includes(q))
-                    .sort((a, b) => ({ proceed: 0, advise: 1, reconsider: 2 })[b.verdict.key] - ({ proceed: 0, advise: 1, reconsider: 2 })[a.verdict.key]
-                      || a.trip.departISO.localeCompare(b.trip.departISO))
-                    .map((r) => (
-                      <tr key={r.trip.id} className="border-b border-[#151515] hover:bg-[#0E0E0E]">
-                        <td className="px-4 py-2.5"><span className="font-mono text-[10px]" style={{ color: r.verdict.color }}>{r.verdict.label}</span></td>
-                        <td className="px-4 py-2.5 text-[12px]">{r.trip.traveler}<div className="font-mono text-[10px] text-[#5A5A55]">{r.trip.role}</div></td>
-                        <td className="px-4 py-2.5 text-[12px] text-[#B8B5AE]">{r.trip.from} → {r.trip.to}</td>
-                        <td className="px-4 py-2.5 font-mono text-[10px] text-[#6A6A64]">{r.trip.departISO} → {r.trip.returnISO}</td>
-                        <td className="px-4 py-2.5 font-mono text-[10px] text-[#8A8A82]">{r.status}</td>
-                        {/* The row keeps its hover tint as a reading aid across seven
-                            columns, but the thing that actually opens is the signal —
-                            the only cell here backed by an event. */}
-                        <td className="px-4 py-2.5 text-[11px] text-[#8A8A82] max-w-[260px] truncate">
-                          {r.best ? (
-                            <button
-                              type="button"
-                              onClick={() => setSignal(r.best.event)}
-                              title="Open the signal driving this verdict"
-                              className="max-w-full truncate text-left hover:text-crimson-light underline decoration-dotted decoration-[#2E2E2C]"
-                            >
-                              {r.best.event.canonical_title} · {Math.round(r.best.km)} km
-                            </button>
-                          ) : "—"}
-                        </td>
-                        <td className="px-4 py-2.5 font-mono text-[10px]" style={{ color: r.unaccounted ? SEV.alert.c : "#6A6A64" }}>
-                          {r.unaccounted ? "no record" : r.lastSeen ? new Date(r.lastSeen).toISOString().slice(0, 16).replace("T", " ") : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+          <Band label={`Itineraries · ${travelRows.length} of ${travel.rows.length}`}
+            note="Every trip scored against signals within each event's own reach. Sort any column; a row opens the signal driving its verdict.">
+            <div className="px-6 lg:px-10 pb-8 pt-2">
+              {/* Was a hand-rolled table that could only be filtered by free text, with
+                  its own inline sort the counts above could not see. Now the same
+                  DataTable the site register uses, so People gets sorting, pagination
+                  and CSV export, and the filter bar's counts describe what is on screen. */}
+              <DataTable
+                rows={travelRows}
+                columns={TRAVEL_COLUMNS}
+                rowKey={(r) => r.trip.id}
+                onRowClick={(r) => r.best && setSignal(r.best.event)}
+                defaultSort={{ key: "verdict", dir: "desc" }}
+                filename={`wipro-itineraries-${today.toISOString().slice(0, 10)}.csv`}
+                empty={q ? `No traveller matches "${query}".` : "No itinerary matches the current filters."}
+                caption="Export carries every filtered row, not just this page. A row with no driving signal does not open."
+              />
             </div>
           </Band>
         </motion.div>
