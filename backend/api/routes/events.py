@@ -39,7 +39,12 @@ async def list_events(
     discipline: str | None = Query(None, description="INT discipline: HUMINT/SIGINT/IMINT/GEOINT/MASINT/FININT/CYBINT"),
     source_type: str | None = Query(None, description="'osint' = open-source/unverified only"),
     source_prefix: str | None = Query(None, description="event source prefix, e.g. 'wipro_demo' matches the seeded demo scenario sources"),
-    limit: int = Query(20, le=100),
+    # Raised from 100. The exec deck scores every signal against 214 sites, and a
+    # top-100-by-importance slice meant every event it ever saw scored 80-95 — which
+    # collapsed a five-band severity scale into two populated bands. Widening the
+    # window is what lets the middle bands exist at all. Still bounded: the
+    # corroboration join is one grouped query regardless of page size.
+    limit: int = Query(20, le=500),
     offset: int = Query(0),
 ) -> dict:
     query = (

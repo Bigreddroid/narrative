@@ -220,7 +220,11 @@ export default function ExecDeck() {
   // lands. If the engine is unreachable we fall back to the sample signal set and
   // say so — an all-clear board that actually means "we couldn't reach the engine"
   // is the most dangerous screen a security product can show.
-  const feed = useLiveEvents({ limit: 100, fallback: SAMPLE.SAMPLE_EVENTS });
+  // 300, not 100. The list is ranked by importance, so a 100-event window only ever
+  // contained 80-95 scores and the Low/Moderate/High bands were mathematically
+  // unreachable. Widening it is half of what makes the five-band scale mean something;
+  // proximity attenuation in officeContext is the other half.
+  const feed = useLiveEvents({ limit: 300, fallback: SAMPLE.SAMPLE_EVENTS });
 
   // Most rows carry only an event ID (domainScore projects evidence down to
   // {id,title,km}; suppression rows embed it in the row id). The drawer needs the whole

@@ -94,15 +94,67 @@ export function layerOf(e) {
   return "geopolitics";
 }
 
-// Nearest (highest-importance) geolocated event of one layer that actually reaches
-// this office — judged against each EVENT's own extent, not a single layer radius.
+// ── Proximity attenuation ────────────────────────────────────────────────────
+// Being inside an event's extent was previously binary: a site 24 km from a 25 km
+// protest scored exactly the same as one 1 km away, because the raw importance was
+// carried through untouched. That is not how consequence works, and it had a visible
+// cost — with the live feed returning only the top-100 by importance (every event
+// scoring 80-95), the five-band scale collapsed to two populated bands: 44 Extreme,
+// 170 Minimal, and nothing at all in High, Moderate or Low.
+//
+// So importance decays with distance INSIDE the extent:
+//
+//   attenuated = imp × (FLOOR + (1 − FLOOR) × (1 − r)^FALLOFF),  r = km / extent
+//
+// FLOOR is deliberately non-zero. Reaching the edge of an event's extent does not
+// mean "unaffected" — the extent is precisely the distance at which we stop counting
+// it, so the boundary should hand over a real-but-small residue rather than a zero
+// that would erase a site we just decided was in range.
+//
+// FALLOFF > 1 keeps the near field close to full strength and drops away faster
+// further out, which matches how a cordon, a flood plain or a road closure actually
+// behaves: little relief until you are well clear of it.
+//
+//   90-importance event, 25 km extent →  at 0 km: 90 · at 12 km: 46 · at 25 km: 23
+//
+// Non-geolocated and organisation-scoped layers (cyber) never come through here;
+// distance is meaningless for them and pretending otherwise was a separate bug.
+// CALIBRATION NOTE. These began at 0.25 / 1.5, which decayed a 90-importance storm
+// 100 km out (150 km extent) to 35 and reclassified it from alert to CLEAR. That is
+// self-contradictory: storms carry a 150 km extent precisely because large weather
+// systems are felt that far, so the attenuation curve must not overturn the judgement
+// the extent encodes. An existing assertion — "a weather front 100 km away still
+// reaches the site" — caught it. Softened so the far field lands in watch rather than
+// falling off the board, while the near field keeps its full weight.
+export const ATTENUATION_FLOOR = 0.35;
+export const ATTENUATION_FALLOFF = 1.3;
+
+export function attenuate(importance, km, extent) {
+  const imp = Number(importance) || 0;
+  const d = Number(km);
+  const ext = Number(extent);
+  // No distance, no extent, or a nonsensical extent → carry importance unchanged
+  // rather than inventing a discount.
+  if (!Number.isFinite(d) || !Number.isFinite(ext) || ext <= 0) return imp;
+  const r = Math.max(0, Math.min(1, d / ext));
+  return imp * (ATTENUATION_FLOOR + (1 - ATTENUATION_FLOOR) * (1 - r) ** ATTENUATION_FALLOFF);
+}
+
+// Strongest geolocated event of one layer that actually reaches this office — judged
+// against each EVENT's own extent, and ranked by ATTENUATED importance so a severe
+// event at the edge of its reach no longer outranks a nearby one that will actually
+// be felt. `raw` is retained so the UI can always show what the underlying event
+// scored before distance was applied.
 function nearestFor(office, geoEvents, layer) {
   let best = null;
   for (const e of geoEvents) {
     if (layerOf(e) !== layer) continue;
     const km = haversineKm(office.lat, office.lng, e.geo_centroid_lat, e.geo_centroid_lng);
-    if (km <= extentKm(e) && (!best || (e.global_importance_score || 0) > best.imp))
-      best = { event: e, km, imp: e.global_importance_score || 0 };
+    const ext = extentKm(e);
+    if (km > ext) continue;
+    const raw = e.global_importance_score || 0;
+    const imp = attenuate(raw, km, ext);
+    if (!best || imp > best.imp) best = { event: e, km, imp, raw, extent: ext };
   }
   return best;
 }
