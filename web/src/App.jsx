@@ -24,6 +24,8 @@ const Benchmark = lazy(() => import("./pages/Benchmark.jsx"));
 // Customer deck — config-driven dashboard over the live backend; direct URL only
 // (/wipro), intentionally not in the nav. Next tenant = another config + route.
 const CustomerDeck = lazy(() => import("./pages/CustomerDeck.jsx"));
+const ExecDeck = lazy(() => import("./pages/ExecDeck.jsx"));
+const SignalBoard = lazy(() => import("./pages/SignalBoard.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
 const PipelineMonitor = lazy(() => import("./admin/PipelineMonitor.jsx"));
 const CostDashboard = lazy(() => import("./admin/CostDashboard.jsx"));
@@ -89,6 +91,13 @@ export default function App() {
         <Route path="/geolocate"       element={FEATURES.geolocate ? <PrivateRoute><GeoLocate /></PrivateRoute> : <Navigate to="/world" replace />} />
         <Route path="/int"             element={<PrivateRoute><IntFusion /></PrivateRoute>} />
         <Route path="/wipro"           element={<PrivateRoute><CustomerDeck config={wiproConfig} /></PrivateRoute>} />
+        {/* Executive altitude over the same engine: exposure-first, no feed. The
+            analyst board at /wipro is deliberately untouched — two personas, two
+            altitudes. Runs on a sample dataset until the real site list lands. */}
+        <Route path="/wipro/exec"      element={<PrivateRoute><ExecDeck /></PrivateRoute>} />
+        {/* The TweetDeck-style operator board, full viewport. Lived in a 600px box
+            at the bottom of /wipro; it earns its own room. Needs the backend. */}
+        <Route path="/deck"            element={<PrivateRoute><SignalBoard /></PrivateRoute>} />
         <Route path="/osint"           element={<OsintRedirect />} />
         <Route path="/settings"        element={<PrivateRoute><Settings /></PrivateRoute>} />
 

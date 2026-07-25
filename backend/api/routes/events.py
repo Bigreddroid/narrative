@@ -83,6 +83,29 @@ async def list_events(
     result = await db.execute(query)
     events = result.scalars().all()
 
+    # Distinct-OUTLET counts for the whole page in ONE query.
+    #
+    # The two-source corroboration gate runs on every row of the exec deck, and this
+    # field is what feeds it. Leaving it off the list payload (the previous behaviour)
+    # made every live signal look single-sourced, so the gate rejected all of them and
+    # the decision queue sat permanently empty with nothing on screen explaining why.
+    # Fetching it per event instead would be an N+1 across up to 100 rows.
+    #
+    # Counted by DISTINCT OUTLET, not by article: five wire copies of one Reuters story
+    # are one source, not five. Corroboration means independent outlets agreeing, and
+    # counting articles would let a single syndicated feed clear a bar meant to require
+    # genuine independence.
+    outlets: dict = {}
+    event_ids = [e.id for e in events]
+    if event_ids:
+        outlet_rows = await db.execute(
+            select(Article.narrative_event_id, Source.name)
+            .outerjoin(Source, Article.source_id == Source.id)
+            .where(Article.narrative_event_id.in_(event_ids))
+        )
+        for eid, outlet_name in outlet_rows.all():
+            outlets.setdefault(eid, set()).add(outlet_name or "Unknown")
+
     return {
         "events": [
             {
@@ -98,6 +121,11 @@ async def list_events(
                 "geo_centroid_lat": e.geo_centroid_lat,
                 "geo_centroid_lng": e.geo_centroid_lng,
                 "source": e.source,
+                # Independent outlets carrying this story, and their names. An event we
+                # have no article for reports 0 and [] — honestly "we cannot corroborate
+                # this", never a fabricated 1.
+                "source_count": len(outlets.get(e.id, ())),
+                "sources": sorted(outlets.get(e.id, ())),
                 "is_osint": (e.source or "").startswith("osint_"),
                 "first_detected_at": e.first_detected_at.isoformat() if e.first_detected_at else None,
                 "last_updated_at": e.last_updated_at.isoformat() if e.last_updated_at else None,

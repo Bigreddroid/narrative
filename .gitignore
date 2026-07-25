@@ -60,3 +60,9 @@ INSTALL_GUIDE.pdf
 
 # Claude Code local tooling state (per-developer: allowlist, worktrees, plugins)
 .claude/
+
+# ─── Confidential research corpus — NEVER commit ─────────────────────────────
+# First-hand competitor/workflow capture. Contains third-party confidential data,
+# named individuals' contact details, a customer site register, and licensed
+# vendor UI. Internal product-direction input only; not for external use.
+c suite Narrative deck/

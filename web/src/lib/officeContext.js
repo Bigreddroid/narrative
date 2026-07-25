@@ -26,11 +26,53 @@ const haversineKm = (lat1, lng1, lat2, lng2) => _havKm(lng1, lat1, lng2, lat2);
 export const DISRUPTION_K = 0.8;  // ceiling — derived traffic confidence tops out at 80%
 const TAU_LOAD = 3.0;             // load units to reach ~63% of the ceiling
 
-// Per-layer search radius (km). Gatherings and weather fronts are local; incidents,
-// market and cyber signals radiate wider before they stop being "near this office".
+// Per-layer fallback ceilings (km). Retained for festivals and as documentation of
+// the old flat model; incident layers now use a PER-EVENT extent (see EXTENT_KM).
 export const RADII = { weather: 150, hazard: 250, incident: 300, festival: 70, market: 450, cyber: 700 };
 
+// ── Per-event spatial extent ─────────────────────────────────────────────────
+// One radius per LAYER was wrong: events inside a layer differ enormously in reach.
+// A road-blocking protest is felt for ~25 km; a regional flood for ~150 km. Scoring
+// both at 300 km made a CBD protest "affect" offices 290 km away and pushed a
+// 214-site board to 55% alerting — the same severity inflation we exist to beat.
+//
+// An event's own `impact_radius_km` wins when the API supplies one (no such field
+// today — this is forward-compatible); otherwise we fall back per category.
+// Covers BOTH engine vocabularies — the 13 feed/OSINT CATEGORIES and the 7
+// LLM_CATEGORIES in backend/taxonomy.py. The first version of this table was written
+// against the sample fixture and silently defaulted the live feed's most common
+// categories (wildfire, sanction, unrest, market — 48 of 100 events) to 50 km.
+export const EXTENT_KM = {
+  // ── Localised: felt within a city ──
+  unrest: 25, security: 25, policy: 25,   // protest, closure, localised disorder
+  conflict: 50,                            // armed incident — wider, still local
+  wildfire: 75,                            // fire front plus immediate smoke plume
+  // ── Regional ──
+  geopolitics: 100, technology: 100, disinfo: 100, space: 100,
+  volcano: 150,                            // ashfall and exclusion zones reach far
+  disaster: 150, storm: 150, flood: 150,   // weather fronts are genuinely wide
+  climate: 200, health: 200,
+  // ── Systemic: economic and legal reach, not a blast radius ──
+  economics: 300, economy: 300, market: 300, drought: 300,
+  sanction: 500,                           // national in scope; the effect is legal, not spatial
+  cyber: 100,                              // not distance-scored in practice (org-scoped) — see orgCyberStatus
+};
+export const EXTENT_DEFAULT = 50;
+
+export function extentKm(event) {
+  const explicit = Number(event?.impact_radius_km);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  return EXTENT_KM[String(event?.category || "").toLowerCase()] ?? EXTENT_DEFAULT;
+}
+
 export const LAYER_KEYS = ["geopolitics", "cyber", "market", "hazards", "weather", "holidays", "festivals", "traffic"];
+
+// Layers that describe THIS SITE, and so may drive its rolled-up status. Cyber is
+// excluded: it is organisation-scoped, identical everywhere, and letting it roll up
+// would mark all 214 sites "alert" for a campaign that is not attributable to any one
+// of them — replacing a geographic overclaim with a blanket one. It still appears in
+// `layers` for display, and surfaces separately as an organisation-wide posture.
+export const SITE_LAYER_KEYS = LAYER_KEYS.filter((k) => k !== "cyber");
 export const LAYER_LABELS = {
   geopolitics: "Geopolitics", cyber: "Cyber", market: "Market", hazards: "Hazards",
   weather: "Weather", holidays: "Holiday", festivals: "Festival", traffic: "Traffic",
@@ -52,16 +94,38 @@ export function layerOf(e) {
   return "geopolitics";
 }
 
-// Nearest (highest-importance) geolocated event of one layer within a radius.
-function nearestFor(office, geoEvents, layer, radiusKm) {
+// Nearest (highest-importance) geolocated event of one layer that actually reaches
+// this office — judged against each EVENT's own extent, not a single layer radius.
+function nearestFor(office, geoEvents, layer) {
   let best = null;
   for (const e of geoEvents) {
     if (layerOf(e) !== layer) continue;
     const km = haversineKm(office.lat, office.lng, e.geo_centroid_lat, e.geo_centroid_lng);
-    if (km <= radiusKm && (!best || (e.global_importance_score || 0) > best.imp))
+    if (km <= extentKm(e) && (!best || (e.global_importance_score || 0) > best.imp))
       best = { event: e, km, imp: e.global_importance_score || 0 };
   }
   return best;
+}
+
+// ── Cyber is not a distance problem ──────────────────────────────────────────
+// A credential-stuffing campaign against "IT services suppliers" either targets the
+// organisation or it does not; how far the reporting centroid sits from a given
+// building says nothing useful. Scored by proximity at the old 700 km ceiling, one
+// report lit up 56 sites across three cities and implied 238,493 people were exposed.
+//
+// So cyber resolves ONCE, organisation-wide, from the strongest cyber signal anywhere,
+// and every office carries the same level. `scope: "organisation"` lets callers label
+// it honestly and — critically — stops them attributing a headcount we cannot know.
+function orgCyberStatus(geoEvents, factor) {
+  let best = null;
+  for (const e of geoEvents) {
+    if (layerOf(e) !== "cyber") continue;
+    const imp = e.global_importance_score || 0;
+    if (!best || imp > best.imp) best = { event: e, km: null, imp };
+  }
+  if (!best) return { level: "clear", best: null, imp: 0, scope: "organisation" };
+  const level = best.imp >= 70 * factor ? "alert" : best.imp >= 40 * factor ? "watch" : "clear";
+  return { level, best, imp: Math.round(best.imp), scope: "organisation" };
 }
 
 // Importance + risk-appetite → a layer status. Mirrors the 70/40 · factor ladder
@@ -165,11 +229,11 @@ export function officeContext(office, ctx = {}) {
   const factor = 0.5 + appetite / 100;
   const geoEvents = events.filter((e) => e.geo_centroid_lat != null && e.geo_centroid_lng != null);
 
-  const geopolitics = nearestFor(office, geoEvents, "geopolitics", RADII.incident);
-  const cyber = nearestFor(office, geoEvents, "cyber", RADII.cyber);
-  const market = nearestFor(office, geoEvents, "market", RADII.market);
-  const hazard = nearestFor(office, geoEvents, "hazard", RADII.hazard);
-  const weather = nearestFor(office, geoEvents, "weather", RADII.weather);
+  const geopolitics = nearestFor(office, geoEvents, "geopolitics");
+  const market = nearestFor(office, geoEvents, "market");
+  const hazard = nearestFor(office, geoEvents, "hazard");
+  const weather = nearestFor(office, geoEvents, "weather");
+  const cyber = orgCyberStatus(geoEvents, factor);   // organisation-scoped, not proximity
   const fests = festivalsNear(office, festivals, today);
   const hols = holidaysFor(office, holidaysByCode, countryCodes, curatedHolidays, today);
   const traffic = deriveTraffic(
@@ -179,7 +243,7 @@ export function officeContext(office, ctx = {}) {
 
   const layers = {
     geopolitics: statusFromSignal(geopolitics, factor),
-    cyber: statusFromSignal(cyber, factor),
+    cyber,                                            // already resolved, org-scoped
     market: statusFromSignal(market, factor),
     hazards: statusFromSignal(hazard, factor),
     weather: statusFromSignal(weather, factor),
@@ -187,15 +251,17 @@ export function officeContext(office, ctx = {}) {
     festivals: festivalStatus(fests),
     traffic,
   };
-  const worst = LAYER_KEYS.reduce((w, k) => (LEVEL_RANK[layers[k].level] > LEVEL_RANK[w] ? layers[k].level : w), "clear");
+  const worst = SITE_LAYER_KEYS.reduce((w, k) => (LEVEL_RANK[layers[k].level] > LEVEL_RANK[w] ? layers[k].level : w), "clear");
   return { office, layers, worst, holidays: hols, festivals: fests };
 }
 
 // The single highest-importance incident driving a site — what the map diamond and
-// the site row should open when clicked. Ignores the context-only layers.
+// the site row should open when clicked. Ignores the context-only layers, and ignores
+// CYBER: that layer is organisation-scoped and carries no distance, so it must never
+// be drawn as a line to this building or counted as a site-proximate signal.
 export function topSignal(context) {
   let best = null;
-  for (const k of ["geopolitics", "cyber", "market", "hazards", "weather"]) {
+  for (const k of ["geopolitics", "market", "hazards", "weather"]) {
     const b = context.layers[k].best;
     if (b && (!best || b.imp > best.imp)) best = b;
   }

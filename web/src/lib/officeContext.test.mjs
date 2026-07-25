@@ -2,6 +2,7 @@
 //   node web/src/lib/officeContext.test.mjs
 import {
   officeContext, layerOf, deriveTraffic, upcomingHolidays, DISRUPTION_K,
+  extentKm, EXTENT_KM, EXTENT_DEFAULT, topSignal,
 } from "./officeContext.js";
 
 let passed = 0, failed = 0;
@@ -81,6 +82,43 @@ const withFest = officeContext(OFFICE, {
 ok("active festival ⇒ festival layer alert", withFest.layers.festivals.level === "alert");
 ok("active festival raises derived traffic off clear", withFest.layers.traffic.level !== "clear");
 ok("worst rolls up to the festival alert", withFest.worst === "alert");
+
+// ── per-event spatial extent ──────────────────────────────────────────────────
+// One radius per LAYER made a CBD protest "reach" offices 290 km away. Extent is now
+// a property of the event, so a local disorder signal stays local.
+ok("localised disorder extent is tight", extentKm({ category: "security" }) === 25);
+ok("armed conflict reaches further than disorder", extentKm({ category: "conflict" }) > extentKm({ category: "security" }));
+ok("weather fronts stay wide", extentKm({ category: "storm" }) === 150);
+ok("economic effects radiate furthest", extentKm({ category: "economics" }) >= EXTENT_KM.climate);
+ok("unknown category falls back to the default", extentKm({ category: "wat" }) === EXTENT_DEFAULT);
+ok("an explicit impact_radius_km from the API wins", extentKm({ category: "security", impact_radius_km: 400 }) === 400);
+ok("a nonsense impact_radius_km is ignored", extentKm({ category: "security", impact_radius_km: -5 }) === 25);
+
+// 0.9° of latitude ≈ 100 km — inside a conflict's 50 km extent? No. Inside a storm's 150? Yes.
+const at100km = (extra) => ({ geo_centroid_lat: OFFICE.lat + 0.9, geo_centroid_lng: OFFICE.lng, global_importance_score: 90, canonical_title: "T", ...extra });
+const farConflict = officeContext(OFFICE, { events: [at100km({ category: "security" })], appetite: 50 });
+ok("a localised incident 100 km away no longer touches the site", farConflict.layers.geopolitics.level === "clear");
+const nearStorm = officeContext(OFFICE, { events: [at100km({ category: "storm" })], appetite: 50 });
+ok("a weather front 100 km away still reaches the site", nearStorm.layers.weather.level === "alert");
+
+// ── cyber is organisation-scoped, not proximity-scored ────────────────────────
+const cyberFar = { geo_centroid_lat: OFFICE.lat + 40, geo_centroid_lng: OFFICE.lng + 40, global_importance_score: 88, canonical_title: "Campaign", category: "cyber", id: "c1" };
+const cy = officeContext(OFFICE, { events: [cyberFar], appetite: 50 });
+ok("cyber is scored regardless of distance", cy.layers.cyber.level === "alert");
+ok("cyber declares organisation scope", cy.layers.cyber.scope === "organisation");
+ok("cyber carries no distance to fake", cy.layers.cyber.best.km === null);
+ok("cyber still respects risk appetite", officeContext(OFFICE, { events: [cyberFar], appetite: 100 }).layers.cyber.level === "watch");
+ok("no cyber signal ⇒ honest clear, still org-scoped",
+  officeContext(OFFICE, { events: [], appetite: 50 }).layers.cyber.scope === "organisation");
+// topSignal drives the map line from a building to an event — cyber must never draw one.
+ok("topSignal ignores org-scoped cyber", topSignal(cy) === null);
+// Org-scoped cyber must NOT roll into a site's status: letting it would mark all 214
+// sites "alert" for a campaign not attributable to any one of them — swapping a
+// geographic overclaim for a blanket one. It stays visible in `layers`.
+ok("org-scoped cyber does NOT drive the site's worst", cy.worst === "clear");
+ok("...but is still carried for display", cy.layers.cyber.level === "alert");
+ok("a site-local signal does still drive worst",
+  officeContext(OFFICE, { events: [cyberFar, near(0, 0, { category: "conflict", global_importance_score: 85 })], appetite: 50 }).worst === "alert");
 
 console.log(`\nofficeContext: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

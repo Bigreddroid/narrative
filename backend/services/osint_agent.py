@@ -163,6 +163,12 @@ def _signal(post: dict, category: str, title: str, summary: str,
         "ts": int(post["created_utc"] * 1000) if post.get("created_utc") else None,
         "confidence": round(float(confidence), 2),
         "evidence_url": post.get("url") or "",
+        # The human-readable feed label ("BBC World", a subreddit, a Mastodon instance).
+        # `source` above is only the transport slug (osint_rss/osint_gdelt/...), which is
+        # not an outlet and cannot support a corroboration count — two stories from
+        # "osint_rss" may be one outlet or twenty. Carried so the ingest worker can
+        # attribute the evidence to who actually published it.
+        "outlet": post.get("subreddit") or "",
     }
 
 

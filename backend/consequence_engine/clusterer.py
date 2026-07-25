@@ -97,12 +97,21 @@ async def cluster_article(article: Article, db: AsyncSession) -> NarrativeEvent 
             logger.debug("Article '%s' clustered into event '%s'", article.title[:60], event.canonical_title[:60])
             return event
 
+    # Stamp the event with WHEN THE STORY BROKE, not when the clusterer happened to run.
+    # Two reasons, one cosmetic and one load-bearing:
+    #   • "first detected" is a claim we make to a security buyer; wall-clock-at-processing
+    #     would date a three-week-old report to today.
+    #   • effective_similarity discounts by the article↔event time gap (exp(-gap/168h)).
+    #     Stamping now() means an older article compared against this event carries a
+    #     gap of its own age, so sim 0.95 collapses to 0.05 and it can never attach —
+    #     every article spawns its own single-source event and corroboration never forms.
+    #     Measured before this fix: 496 new events per 500 articles.
     event = NarrativeEvent(
         id=uuid.uuid4(),
         canonical_title=article.title,
         canonical_summary=None,
         embedding=article.embedding,
-        first_detected_at=datetime.now(timezone.utc),
+        first_detected_at=article.published_at or article.scraped_at or datetime.now(timezone.utc),
     )
     db.add(event)
     await db.flush()
