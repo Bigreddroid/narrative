@@ -48,9 +48,17 @@ def decide_cluster(
     return None, best_eff
 
 
-def update_centroid(old: list[float], vec: list[float], member_count: int) -> list[float]:
-    """Incremental running mean: new centroid after adding `vec` to `member_count` members."""
-    if not old:
+def update_centroid(old, vec, member_count: int) -> list[float]:
+    """Incremental running mean: new centroid after adding `vec` to `member_count` members.
+
+    `old` arrives from pgvector as a numpy ndarray, not a list. A bare `if not old`
+    raises ValueError("truth value of an array ... is ambiguous") on any real embedding,
+    which crashed cluster_worker on every run from 2026-07-13 onward and left all 28k
+    collected articles unattached to their events — so no event had a source, no
+    corroboration count could be computed, and the two-source gate could never pass.
+    Test emptiness by length, never by truthiness, for anything array-shaped.
+    """
+    if old is None or len(old) == 0:
         return list(vec)
     n = max(0, member_count)
     return [(o * n + v) / (n + 1) for o, v in zip(old, vec)]

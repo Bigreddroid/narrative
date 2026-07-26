@@ -7,6 +7,7 @@ Add a source by appending its fetch() to SOURCES.
 """
 
 import asyncio
+import hashlib
 import logging
 import time
 import uuid
@@ -19,8 +20,10 @@ from backend.consequence_engine import title_dedup
 from backend.consequence_engine.embedder import embed_texts
 from backend.database import AsyncSessionLocal
 from backend.feeds import cyber, gdacs, launches, synthesize, usgs, weather, weather_global
+from backend.models.article import Article
 from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.narrative_event import NarrativeEvent
+from backend.models.source import Source
 
 # Only fold a new signal into an existing event detected within this window — a
 # story that resurfaces weeks later is genuinely new, not a duplicate.
@@ -139,6 +142,60 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
     if require_geo and (signal.get("lat") is None or signal.get("lng") is None):
         return False
 
+    async def _persist_evidence(event) -> None:
+        """Attach the originating document to the event as an Article row.
+
+        Feed ingest used to hash the URL into external_id and throw the URL itself away
+        (rss_osint.py: sha1(link)[:16]), so an event could never be traced back to what
+        it was built from — no outlet name, no link, and nothing for the corroboration
+        count to count. That is the opposite of an auditable OSINT product, and it is
+        unrecoverable after the fact: recomputing the hash over all 28k stored article
+        URLs matched zero events.
+
+        Writing an Article here rather than adding a url column to narrative_events is
+        deliberate — it reuses the sources/articles tables the scraper pipeline already
+        fills, so `source_count`, `sources[]` and the detail endpoint's `articles[]` all
+        start working for feed events with no schema change and no second code path.
+        """
+        url = (signal.get("evidence_url") or "").strip()
+        if not url:
+            return
+        url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        # url_hash is UNIQUE — a re-fetch of the same document must not insert twice.
+        if (await db.execute(
+            select(Article.id).where(Article.url_hash == url_hash)
+        )).scalar_one_or_none() is not None:
+            return
+
+        # Resolve the outlet to a real sources row so corroboration counts distinct
+        # PUBLISHERS. Falls back to the transport slug only when the feed gave us no
+        # label — never invented.
+        outlet = (signal.get("outlet") or "").strip() or (sid or "unknown")
+        source_row = (await db.execute(
+            select(Source).where(Source.name == outlet)
+        )).scalar_one_or_none()
+        if source_row is None:
+            source_row = Source(id=uuid.uuid4(), name=outlet, url="", is_active=True)
+            db.add(source_row)
+            await db.flush()
+
+        ts = signal.get("ts")
+        db.add(Article(
+            id=uuid.uuid4(),
+            source_id=source_row.id,
+            narrative_event_id=event.id,
+            title=(signal.get("title") or "")[:500] or url,
+            url=url,
+            url_hash=url_hash,
+            content=signal.get("summary"),
+            published_at=datetime.fromtimestamp(ts / 1000, tz=timezone.utc) if ts else None,
+            importance_score=float(signal.get("importance") or 0),
+            # Not embedded here: the clusterer must not re-cluster a document that is
+            # already attached to the event this worker just decided it belongs to.
+            is_embedded=False,
+            is_clustered=True,
+        ))
+
     existing = None
     if sid and ext:
         existing = (await db.execute(
@@ -154,11 +211,13 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
             if canonical:
                 _corroborate(canonical, signal, now)
                 db.add(canonical)
+                await _persist_evidence(canonical)
         else:
             existing.global_importance_score = signal["importance"]
             existing.current_status = signal["status"]
             existing.last_updated_at = now
             db.add(existing)
+            await _persist_evidence(existing)
         return False
 
     # New doc — fold it into a recent same-story event if one exists.
@@ -166,6 +225,11 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
     if canonical is not None:
         _corroborate(canonical, signal, now)
         db.add(canonical)
+        # THE corroboration path: a genuinely different document about the same story.
+        # Attaching it to the canonical is what lets the two-source gate see a second
+        # independent outlet — the count is over distinct publishers, so folding a
+        # second document from the SAME outlet correctly still reads as one source.
+        await _persist_evidence(canonical)
         # Persist the duplicate (provenance + so the next re-fetch short-circuits on
         # the exact (source, external_id) match) but hide it behind the canonical.
         db.add(NarrativeEvent(
@@ -226,6 +290,9 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
         prediction_score=syn.get("prediction_score"),
         prediction_reasoning=syn.get("prediction_reasoning"),
     ))
+    # Every event leaves ingest carrying the document it was built from, so "where did
+    # this come from?" is always answerable from the record rather than from trust.
+    await _persist_evidence(event)
     return True
 
 
@@ -236,12 +303,31 @@ async def run_hazard_ingest_worker() -> dict:
               if s.get("importance", 0) >= NONGEO_MIN_IMPORTANCE]
     created = 0
     async with AsyncSessionLocal() as db:
+        # Two faults used to compound here and lose whole batches to
+        # "duplicate key value violates unique constraint ux_narrative_events_source_external":
+        #
+        #  1. _upsert looks for an existing row with a SELECT, which cannot see rows
+        #     added earlier in this same uncommitted batch. A feed repeating one
+        #     (source, external_id) within a single poll therefore inserted it twice.
+        #     `seen` closes that window without another round-trip.
+        #
+        #  2. The IntegrityError poisoned the session, so every *subsequent* item in the
+        #     batch died with "transaction has been rolled back" and the final commit
+        #     failed too — one duplicate discarded every good signal behind it. Each item
+        #     now runs in its own SAVEPOINT, so a bad one rolls back alone.
+        seen: set[tuple[str, str]] = set()
         for s, require_geo in [(g, True) for g in geo] + [(n, False) for n in nongeo]:
+            sid, ext = s.get("source"), s.get("external_id")
+            if sid and ext:
+                if (sid, ext) in seen:
+                    continue
+                seen.add((sid, ext))
             try:
-                if await _upsert(s, db, require_geo=require_geo):
-                    created += 1
+                async with db.begin_nested():
+                    if await _upsert(s, db, require_geo=require_geo):
+                        created += 1
             except Exception as exc:  # noqa: BLE001
-                logger.error("Hazard upsert failed: %s", exc)
+                logger.error("Hazard upsert failed for %s/%s: %s", sid, ext, exc)
         await db.commit()
     logger.info("Hazard ingest: %d geo + %d non-geo signals, %d new (%.1fs)",
                 len(geo), len(nongeo), created, time.perf_counter() - start)

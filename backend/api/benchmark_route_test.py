@@ -30,14 +30,32 @@ def ok(name, cond):
         print(f"  XX  {name}")
 
 
-def _is_ascii(obj) -> bool:
-    """No non-ASCII anywhere in the payload (locks the cp1252 mojibake fix)."""
+# Fields holding VERBATIM upstream text, exempt from the ASCII guard below.
+_VERBATIM_UPSTREAM = {"question_text"}
+
+
+def _is_ascii(obj, *, exempt: set[str] = frozenset()) -> bool:
+    """No non-ASCII in the copy WE author (locks the cp1252 mojibake fix).
+
+    The guard exists so our own labels and status strings survive a cp1252 console or
+    the PDF path without mojibake. It deliberately does NOT extend to `exempt` fields,
+    which carry third-party text verbatim -- a real CVE title reads
+    "CVE-2026-12569 - PTC Windchill" with an em-dash, and 11 of 500 live ledger entries
+    contain one. Two reasons not to "fix" that by folding it to ASCII: the entries are
+    content-hashed, so rewriting the text would break the audit chain the ledger exists
+    to provide; and silently altering source text is exactly the behaviour an evidence
+    ledger must never have. Encoding is the transport's problem (the API is UTF-8) --
+    it is not a licence to edit evidence.
+    """
     if isinstance(obj, str):
         return obj.isascii()
     if isinstance(obj, dict):
-        return all(_is_ascii(k) and _is_ascii(v) for k, v in obj.items())
+        return all(
+            _is_ascii(k, exempt=exempt) and (k in exempt or _is_ascii(v, exempt=exempt))
+            for k, v in obj.items()
+        )
     if isinstance(obj, list):
-        return all(_is_ascii(x) for x in obj)
+        return all(_is_ascii(x, exempt=exempt) for x in obj)
     return True
 
 
@@ -106,7 +124,15 @@ with TestClient(app) as client:
     else:
         ok("engine-skill ready at/above gate", skill["status"] == "ready")
 
-    ok("ledger payloads pure ASCII", _is_ascii(led) and _is_ascii(man) and _is_ascii(skill))
+    # Report what the guard actually covered. Without a reachable DB these endpoints
+    # return empty payloads and the assertion passes over nothing -- a green that proves
+    # only that no rows were read. Printing the count keeps that visible instead of
+    # letting an unreachable database read as a passing encoding check.
+    print(f"      (ascii guard covered {len(led['entries'])} ledger entries)")
+    ok("ledger payloads ASCII in authored copy",
+       _is_ascii(led, exempt=_VERBATIM_UPSTREAM)
+       and _is_ascii(man, exempt=_VERBATIM_UPSTREAM)
+       and _is_ascii(skill, exempt=_VERBATIM_UPSTREAM))
 
 # summarize_engine_skill (pure): source separation + per-bucket gating + crowd delta.
 from backend.api.routes.benchmark import summarize_engine_skill

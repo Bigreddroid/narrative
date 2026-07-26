@@ -125,32 +125,46 @@ def _reliability(source: str | None, history: dict | None) -> tuple[int, list[st
 
 def _credibility(corroboration_count: int, reliability_idx: int) -> tuple[int, list[str]]:
     """Resolve the credibility digit (1=confirmed … 6=cannot be judged) from how many
-    INDEPENDENT feeds corroborated the report. More convergence ⇒ stronger digit."""
+    INDEPENDENT feeds reported a related event nearby. More convergence ⇒ stronger digit.
+
+    On the wording below: `corroboration_count` comes from `corroboration.corroborate`,
+    which counts OTHER events near this one in space and time, from feeds different to
+    this event's own. That is not the same measure as the two-source gate, which counts
+    distinct OUTLETS among the documents attached to THIS event -- and the two numbers
+    routinely disagree, because a signal with one stored article can sit beside three
+    related reports from other feeds.
+
+    Both measures are legitimate; sharing the word "sources" between them was not. The
+    drawer once rendered "2 independent sources converged" directly above "1 outlet --
+    did not meet the two-source bar", which reads as self-contradiction to anyone being
+    asked to act on it. These strings therefore say "feeds ... nearby" and never
+    "sources", so the reader can tell at a glance which question is being answered.
+    """
     n = max(0, int(corroboration_count or 0))
     reasons: list[str] = []
 
     if n >= 3:
         digit = 1
-        reasons.append(f"{n} independent sources converged → confirmed")
+        reasons.append(f"{n} independent feeds reported related activity nearby → confirmed")
     elif n == 2:
         digit = 2
-        reasons.append("2 independent sources converged → probably true")
+        reasons.append("2 independent feeds reported related activity nearby → probably true")
     elif n == 1:
         digit = 3
-        reasons.append("1 independent source corroborated → possibly true")
+        reasons.append("1 independent feed reported related activity nearby → possibly true")
     else:
         # Uncorroborated: lean on the source's own reliability. A reliable single
         # source is "possibly true"; an unreliable one is "doubtful"; an unjudgeable
         # source with nothing to corroborate it "cannot be judged".
         if reliability_idx <= 1:        # A / B
             digit = 3
-            reasons.append("single reliable source, no corroboration → possibly true")
+            reasons.append("reliable source, no related reporting nearby → possibly true")
         elif reliability_idx >= _CANNOT_JUDGE_LETTER:  # F
             digit = 6
-            reasons.append("no corroboration and source cannot be judged")
+            reasons.append("no related reporting nearby and source cannot be judged")
         else:
             digit = 4
-            reasons.append("single unverified source, no corroboration → doubtful")
+            reasons.append("unverified source, no related reporting nearby → doubtful")
     return digit, reasons
 
 

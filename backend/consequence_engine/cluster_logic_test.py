@@ -52,6 +52,29 @@ ok("empty candidates => new", C.decide_cluster([], 0.8, 0.84, 2, 168)[0] is None
 ok("centroid running mean", C.update_centroid([0.0, 0.0], [2.0, 4.0], 1) == [1.0, 2.0])
 ok("centroid: empty old => vec", C.update_centroid([], [1.0, 2.0], 3) == [1.0, 2.0])
 ok("centroid: n=0 => vec", C.update_centroid([5.0], [1.0], 0) == [1.0])
+ok("centroid: None old => vec", C.update_centroid(None, [1.0, 2.0], 3) == [1.0, 2.0])
+
+# REGRESSION — pgvector hands back a numpy ndarray, never a list. The old guard was
+# `if not old:`, which raises ValueError on any multi-element array. That crashed
+# cluster_worker on every run from 2026-07-13 and left all 28k articles unattached to
+# their events, so no event had a source and corroboration was always empty. Every case
+# above passed throughout, because every case above passes a plain list. Exercise the
+# type production actually supplies.
+try:
+    import numpy as _np
+except ImportError:  # numpy absent in a bare env — skip rather than fail the suite
+    ok("centroid: ndarray old (numpy unavailable, skipped)", True)
+else:
+    ok("centroid: ndarray old does not raise",
+       C.update_centroid(_np.array([0.0, 0.0]), [2.0, 4.0], 1) == [1.0, 2.0])
+    ok("centroid: ndarray vec too",
+       C.update_centroid(_np.array([0.0, 0.0]), _np.array([2.0, 4.0]), 1) == [1.0, 2.0])
+    ok("centroid: empty ndarray => vec",
+       C.update_centroid(_np.array([]), [1.0, 2.0], 3) == [1.0, 2.0])
+    # A realistic 1024-dim embedding — the exact shape that was blowing up in production.
+    _big = _np.zeros(1024)
+    ok("centroid: 1024-dim ndarray (production shape)",
+       len(C.update_centroid(_big, [1.0] * 1024, 1)) == 1024)
 
 print(f"\ncluster_logic: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

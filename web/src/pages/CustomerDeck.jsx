@@ -7,7 +7,7 @@ import { api } from "../lib/api.js";
 import DeckView from "../components/DeckView.jsx";
 import { getDisciplineColor } from "../lib/colors.js";
 import { haversineKm as _havKm } from "../lib/geoAssoc.js";
-import { officeContext, topSignal, LAYER_KEYS, LAYER_LABELS, levelColor } from "../lib/officeContext.js";
+import { officeContext, topSignal, LAYER_KEYS, LAYER_LABELS, levelColor, extentKm } from "../lib/officeContext.js";
 import { useTheme } from "../hooks/useTheme.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -678,7 +678,9 @@ function TravelSecurity({ data, appetite, onOpen, trips }) {
       let best = null;
       for (const e of geoEvents) {
         const km = haversineKm(t.toLat, t.toLng, e.geo_centroid_lat, e.geo_centroid_lng);
-        if (km <= 300 && (!best || (e.global_importance_score || 0) > (best.imp || 0)))
+        // Per-event extent, not a flat 300 km — a traveller 290 km from a localised
+        // disorder signal is not affected by it (see officeContext.extentKm).
+        if (km <= extentKm(e) && (!best || (e.global_importance_score || 0) > (best.imp || 0)))
           best = { event: e, km, imp: e.global_importance_score || 0 };
       }
       const verdict = best && best.imp >= 70 * factor ? { label: "Reconsider", color: "#B4462F" }
