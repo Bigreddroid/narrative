@@ -104,6 +104,36 @@ def _atom_link(entry) -> str:
     return best
 
 
+def _publisher(item, title: str, fallback: str) -> tuple[str, str]:
+    """(outlet, title) for one RSS item, preferring the item's own <source> element.
+
+    RSS 2.0's <source> names the feed an item was syndicated FROM. Aggregators fill
+    it with the real publisher — Google News emits
+    ``<source url="https://www.reuters.com">Reuters</source>`` — which is the only
+    place the publisher survives, because the <link> is an opaque Google redirect we
+    cannot resolve without following it.
+
+    It also strips the publisher suffix Google appends to every headline
+    ("Foo happened - Reuters"), which otherwise renders twice on a card and pollutes
+    title-similarity clustering with the outlet name.
+
+    Returns the fallback label untouched when the feed has no <source>, which is the
+    normal case for a publisher's own feed — there the label already IS the outlet.
+    """
+    src = item.find("source")
+    if src is None:
+        return fallback, title
+    name = (src.text or "").strip()
+    if not name:
+        return fallback, title
+    # Only the exact " - <publisher>" tail, and only at the end: a headline that
+    # legitimately contains a dash keeps it.
+    suffix = f" - {name}"
+    if title.endswith(suffix) and len(title) > len(suffix):
+        title = title[: -len(suffix)].strip()
+    return name, title
+
+
 def parse_rss(xml_text: str, source_label: str = "rss") -> list[dict]:
     """RSS 2.0 or Atom XML → list of raw post-candidate dicts (NOT yet Signals).
 
@@ -144,11 +174,21 @@ def parse_rss(xml_text: str, source_label: str = "rss") -> list[dict]:
         if not title or not link or link in seen:
             continue
         seen.add(link)
+
+        # 🔴 An aggregator is not an outlet. Google News hands us its own redirect
+        # (news.google.com/rss/articles/CBMi…) with the real publisher only in
+        # <source>, so without this every one of those items was attributed to
+        # "news.google.com" — the deck showed NEWS.GOOGLE.COM as the outlet and the
+        # provenance read as unrecognised, which mislabels the reliability of a
+        # perfectly recognisable publisher. RSS 2.0 defines <source> for exactly
+        # this; feeds that are their own publisher simply omit it and keep the label.
+        outlet, title = _publisher(it, title, source_label) if not is_atom else (source_label, title)
         pid = hashlib.sha1(link.encode("utf-8")).hexdigest()[:16]
         out.append({
             "external_id": f"rss-{pid}",
-            # Source context shown to the triage LLM (where Reddit puts the subreddit).
-            "subreddit": source_label,
+            # Source context shown to the triage LLM (where Reddit puts the subreddit),
+            # and what the deck renders as the outlet. The PUBLISHER, not the aggregator.
+            "subreddit": outlet,
             "title": title,
             "selftext": summary[:2000],
             "url": link,

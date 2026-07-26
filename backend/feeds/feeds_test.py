@@ -417,6 +417,32 @@ ok("rss source label → subreddit context field", rss[0]["subreddit"] == "news.
 ok("rss strips HTML from summary", "<b>" not in rss[0]["selftext"] and "airstrike" in rss[0]["selftext"])
 ok("rss pubDate → epoch seconds", isinstance(rss[0]["created_utc"], float))
 
+# ── aggregator items are attributed to the PUBLISHER, not the aggregator ──────
+# Google News gives an opaque redirect as the <link> and the only trace of the real
+# outlet is <source>. Without reading it, 423 live articles were attributed to
+# "news.google.com" and their provenance read as unrecognised.
+_GNEWS_XML = """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Google News</title>
+  <item><title>EU targets Russian banks - Reuters</title>
+    <link>https://news.google.com/rss/articles/CBMiXYZ?oc=5</link>
+    <description>Sanctions package</description>
+    <source url="https://www.reuters.com">Reuters</source></item>
+  <item><title>Empty source element</title>
+    <link>https://news.google.com/rss/articles/CBMiABC?oc=5</link>
+    <source url="https://x.com"></source></item>
+  <item><title>Talks resume - and then stall</title>
+    <link>https://news.google.com/rss/articles/CBMiDEF?oc=5</link>
+    <source url="https://www.bbc.co.uk">BBC</source></item>
+</channel></rss>"""
+gn = rss_osint.parse_rss(_GNEWS_XML, "news.google.com")
+ok("aggregator item is attributed to the publisher", gn[0]["subreddit"] == "Reuters")
+ok("publisher suffix stripped from the headline", gn[0]["title"] == "EU targets Russian banks")
+ok("empty <source> falls back to the feed label", gn[1]["subreddit"] == "news.google.com")
+ok("a dash that is not the publisher suffix survives",
+   gn[2]["title"] == "Talks resume - and then stall" and gn[2]["subreddit"] == "BBC")
+ok("the aggregator link is kept as-is — it is the only URL we have",
+   gn[0]["url"].startswith("https://news.google.com/rss/articles/"))
+
 _ATOM_XML = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry><title>Earthquake M6 strikes coast</title>
