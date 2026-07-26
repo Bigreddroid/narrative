@@ -58,6 +58,24 @@ ok("2 independent sources → 2 (probably true)", d2 == 2)
 ok("1 independent source → 3 (possibly true)", d1 == 3)
 ok("5 sources still confirmed", digit("osint_rss", 5) == 1)
 
+# ── The convergence rationale must not borrow the two-source gate's vocabulary ──
+# `corroboration_count` counts OTHER events nearby from different feeds; the gate counts
+# distinct OUTLETS on THIS event. They legitimately disagree, so the drawer once showed
+# "2 independent sources converged" above "1 outlet - did not meet the two-source bar".
+# Saying "feeds ... nearby" instead of "sources" is what keeps the two readable apart, so
+# lock it: a future edit that reintroduces "source" here silently recreates that
+# contradiction on the one surface whose entire pitch is auditable sourcing.
+_rationales = [
+    " ".join(SR.grade(_src, _n)["rationale"]).lower()
+    for _n in (0, 1, 2, 3, 5)
+    for _src in ("usgs", "reuters", "osint_gdelt", "osint_rss", "who_is_this")
+]
+ok("no rationale calls nearby convergence a 'source' (25 source/count combinations)",
+   not any("sources converged" in w or "source corroborated" in w for w in _rationales))
+ok("convergence rationales name the measure they actually use ('feeds ... nearby')",
+   all("feeds reported related activity nearby" in " ".join(SR.grade(s, n)["rationale"])
+       for s in ("usgs", "osint_rss") for n in (2, 3)))
+
 # An A/B single source is "possibly true", not "doubtful"; a weak one is doubtful.
 ok("reliable single source, no corroboration → 3", digit("usgs", 0) == 3)
 ok("reliable wire, no corroboration → 3", digit("reuters", 0) == 3)

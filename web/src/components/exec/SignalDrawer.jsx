@@ -131,7 +131,12 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
   //                     mean the drawer disagreed with the decision it is explaining.
   //
   // The grading panel's convergence count is a third, separate signal (geo+time
-  // clustering of related events) and is left to speak for itself under its own heading.
+  // clustering of related events) under its own heading. Keeping it visually separate was
+  // not enough on its own: its rationale used to read "2 independent sources converged"
+  // beside "1 outlet", so the two measures still collided in the reader's head even
+  // though the numbers were correct. The backend now words that measure as "independent
+  // feeds reported related activity nearby" (source_reliability._credibility, locked by a
+  // test) — separate headings AND separate vocabulary.
   const documentsOnFile = detail.articles.length;
   const gateCount = Number(event?.source_count) || 0;
   const corroborated = gateCount >= MIN_SOURCES_FOR_INTELLIGENCE;
