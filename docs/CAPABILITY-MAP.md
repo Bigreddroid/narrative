@@ -24,14 +24,14 @@
 | **Cyber threat watch** (external, non-technical, global) | CYBINT discipline in the multi-INT taxonomy; CISA / threat-intel feeds | `backend/taxonomy.py` (CYBINT), `backend/feeds/` | ✅ Have |
 | **Imagery / photo interpretation** | IMINT event creation from operator imagery (vision LLM) | `backend/services/imint_event.py`, `backend/api/routes/imint.py` | ✅ Have |
 | **Country / region risk ratings** (dynamic, per-section; last-updated; custom risk appetite) | Scoring maths exists (`domainScores`/`overallScore`/`countryProfile`) but lives **client-side inside the deck** — no country page, no API | `web/src/lib/domainScore.js`; `backend/api/routes/exposure.py` | 🟡 **Partial** |
-| **Events calendar** (MAX month grid; observed `+103 more` in a day) | `CalendarGrid` renders, but over sample festivals/holidays | `web/src/pages/ExecDeck.jsx` (`CalendarGrid`), `/api/v1/context/calendar` | 🟡 **Partial** |
+| **Events calendar** (MAX month grid; observed `+103 more` in a day) | Live public holidays for the register's own countries, plus traveller departures. Names which countries the holiday SOURCE does not cover (Nager returns nothing for India/GCC). 🔴 No gatherings/festivals — no keyless source exists and we will not curate a list we cannot keep current | `web/src/pages/ExecDeck.jsx` (`CalendarGrid`), `/api/v1/context/calendar` | 🟡 **Holidays live, gatherings absent** |
 | **Asset / location registry + import** (Crisis24: 199 sites w/ Add·Edit·Delete·export; Datasurfr: 42 assets) | `sites` table + CRUD + **idempotent CSV import, audited on arrival** + CSV export. The deck reads it live | `backend/api/routes/sites.py`, `backend/services/registry_audit.py`, migration `017` | 🟢 **Built** (unmerged branch) |
 | **People / traveller tracking** (Crisis24 *People*; duty-of-care attaches to people) | `people` + `trips` tables, CRUD, server-stamped check-in; travellers join sites by **id**, not city name | `backend/api/routes/people.py` | 🟢 **Built** (unmerged branch) |
 | **Org / roles / multi-tenancy** (Crisis24 filter: *"Organization: Wipro and Sub-Organizations"*) | Flat orgs + `admin`/`analyst`/`viewer` on the membership row; scoping is a dependency, not a per-route `where`. No sub-org nesting (deliberate) | `backend/api/routes/org.py`, `OrgDep` in `backend/api/dependencies.py` | 🟢 **Built** (unmerged branch) |
-| **Email alert delivery** (how all four vendors actually arrive — 9,189 msgs in one observed inbox) | Nothing sends. No subscriptions, templates, digest or delivery log | — | 🔴 **Gap** |
+| **Email alert delivery** (how all four vendors actually arrive — 9,189 msgs in one observed inbox) | Subscriptions, distribution lists, a deduplicated delivery log and a digest worker. Sends what we escalated AND what we held, with reasons. 🔴 Fails closed: `EMAIL_SEND_ENABLED=false` by default, and needs SMTP credentials to actually send | `backend/workers/digest_worker.py`, `backend/services/mailer.py`, migration `018` | 🟡 **Built, not switched on** |
 | **Mass-comms alerting** (MidCat "Next Alert"; Crisis24 *New Message*) | — | — | 🔴 **Gap** |
 | **Reports / scheduled reporting** (Crisis24 *Reports*) | — | — | 🔴 **Gap** |
-| **Advice library / travel guidance** (Crisis24: 143 advice sheets, Entry-Exit / Pre-Departure / On Arrival / In Transit; ISOS city guides) | — | — | 🔴 **Gap** |
+| **Advice library / travel guidance** (Crisis24: 143 advice sheets, Entry-Exit / Pre-Departure / On Arrival / In Transit; ISOS city guides) | 221 current sheets INGESTED from US State Dept + UK FCDO, in each government's own wording, dated and linked. We author none of it. Two authorities shown side by side, never merged into one score | `backend/feeds/advisories.py`, `web/src/pages/Advice.jsx`, migration `019` | 🟢 **Built** (unmerged branch) |
 | **Branded advisory output** (MidCat "SAM AI": customer logo / format / color) | — | — | 🔴 **Gap** |
 
 ## What the map tells us
@@ -42,11 +42,13 @@
 > surfaces, and the two most load-bearing for the buyer's daily job — *your sites*
 > and *your people* — did not exist server-side at all.
 >
-> **Updated same day:** the spine (sites · people/travellers · org+roles) is now
-> **built and verified against a real database and in a browser** — 7 of ~14 — on
+> **Updated same day (final):** the spine (sites · people/travellers · org+roles),
+> delivery (subscriptions · digest · delivery log) and the advice library are now
+> **built and verified against a real database and in a browser** — 11 of ~14 — on
 > branch `feat/product-spine-sites-people-org`. 🔴 Unmerged, so this is a claim about
-> the branch, not about `main`. Delivery (email) and breadth (country pages, calendar,
-> reports, advice) remain 🔴 untouched. The remaining rows below are still accurate.
+> the branch, not about `main`. Still 🔴 **open: scheduled reports** (net-new — ReportLab
+> is not in `backend/requirements.txt` and "print brief" is `window.print()`), branded
+> advisory output, and mass-comms send. The remaining rows below are still accurate.
 
 - **We win on the two things incumbents structurally can't do** — source
   grading/corroboration (their #1 complaint) and a self-graded track record.
