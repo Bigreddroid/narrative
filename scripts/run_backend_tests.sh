@@ -28,6 +28,7 @@ MODULES=(
   backend.consequence_engine.propagation_test
   backend.consequence_engine.calibration_test
   backend.consequence_engine.cluster_logic_test
+  backend.api.events_evidence_test
   backend.consequence_engine.corroboration_test
   backend.consequence_engine.title_dedup_test
   backend.consequence_engine.evolution_logic_test
