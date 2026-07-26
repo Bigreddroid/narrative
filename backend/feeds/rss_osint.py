@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree as ET
 
+from backend.feeds import gnews_resolve
+
 logger = logging.getLogger(__name__)
 
 SOURCE = "osint_rss"
@@ -228,6 +230,20 @@ async def fetch_rss_osint(feeds: list[tuple[str, str]] | None = None) -> list[di
             logger.warning("RSS OSINT fetch failed for %s: %s", url, res)
             continue
         out.extend(res)
+
+    # An aggregator's interstitial is not a source document. Google News gives us
+    # news.google.com/rss/articles/CBMi…, which serves 200 and stays on Google, so the
+    # drawer's "source document" link never reached the article an analyst is trying to
+    # verify. Resolve to the publisher's URL HERE, inside the fetch, so there is no way
+    # to obtain candidates whose evidence link goes nowhere. Best-effort by design:
+    # anything unresolved keeps the redirect, which is no worse than before.
+    try:
+        resolved = await gnews_resolve.resolve_urls([i["url"] for i in out])
+        rewritten = gnews_resolve.apply_resolutions(out, resolved)
+        if rewritten:
+            logger.info("RSS OSINT: %d Google News links rewritten to the publisher", rewritten)
+    except Exception as exc:  # noqa: BLE001 — a better link must never sink ingest
+        logger.warning("RSS OSINT: Google News link resolution skipped: %s", exc)
     return out
 
 

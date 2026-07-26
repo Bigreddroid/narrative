@@ -40,6 +40,7 @@ MODULES=(
   backend.workers.digest_worker_test
   backend.workers.external_resolution_worker_test
   backend.feeds.feeds_test
+  backend.feeds.gnews_resolve_test
   backend.feeds.mastodon_osint_test
   backend.feeds.weather_global_test
   backend.feeds.holidays_test
