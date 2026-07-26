@@ -3,7 +3,7 @@
 import {
   emptyFilters, selectedIn, isSelected, toggleValue, clearDimension, clearAll,
   countActive, hasAnyFilter, matches, applyFilters, facets,
-  sortRows, nextSort, paginate, csvCell, toCSV,
+  sortRows, nextSort, paginate, csvCell, toCSV, encodeFilters, decodeFilters,
 } from "./deckFilters.js";
 
 let passed = 0, failed = 0;
@@ -174,6 +174,48 @@ ok("CSV emits one row per record", csv.split("\r\n").length === 3);
 ok("CSV quotes a value containing a comma", csv.split("\r\n")[1] === 's1,"Pune, MH"');
 ok("CSV uses CRLF line endings", csv.includes("\r\n"));
 ok("an empty row set still emits the header", toCSV([], [{ key: "id", label: "Site", value: (r) => r.id }]) === "Site");
+
+// ── URL round-trip ────────────────────────────────────────────────────────────
+const rt = (f) => decodeFilters(encodeFilters(f));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+ok("empty filters encode to an empty string", encodeFilters({}) === "");
+ok("empty string decodes to no filters", same(decodeFilters(""), {}));
+ok("null/undefined are tolerated", encodeFilters(null) === "" && same(decodeFilters(undefined), {}));
+
+const simpleF = { band: ["high", "moderate"], country: ["India"] };
+ok("round-trips a multi-dimension filter set", same(rt(simpleF), simpleF));
+
+// The delimiters appear inside REAL values — this is the bug a naive split causes.
+const commasF = { country: ["Korea, Republic of", "Bosnia and Herzegovina"] };
+ok("a value containing a comma survives the round-trip", same(rt(commasF), commasF));
+ok("a comma value does not shear into two filters", rt(commasF).country.length === 2);
+const semisF = { note: ["a;b", "c:d"] };
+ok("values containing ; and : survive too", same(rt(semisF), semisF));
+
+// Stable output: the same set must always yield the same string.
+ok("dimension order does not change the encoding",
+  encodeFilters({ band: ["high"], country: ["India"] })
+  === encodeFilters({ country: ["India"], band: ["high"] }));
+
+// An empty dimension means "no constraint" and must not survive.
+ok("empty dimensions are dropped", encodeFilters({ band: [], country: ["India"] }) === "country:India");
+ok("a non-array value is ignored", encodeFilters({ band: "high" }) === "");
+
+// Tolerant decoding: a hand-edited URL degrades to a usable board, never throws.
+ok("a segment with no colon is dropped", same(decodeFilters("garbage"), {}));
+ok("a segment with an empty key is dropped", same(decodeFilters(":a,b"), {}));
+ok("a segment with no values is dropped", same(decodeFilters("band:"), {}));
+ok("trailing separators are tolerated", same(decodeFilters("band:high;;"), { band: ["high"] }));
+ok("malformed percent-encoding does not throw", same(decodeFilters("band:%E0%A4%A"), {}));
+ok("a good segment survives beside a bad one", same(decodeFilters("garbage;band:high"), { band: ["high"] }));
+
+// Decoded filters must actually drive the existing machinery.
+{
+  const urlDims = [{ key: "band", label: "Severity", values: (r) => r.band }];
+  const urlRows = [{ band: "high" }, { band: "low" }, { band: "high" }];
+  ok("a decoded filter set filters rows", applyFilters(urlRows, decodeFilters("band:high"), urlDims).length === 2);
+}
 
 console.log(`\ndeckFilters: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

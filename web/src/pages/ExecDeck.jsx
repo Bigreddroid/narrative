@@ -20,8 +20,8 @@
 //  deckFilters — which carry 367 assertions between them. Capabilities we cannot
 //  compute (mass-comms delivery) are absent rather than faked.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useMemo, useState, useEffect, useRef } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { officeContext, topSignal, LAYER_KEYS, LAYER_LABELS } from "../lib/officeContext.js";
 import { haversineKm as _havKm } from "../lib/geoAssoc.js";
@@ -36,7 +36,7 @@ import {
 } from "../lib/severity.js";
 import {
   emptyFilters, toggleValue, clearAll, clearDimension, countActive, hasAnyFilter,
-  applyFilters, facets,
+  applyFilters, facets, encodeFilters, decodeFilters,
 } from "../lib/deckFilters.js";
 import useLiveEvents from "../hooks/useLiveEvents.js";
 import ExecGlobe, { SEV } from "../components/exec/ExecGlobe.jsx";
@@ -207,12 +207,33 @@ const TOLERANCE_WORD = ORG_TOLERANCE <= 33 ? "Cautious" : ORG_TOLERANCE >= 67 ? 
 const DAY_MS = 86_400_000;
 
 export default function ExecDeck() {
-  const [view, setView] = useState("Overview");
-  const [filters, setFilters] = useState(emptyFilters());
-  const [selected, setSelected] = useState(null);   // site id
+  // ── Deck state lives in the URL ────────────────────────────────────────────
+  // None of this was linkable: sending someone "look at the Bengaluru sites filtered
+  // to High" meant sending screenshots and instructions. Reload lost everything, and
+  // the back button left the board entirely instead of undoing the last drill-in.
+  //
+  // State is SEEDED from the query string once (lazy useState initialisers, so the
+  // first render is already correct — no flash of the default board) and written back
+  // with replace:true, because a history entry per filter chip would bury the page the
+  // reader arrived from under fifty of its own states.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [view, setView] = useState(() => {
+    const v = searchParams.get("v");
+    return VIEWS.includes(v) ? v : "Overview";   // validated: a junk param must not blank the board
+  });
+  const [filters, setFilters] = useState(() => decodeFilters(searchParams.get("f")) || emptyFilters());
+  const [selected, setSelected] = useState(() => searchParams.get("site"));   // site id
   const [signal, setSignal] = useState(null);       // event object open in the drawer
-  const [mapFilter, setMapFilter] = useState(null); // "alert" | "watch" | "clear" | null
-  const [query, setQuery] = useState("");
+  const [mapFilter, setMapFilter] = useState(() => {
+    const m = searchParams.get("map");
+    return ["alert", "watch", "clear"].includes(m) ? m : null;
+  });
+  const [query, setQuery] = useState(() => searchParams.get("q") || "");
+
+  // The drawer holds an event OBJECT, but the URL can only carry an id, and the feed
+  // arrives asynchronously. Capture the incoming id at mount so the sync effect below
+  // does not strip `sig` from the URL in the window before the feed resolves it.
+  const pendingSignalId = useRef(searchParams.get("sig"));
 
   const appetite = ORG_TOLERANCE;
 
@@ -240,6 +261,41 @@ export default function ExecDeck() {
     const e = id != null && eventById.get(String(id));
     if (e) setSignal(e);
   };
+
+  // Restore a deep-linked signal once the feed can resolve its id.
+  //
+  // Gate on the feed being SETTLED, not on eventById being non-empty. useLiveEvents
+  // seeds with the sample fallback, so the map is populated from the first render and
+  // an "is it loaded?" size check passes immediately — the effect then ran against
+  // sample data, failed to find the live id, and gave up before the real feed arrived.
+  // Every deep-linked signal silently failed to open while the rest of the URL restored
+  // perfectly, which is the worst kind of half-working.
+  //
+  // Once settled we resolve or give up exactly once: an event outside the window
+  // (expired, or below the top 300) drops the param rather than leaving a URL that
+  // promises a record we cannot show.
+  useEffect(() => {
+    const id = pendingSignalId.current;
+    if (!id || feed.source === "loading") return;
+    const e = eventById.get(String(id));
+    pendingSignalId.current = null;
+    if (e) setSignal(e);
+  }, [eventById, feed.source]);
+
+  // State → URL. Only non-default values are written, so a board in its resting state
+  // has a clean `/wipro/exec` and the query string stays readable.
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (view !== "Overview") next.set("v", view);
+    const f = encodeFilters(filters);
+    if (f) next.set("f", f);
+    if (selected) next.set("site", selected);
+    if (query.trim()) next.set("q", query.trim());
+    if (mapFilter) next.set("map", mapFilter);
+    const sigId = signal?.id ?? pendingSignalId.current;
+    if (sigId) next.set("sig", String(sigId));
+    setSearchParams(next, { replace: true });
+  }, [view, filters, selected, query, mapFilter, signal, setSearchParams]);
   const isLive = feed.source === "live";
   const today = useMemo(
     () => (isLive ? (feed.fetchedAt || new Date()) : SAMPLE.SAMPLE_TODAY),

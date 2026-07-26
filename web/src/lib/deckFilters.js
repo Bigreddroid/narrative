@@ -57,6 +57,45 @@ export function clearDimension(filters, dimKey) {
 
 export const clearAll = () => ({});
 
+// ── URL round-trip ───────────────────────────────────────────────────────────
+// Deck state lives in the query string so a board is linkable, back-navigable and
+// resumable — a demo that loses its filters on reload cannot be handed to anyone.
+//
+// Wire format: `dim:v1,v2;dim2:v3`. Every key and value is percent-encoded, because
+// real filter values contain the delimiters ("Korea, Republic of" has a comma) and a
+// naive split would silently shear it into two filters that match nothing.
+//
+// Dimensions are sorted so the SAME filter set always produces the SAME string —
+// otherwise two identical boards yield different URLs and nothing downstream can
+// compare or cache them.
+export function encodeFilters(filters) {
+  return Object.entries(filters || {})
+    .filter(([, v]) => Array.isArray(v) && v.length)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, vs]) => `${encodeURIComponent(k)}:${vs.map(encodeURIComponent).join(",")}`)
+    .join(";");
+}
+
+// Tolerant by design: a hand-edited or truncated URL should degrade to a usable board,
+// never throw. Malformed segments are dropped, not guessed at.
+export function decodeFilters(str) {
+  const out = {};
+  for (const part of String(str || "").split(";")) {
+    if (!part) continue;
+    const i = part.indexOf(":");
+    if (i <= 0) continue;                       // no key, or empty key
+    let key, values;
+    try {
+      key = decodeURIComponent(part.slice(0, i));
+      values = part.slice(i + 1).split(",").filter(Boolean).map(decodeURIComponent);
+    } catch {
+      continue;                                 // malformed percent-encoding
+    }
+    if (values.length) out[key] = values;
+  }
+  return out;
+}
+
 // How many constraints are in force — drives the "Clear all (3)" affordance.
 export function countActive(filters) {
   return Object.values(filters || {}).reduce((n, v) => n + (Array.isArray(v) ? v.length : 0), 0);
