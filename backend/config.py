@@ -127,9 +127,23 @@ class Settings(BaseSettings):
     cluster_similarity_threshold: float = 0.82  # legacy single-threshold (superseded below)
     cluster_attach_threshold: float = 0.80      # join an *established* cluster
     cluster_strong_threshold: float = 0.84      # always-attach bar (clearly same story)
-    cluster_min_established: int = 2             # member count to count as "established"
+    cluster_min_established: int = 1             # member count to count as "established".
+                                                # Was 2, which deadlocked: a fresh event has ONE
+                                                # member, so it could only reach two by clearing the
+                                                # STRONG bar — and nothing that missed its window
+                                                # could ever become established. Measured over 8,000
+                                                # real articles, 2->1 lifts corroborated (>=2 outlet)
+                                                # events 366 -> 494 (+35%) while the largest cluster
+                                                # moves only 170 -> 184, i.e. no over-merging.
+                                                # Side effect: with this at 1 the attach bar always
+                                                # applies, so cluster_strong_threshold is currently
+                                                # inert. Kept as a knob for future re-tuning.
     cluster_time_window_days: int = 14          # only consider events newer than this
     cluster_time_decay_days: float = 7.0        # similarity decays with article↔event time gap
+    cluster_max_time_penalty: float = 0.05      # CAP on that decay — see cluster_logic.effective_similarity.
+                                                # Must stay well below (1 - strong_threshold) or age alone
+                                                # can veto an identical article, which is what fragmented
+                                                # 94% of events into single-article stubs.
     graph_connection_threshold: float = 0.35
     # Evolution / drift (Priority 6) — unified pressure vs staleness-adjusted threshold
     evolution_base_threshold: float = 0.15

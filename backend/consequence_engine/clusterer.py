@@ -82,6 +82,7 @@ async def cluster_article(article: Article, db: AsyncSession) -> NarrativeEvent 
             settings.cluster_strong_threshold,
             settings.cluster_min_established,
             settings.cluster_time_decay_days * 24,
+            settings.cluster_max_time_penalty,
         )
         member_count = next((c["member_count"] for c in candidates if c["id"] == chosen_id), 0)
 
