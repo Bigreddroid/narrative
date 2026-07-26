@@ -4,7 +4,7 @@ from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 
 from backend.api.dependencies import DbDep, UserDep
 from backend.consequence_engine import corroboration
@@ -16,6 +16,45 @@ from backend.models.source import Source
 from backend.services import osint_enrich, osint_extract, source_reliability
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+
+def _has_article():
+    """SQL EXISTS: this event has at least one source article."""
+    return exists().where(Article.narrative_event_id == NarrativeEvent.id)
+
+
+def _is_article_derived():
+    """SQL: this event came from a path that ALWAYS produces a source article.
+
+    Two such paths: the clusterer (which builds an event *from* an article and
+    leaves ``source`` NULL) and the ``osint_*`` feeds. Everything else — nws,
+    usgs, gdacs, cisa, nhc, launchlibrary, open-meteo, imint, the wipro_demo_*
+    seeds — publishes structured records rather than prose, so having no article
+    is correct for them: the issuing agency *is* the source.
+
+    Expressed as a rule rather than a hardcoded allowlist so a newly added
+    structured feed is not misclassified as broken on the day it ships.
+    """
+    return or_(NarrativeEvent.source.is_(None), NarrativeEvent.source.like("osint_%"))
+
+
+def _evidence_state(event, source_count: int) -> str:
+    """How well can we back this event up? Mirrors the SQL filter above.
+
+    ``severed`` is a DEFECT, not a category: an article-derived event whose
+    articles are gone. 4,036 of these were left behind by the cluster_worker
+    outage (2026-07-13..25) and kept rendering on the deck and map — 3,147 of
+    them at importance >=50 — with no sources, no Admiralty grade and no
+    corroboration behind the drill-in. They are excluded from the feed by
+    default rather than deleted, because the events themselves are real history;
+    it is our link to their evidence that broke.
+    """
+    if source_count > 0:
+        return "sourced"
+    src = event.source or ""
+    if src == "" or src.startswith("osint_"):
+        return "severed"
+    return "official_feed"
 
 
 def _gate_paid_fields(data: dict, user_tier: str) -> dict:
@@ -46,12 +85,26 @@ async def list_events(
     # corroboration join is one grouped query regardless of page size.
     limit: int = Query(20, le=500),
     offset: int = Query(0),
+    include_unevidenced: bool = Query(
+        False,
+        description="Include article-derived events whose source articles are missing. Off by default: "
+                    "these render with no sources, no grade and no corroboration.",
+    ),
 ) -> dict:
     query = (
         select(NarrativeEvent)
         .where(NarrativeEvent.is_mapped == True)
         .where(NarrativeEvent.merged_into_id.is_(None))  # hide near-duplicates folded into a canonical event
     )
+
+    if not include_unevidenced:
+        # Quarantine, not deletion. An article-derived event with no article cannot
+        # be corroborated, graded or drilled into — showing it asserts a signal we
+        # cannot back up, which is the one thing this product must never do.
+        # Structured feeds are untouched: nws/usgs/gdacs et al legitimately carry no
+        # article. Kept queryable via ?include_unevidenced=true so the backlog stays
+        # inspectable instead of silently vanishing.
+        query = query.where(or_(_has_article(), ~_is_article_derived()))
 
     if user.tier == "free":
         query = query.limit(10)
@@ -131,6 +184,10 @@ async def list_events(
                 # this", never a fabricated 1.
                 "source_count": len(outlets.get(e.id, ())),
                 "sources": sorted(outlets.get(e.id, ())),
+                # sourced | official_feed | severed. Lets the UI say WHY a signal has
+                # no outlets — "issued by USGS" is strong provenance, "we lost the
+                # articles" is not, and both previously rendered as a bare 0.
+                "evidence": _evidence_state(e, len(outlets.get(e.id, ()))),
                 "is_osint": (e.source or "").startswith("osint_"),
                 "first_detected_at": e.first_detected_at.isoformat() if e.first_detected_at else None,
                 "last_updated_at": e.last_updated_at.isoformat() if e.last_updated_at else None,
