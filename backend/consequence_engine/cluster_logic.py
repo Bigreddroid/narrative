@@ -14,11 +14,43 @@ Upgrades over a single global cosine threshold:
 import math
 
 
-def effective_similarity(sim: float, age_gap_hours: float | None, decay_hours: float) -> float:
-    """Cosine similarity discounted by the article↔event time gap."""
+DEFAULT_MAX_TIME_PENALTY = 0.05
+
+
+def effective_similarity(
+    sim: float,
+    age_gap_hours: float | None,
+    decay_hours: float,
+    max_time_penalty: float = DEFAULT_MAX_TIME_PENALTY,
+) -> float:
+    """Cosine similarity with a BOUNDED time penalty.
+
+    This used to be `sim * exp(-gap/decay)`. Because the attach/strong bars are
+    fixed constants and cosine cannot exceed 1.0, multiplying by a decay term put a
+    hard mathematical ceiling on how old a match could be — regardless of how
+    identical the two articles were:
+
+        need  sim * exp(-t/decay) >= bar,  sim <= 1.0
+        =>    t <= -decay * ln(bar)
+
+    At the shipped settings (decay 7d = 168h, strong 0.84, attach 0.80) that is
+    **29.3h** to gain a second member and **37.5h** to attach at all. Past 37.5h an
+    exact duplicate scored 1.0 still spawned a new event. Since a fresh event has
+    one member and `min_established` is 2, an event that missed its ~29h window
+    could never become established, so it could never attach anything again — the
+    fragmentation was self-locking. Measured on the live corpus before this fix:
+    mean 1.10 articles/event, 94% of events single-article, only 5.9% with >=2
+    distinct outlets.
+
+    The penalty now saturates at `max_time_penalty`, so age can order and
+    discourage candidates but can never veto a semantically identical one. The
+    hard time gate stays where it belongs: the candidate query's
+    `cluster_time_window_days`.
+    """
     if age_gap_hours is None or decay_hours <= 0:
         return sim
-    return sim * math.exp(-max(0.0, age_gap_hours) / decay_hours)
+    gap = max(0.0, age_gap_hours)
+    return sim - max_time_penalty * (1.0 - math.exp(-gap / decay_hours))
 
 
 def decide_cluster(
@@ -27,6 +59,7 @@ def decide_cluster(
     strong_threshold: float,
     min_established: int,
     decay_hours: float,
+    max_time_penalty: float = DEFAULT_MAX_TIME_PENALTY,
 ) -> tuple[object | None, float]:
     """Pick the event to attach to (or None ⇒ create new), with the chosen effective sim.
 
@@ -35,7 +68,7 @@ def decide_cluster(
     best = None
     best_eff = -1.0
     for c in candidates:
-        eff = effective_similarity(c["sim"], c.get("age_gap_hours"), decay_hours)
+        eff = effective_similarity(c["sim"], c.get("age_gap_hours"), decay_hours, max_time_penalty)
         if eff > best_eff:
             best_eff, best = eff, c
 
