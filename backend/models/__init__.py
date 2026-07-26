@@ -15,6 +15,9 @@ from backend.models.osint_triage_decision import OsintTriageDecision
 from backend.models.app_config import AppConfig
 from backend.models.benchmark_ledger import LedgerEntry, BenchmarkManifest
 from backend.models.benchmark_runs import BenchmarkRun
+from backend.models.organization import Organization, OrgMember
+from backend.models.site import Site
+from backend.models.person import Person, Trip
 
 __all__ = [
     "Source",
@@ -37,4 +40,9 @@ __all__ = [
     "LedgerEntry",
     "BenchmarkManifest",
     "BenchmarkRun",
+    "Organization",
+    "OrgMember",
+    "Site",
+    "Person",
+    "Trip",
 ]

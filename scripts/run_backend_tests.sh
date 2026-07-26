@@ -12,12 +12,14 @@ MODULES=(
   backend.api.rate_limit_test
   backend.api.benchmark_route_test
   backend.api.imint_route_test
+  backend.api.spine_live_test
   backend.services.analyst_test
   backend.services.llm_test
   backend.services.imint_test
   backend.services.imint_event_test
   backend.services.geolocate_test
   backend.services.source_reliability_test
+  backend.services.registry_audit_test
   backend.services.operator_test
   backend.services.reasoner_test
   backend.services.osint_extract_test
