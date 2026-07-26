@@ -6,18 +6,25 @@
 //  situations not rows, deltas not state, and what we HELD shown beside what we
 //  escalated — the only honest answer to "what did you miss?".
 //
-//  DATA SPLIT — deliberate, and stated in the banner:
-//    sites + travellers  ->  sample (synthetic, seeded, labelled) until the real
-//                            campus register lands
+//  DATA SPLIT — deliberate, and stated in the banner. BOTH halves are now live:
 //    signals             ->  LIVE, off the engine (GET /events/)
-//  Demoing a security product on invented incidents is indistinguishable from a
-//  mockup. The news is real; only the customer's own asset list is stand-in.
+//    sites + travellers  ->  LIVE, off the register (GET /sites, /people/trips)
+//  The fixture survives only as the offline fallback, shown when we cannot ask at
+//  all — no session, no organization, engine down — and the banner says so in those
+//  words. Demoing a security product on invented incidents is indistinguishable from
+//  a mockup, and the same is true of invented sites.
+//
+//  Two rules the fallbacks do NOT share, because they fail in opposite directions:
+//    * signals unreachable  -> show the sample set. An empty board that really means
+//      "we could not reach the engine" is the most dangerous screen here.
+//    * register EMPTY       -> show empty, and say so. A register of zero sites must
+//      never render as zeros; that reads as a quiet day.
 //
 //  RULE FOR THIS FILE: every control does something real. No placeholder buttons,
-//  no panels of sample prose. Each view computes from data we actually hold
-//  (214 sites, 42 itineraries, live graded signals, holidays, festivals) through the
-//  pure libs — officeContext · execPosture · registryAudit · domainScore · severity ·
-//  deckFilters — which carry 367 assertions between them. Capabilities we cannot
+//  no panels of sample prose. Each view computes from data we actually hold —
+//  the customer's register, their itineraries, live graded signals, holidays,
+//  festivals — through the pure libs (officeContext · execPosture · registryAudit ·
+//  auditAdapter · domainScore · severity · deckFilters). Capabilities we cannot
 //  compute (mass-comms delivery) are absent rather than faked.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useMemo, useState, useEffect, useRef } from "react";
@@ -30,6 +37,7 @@ import {
   SUPPRESSION_REASONS,
 } from "../lib/execPosture.js";
 import { auditRegister } from "../lib/registryAudit.js";
+import { adaptAudit } from "../lib/auditAdapter.js";
 import { domainScores, overallScore, countryProfile, bandFor } from "../lib/domainScore.js";
 import {
   SEVERITY, ALERT_TYPES, classify, activeOnly, levelOfBand,
@@ -39,6 +47,7 @@ import {
   applyFilters, facets, encodeFilters, decodeFilters,
 } from "../lib/deckFilters.js";
 import useLiveEvents from "../hooks/useLiveEvents.js";
+import useRegister from "../hooks/useRegister.js";
 import ExecGlobe, { SEV } from "../components/exec/ExecGlobe.jsx";
 import FilterBar from "../components/exec/FilterBar.jsx";
 import DataTable from "../components/exec/DataTable.jsx";
@@ -247,6 +256,17 @@ export default function ExecDeck() {
   // proximity attenuation in officeContext is the other half.
   const feed = useLiveEvents({ limit: 300, fallback: SAMPLE.SAMPLE_EVENTS });
 
+  // The register is live too, as of Phase 1e. It follows the OPPOSITE fallback rule
+  // to the feed: a customer with an empty register sees an empty register, because
+  // sites they do not have must never be conjured onto a board they act on. The
+  // fixture appears only when we could not ask at all (no session, no organization,
+  // engine down), and the provenance bar says so. See hooks/useRegister.js.
+  const reg = useRegister({
+    fallbackSites: SAMPLE.SAMPLE_SITES,
+    fallbackTrips: SAMPLE.SAMPLE_TRIPS,
+  });
+  const registerIsLive = reg.source === "live";
+
   // Most rows carry only an event ID (domainScore projects evidence down to
   // {id,title,km}; suppression rows embed it in the row id). The drawer needs the whole
   // event, so resolve through the feed we already hold rather than refetching per row.
@@ -311,7 +331,18 @@ export default function ExecDeck() {
       countryCodes: SAMPLE.SAMPLE_COUNTRY_CODES, curatedHolidays: {},
       appetite, today,
     };
-    const contexts = SAMPLE.SAMPLE_SITES.map((o) => officeContext(o, { ...base, events }));
+
+    // 🔴 A real register contains rows with no coordinates — our own import audit
+    // raises `missing_coordinates` as CRITICAL precisely because they exist. Scoring
+    // one produces NaN distances, and NaN silently sorts and bands as though it were
+    // a low score, so an unmappable site would appear on the board as a calm one.
+    // They are excluded from scoring and counted separately, so the gap is visible
+    // rather than dressed up as an all-clear.
+    const num = (v) => typeof v === "number" && Number.isFinite(v);
+    const scorable = reg.sites.filter((o) => num(o.lat) && num(o.lng));
+    const unmappable = reg.sites.length - scorable.length;
+
+    const contexts = scorable.map((o) => officeContext(o, { ...base, events }));
 
     // "Since your last look" needs a real prior. On live data that is the board as
     // it stood 24h ago — the same sites scored against only the signals we already
@@ -322,10 +353,10 @@ export default function ExecDeck() {
           return Number.isFinite(t) && t < today.getTime() - DAY_MS;
         })
       : SAMPLE.SAMPLE_EVENTS_PRIOR;
-    const prior = snapshot(SAMPLE.SAMPLE_SITES.map((o) => officeContext(o, { ...base, events: priorEvents })));
+    const prior = snapshot(scorable.map((o) => officeContext(o, { ...base, events: priorEvents })));
 
     const geoEvents = events.filter((e) => e.geo_centroid_lat != null);
-    const travel = travelPosture(SAMPLE.SAMPLE_TRIPS, geoEvents, { appetite, today, haversineKm });
+    const travel = travelPosture(reg.trips, geoEvents, { appetite, today, haversineKm });
     const queue = decisionQueue(contexts, travel, { appetite, limit: 3 });
     const held = suppression(contexts, { appetite, escalatedEventIds: new Set(queue.items.map((i) => i.event.id)) });
 
@@ -338,16 +369,22 @@ export default function ExecDeck() {
     });
 
     return {
-      events, contexts, siteRows, travel, queue, held,
+      events, contexts, siteRows, travel, queue, held, unmappable,
       exp: exposure(contexts),
       change: delta(contexts, prior),
       ahead: forward(contexts, { today, windowDays: 60 }),
-      audit: auditRegister(SAMPLE.SAMPLE_SITES, { countryCodes: SAMPLE.SAMPLE_COUNTRY_CODES }),
+      // Prefer the server's audit: it ran over the register as STORED, by the Python
+      // mirror of this same lib (backend/services/registry_audit.py), and it is the
+      // one the customer was shown at import. Falling back to the browser copy keeps
+      // the sample board honest about its own fixture.
+      audit: reg.audit
+        ? adaptAudit(reg.audit, reg.sites)
+        : auditRegister(reg.sites, { countryCodes: SAMPLE.SAMPLE_COUNTRY_CODES }),
       byId: new Map(contexts.map((c) => [c.office.id, c])),
     };
-  }, [feed.events, isLive, today, appetite]);
+  }, [feed.events, isLive, today, appetite, reg.sites, reg.trips, reg.audit]);
 
-  const { events, exp, change, queue, held, travel, ahead, contexts, siteRows, audit, byId } = model;
+  const { events, exp, change, queue, held, travel, ahead, contexts, siteRows, audit, byId, unmappable } = model;
 
   // ── Filter dimensions, per view ────────────────────────────────────────────
   // Keys are namespaced, so one filter object serves every view without collision;
@@ -412,6 +449,49 @@ export default function ExecDeck() {
   const onToggle = (dim, value) => setFilters((f) => toggleValue(f, dim, value));
   const activeCount = countActive(filters);
 
+  // 🔴 Gate on the EXPLICIT load state, never on `sites.length`. A length check is
+  // what broke the Phase 5 deep link: it read as "loaded" from the first render
+  // because the value was seeded, so the work ran against the wrong data and gave up
+  // before the real data arrived. Until the register settles we render nothing —
+  // a board computed from a register we have not read yet is a guess with a chart on it.
+  if (reg.source === "loading") {
+    return (
+      <div className="min-h-screen bg-[#050505] text-[#F0EDE8] flex items-center justify-center">
+        <p className="font-mono text-[11px] tracking-[0.2em] uppercase text-[#6A6A64]">
+          Reading the site register…
+        </p>
+      </div>
+    );
+  }
+
+  // An empty register renders as EMPTY. Every panel below would otherwise show a
+  // confident zero — nothing to escalate, no one exposed — which is indistinguishable
+  // on screen from a quiet day and is the single most dangerous thing this product
+  // could display. A customer who has uploaded nothing is told exactly that.
+  if (registerIsLive && reg.sites.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-[#F0EDE8] px-6 lg:px-10 py-16">
+        <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-[#6A6A64]">
+          Wipro · Global Security
+        </p>
+        <h1 className="font-display leading-[0.9] tracking-tight mt-3" style={{ fontSize: "clamp(2rem, 4vw, 3rem)" }}>
+          NO SITES IN THE <span className="text-crimson-light">REGISTER</span>
+        </h1>
+        <p className="text-[13px] text-[#8A8A82] mt-5 max-w-[54ch] leading-relaxed">
+          This board scores signals against your sites, so with none loaded it can tell you
+          nothing — and it will not pretend otherwise by showing zeros. The engine is still
+          ingesting: <span className="text-[#F0EDE8]">{events.length}</span> signals are in
+          force right now, waiting for somewhere to land.
+        </p>
+        <p className="text-[12px] text-[#6A6A64] mt-4 max-w-[54ch] leading-relaxed">
+          Import a register (CSV) to begin. Every row is audited on arrival — duplicate
+          identifiers, wrong countries, missing coordinates and missing headcount are
+          reported back naming the rows they came from, before anything is scored.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#050505] text-[#F0EDE8]">
       <style>{`@media print{.no-print{display:none!important}body{background:#fff}}`}</style>
@@ -441,10 +521,20 @@ export default function ExecDeck() {
             ? <>{feed.count} ingested · <span className="text-[#F0EDE8]">{events.length}</span> in force · {feed.fetchedAt?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</>
             : <>{feed.error || "…"} — showing the sample signal set so the board is never falsely all-clear</>}
         </span>
-        <span className="text-[11px] text-[#5A5A55]">
-          Sites and itineraries are sample data; signals are not.
+        {/* The register half of the provenance claim. It has its own dot because it
+            has its own failure mode: the signals can be live while the register is
+            the fixture, and a board that says "live" without saying live WHAT is the
+            kind of half-truth this bar exists to prevent. */}
+        <span className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full"
+            style={{ background: registerIsLive ? "#5FBF74" : "#FF5C43" }} />
+          <span className="text-[11px]" style={{ color: registerIsLive ? "#8A8A82" : "#FF7A63" }}>
+            {registerIsLive
+              ? <>Register live · {reg.sites.length} site{reg.sites.length === 1 ? "" : "s"} · {reg.trips.length} {reg.trips.length === 1 ? "itinerary" : "itineraries"}</>
+              : <>Sites and itineraries are SAMPLE data — {reg.error || "register unavailable"}</>}
+          </span>
         </span>
-        <button type="button" onClick={feed.refresh}
+        <button type="button" onClick={() => { feed.refresh(); reg.refresh(); }}
           className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#6A6A64] hover:text-[#F0EDE8] border border-[#242424] px-2 py-0.5 rounded-[2px]">
           Refresh
         </button>
@@ -812,23 +902,40 @@ export default function ExecDeck() {
                       Reporting a data-integrity problem without a way to reach the record
                       makes the audit an accusation rather than a tool. */}
                   {audit.findings.slice(0, 40).map((f, i) => {
-                    const Tag = f.siteId ? "button" : "div";
+                    // Clickable only if the row is actually ON the board. A site with
+                    // no coordinates is excluded from scoring, so selecting it would
+                    // open an empty panel — a dead click on the one panel whose job is
+                    // to prove we can reach the record we are complaining about.
+                    const reachable = Boolean(f.siteId) && byId.has(f.siteId);
+                    const Tag = reachable ? "button" : "div";
+                    // What the customer calls this row. `siteRef` is their own
+                    // identifier (server audit); the browser copy carries siteId.
+                    const ref = f.siteRef ?? f.siteId ?? null;
                     return (
                       <Tag
-                        key={`${f.check}-${f.siteId}-${i}`}
-                        {...(f.siteId ? {
+                        key={`${f.check}-${ref}-${i}`}
+                        {...(reachable ? {
                           type: "button",
                           onClick: () => setSelected(f.siteId),
                           title: "Open the affected site",
                         } : {})}
                         className={[
                           "w-full text-left flex flex-wrap items-baseline gap-x-3 text-[11px]",
-                          f.siteId ? "hover:bg-[#0E0E0E] group" : "",
+                          reachable ? "hover:bg-[#0E0E0E] group" : "",
                         ].join(" ")}
                       >
                         <span className="font-mono text-[10px] uppercase tracking-[0.1em] w-[130px] flex-shrink-0"
                           style={{ color: f.severity === "critical" ? SEV.alert.c : SEV.watch.c }}>{f.severity}</span>
-                        <span className={["text-[#B8B5AE] w-[210px] flex-shrink-0 truncate", f.siteId ? "group-hover:text-[#F0EDE8]" : ""].join(" ")}>{f.label}</span>
+                        <span className={["text-[#B8B5AE] w-[210px] flex-shrink-0 truncate", reachable ? "group-hover:text-[#F0EDE8]" : ""].join(" ")}>{f.label}</span>
+                        {/* The row it came from. Without this the panel reports that
+                            something is wrong somewhere, which is an accusation, not a
+                            finding — and the customer cannot go and fix it. */}
+                        <span className="font-mono text-[10px] text-[#6A6A64] w-[190px] flex-shrink-0 truncate"
+                          title={[ref, f.siteName].filter(Boolean).join(" · ")}>
+                          {ref ? <span className="text-[#8A8A82]">{ref}</span> : null}
+                          {ref && f.siteName ? " · " : null}
+                          {f.siteName || (ref ? null : "—")}
+                        </span>
                         <span className="text-[#5A5A55] flex-1 min-w-[220px]">{f.detail}</span>
                       </Tag>
                     );
@@ -843,8 +950,15 @@ export default function ExecDeck() {
             </div>
           </Band>
 
+          {/* The count says "of {contexts.length}", which is the SCORABLE register —
+              and the integrity panel above says it checked more rows than that. Left
+              unexplained, a site the customer uploaded appears to have vanished. The
+              note reconciles the two numbers out loud rather than letting them
+              quietly disagree. */}
           <Band label={`Site register · ${matchSites.length} of ${contexts.length}`}
-            note="Sortable on every column, paginated, and exportable. Click any row to open its full picture.">
+            note={unmappable > 0
+              ? `Sortable, paginated, exportable. Click any row to open its full picture. ${unmappable} further row${unmappable === 1 ? " is" : "s are"} in your register but cannot be scored or listed here — ${unmappable === 1 ? "it has" : "they have"} no usable coordinates, and ${unmappable === 1 ? "is" : "are"} named in the integrity findings above.`
+              : "Sortable on every column, paginated, and exportable. Click any row to open its full picture."}>
             <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-px bg-[#1C1C1C] mt-3">
               <DataTable
                 rows={matchSites}
@@ -865,7 +979,17 @@ export default function ExecDeck() {
                   const scores = domainScores(sel, { appetite });
                   const overall = overallScore(scores);
                   const heldHere = held.held.filter((h) => h.office.id === sel.office.id);
-                  const tripsHere = travel.rows.filter((r) => r.trip.to === sel.office.city);
+                  // 🔴 This used to be `r.trip.to === sel.office.city` — string equality
+                  // on a city NAME. It worked only because both sides came from one
+                  // fixture. Against a real register a site called "Bengaluru —
+                  // Electronic City" never equals a trip to "Bengaluru", so this panel
+                  // would have gone quietly empty while every other number on the page
+                  // still looked right. Live trips carry toSiteId; the sample fixture
+                  // has none, so it keeps the old match — and only it.
+                  const tripsHere = travel.rows.filter((r) =>
+                    r.trip.toSiteId != null
+                      ? r.trip.toSiteId === sel.office.id
+                      : r.trip.to === sel.office.city);
                   return (
                     <>
                       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -875,7 +999,9 @@ export default function ExecDeck() {
                             {sel.office.city} · {sel.office.country} · {sel.office.type} · {sel.office.criticality} · {n(sel.office.headcount)} people
                           </p>
                           <p className="font-mono text-[10px] text-[#4A4845] mt-0.5">
-                            {sel.office.lat.toFixed(3)}, {sel.office.lng.toFixed(3)}
+                            {Number.isFinite(sel.office.lat) && Number.isFinite(sel.office.lng)
+                              ? `${sel.office.lat.toFixed(3)}, ${sel.office.lng.toFixed(3)}`
+                              : "no coordinates on this row"}
                           </p>
                         </div>
                         <div className="text-right">
@@ -1068,7 +1194,7 @@ export default function ExecDeck() {
         <motion.div {...rise(0)}>
           <Band label="Forward calendar · 60 days"
             note="Public holidays, gatherings and traveller departures on one grid, with the people behind each date — so leadership plans ahead of the window instead of being alerted during it.">
-            <CalendarGrid ahead={ahead} trips={SAMPLE.SAMPLE_TRIPS} today={SAMPLE.SAMPLE_TODAY} />
+            <CalendarGrid ahead={ahead} trips={reg.trips} today={today} />
           </Band>
         </motion.div>
       )}
@@ -1076,7 +1202,8 @@ export default function ExecDeck() {
       <footer className="px-6 lg:px-10 py-6 border-t border-[#1C1C1C]">
         <p className="font-mono text-[10px] text-[#4A4845] leading-relaxed">
           Advisory only — physical response (evacuation, ground support) via partner.
-          Sample board: {exp.sites} sites · {n(exp.people)} people · {SAMPLE.SAMPLE_TRIPS.length} itineraries.
+          {registerIsLive ? "Board" : "Sample board"}: {exp.sites} sites · {n(exp.people)} people · {reg.trips.length} {reg.trips.length === 1 ? "itinerary" : "itineraries"}
+          {unmappable > 0 ? ` · ${unmappable} site${unmappable === 1 ? "" : "s"} unmappable (no coordinates)` : ""}.
           {" "}Operator board: <Link to="/deck" className="text-crimson-light hover:underline">signal deck →</Link>
         </p>
       </footer>

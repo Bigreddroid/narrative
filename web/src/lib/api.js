@@ -77,9 +77,13 @@ export const api = {
   post: (path, body, opts = {}) =>
     request(path, { method: "POST", body: JSON.stringify(body), ...opts }),
   postForm,
-  patch: (path, body) =>
-    request(path, { method: "PATCH", body: JSON.stringify(body) }),
-  delete: (path) => request(path, { method: "DELETE" }),
+  // patch/delete take options for the same reason get/post do: the 3.5s fail-fast
+  // above is tuned for reads that have an offline fallback. A write does not — an
+  // aborted PATCH leaves the caller unable to say whether it landed, and a register
+  // edit against a busy database can exceed 3.5s. Callers pass { timeoutMs }.
+  patch: (path, body, opts = {}) =>
+    request(path, { method: "PATCH", body: JSON.stringify(body), ...opts }),
+  delete: (path, opts = {}) => request(path, { method: "DELETE", ...opts }),
 };
 
 export const setToken = (token) =>

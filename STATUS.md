@@ -28,27 +28,51 @@ the **expansion path off the same engine** — later, one door at a time. Not v1
 
 ## Where we stand
 
-- **Product: built and runs.** Ingests real events, builds consequence chains,
-  serves them. Live on Vercel (frontend) + Railway (API/scheduler/Postgres/Redis).
+> **Corrected 2026-07-26** after a surface-by-surface audit against the incumbent
+> stack actually in use at the target customer. The previous version of this
+> section read *"Product: built and runs"* and *"the one open item is time, not
+> code."* Both were true of the **engine** and false of the **product**, and that
+> conflation let a hollow middle go unexamined for weeks. Keep the distinction.
+
+- **Engine + ingest: built, real, running.** Live feeds → embed → cluster → grade
+  → consequence chain. Verified 2026-07-26: **29,474 / 29,474** articles linked to
+  events, unclustered backlog **0**, **1,509** events carrying ≥2 distinct outlets,
+  0 scheduler crashes. Live on Vercel (frontend) + Railway (API/scheduler/PG/Redis).
 - **Scoreboard: built.** Calibration + benchmark + tamper-evident forward ledger
   (Phases 0–4 all merged). Synthetic controls pass; real *crowd* calibration
-  proven on Autocast.
-- **The one open item is time, not code.** Engine *skill* is honestly **withheld**
-  until enough predictions cross the 30-day mark (**~2026-08-12**, gated at n≥20).
-  Keep the local Docker stack alive so outcomes accrue — see the memory reminder
-  `reminder_aug12_cpe_accrual_check`.
+  proven on Autocast. Engine *skill* honestly **withheld** until n≥20
+  (**~2026-08-12**) — keep the local Docker stack alive so outcomes accrue
+  (memory: `reminder_aug12_cpe_accrual_check`).
+- 🔴 **The product around the engine: largely missing.** The API serves **50
+  routes** and **none** of them are `sites`, `people`, `org`, `reports`, `advice`
+  or `communication`. The executive deck at `/wipro/exec` computes every per-site
+  and per-person figure from `web/src/data/customers/wipro.exec.sample.js` —
+  invented sites and travellers, in the browser (`ExecDeck.jsx:314,328,345`).
+  Only the *events* on that screen are live.
 
-**True status: product built · scoreboard built · waiting on time to prove the
-score.**
+**True status: engine built and proven · scoreboard built and accruing · the
+customer-facing product is still a demo skin over both.**
 
 ## What's next
 
-1. **Now:** the redefinition docs above (this is the "make it clear" work).
-2. **Then:** tidy the repo + re-lead the landing page around the security buyer
-   (see the plan: `~/.claude/plans/get-bak-wi-the-dazzling-umbrella.md`).
-3. **~Aug 12:** flip engine skill withheld → real numbers. *That number is the
-   pitch.*
-4. **After:** build the 3 gaps (asset registry → alerting → branded advisories).
+> **Reordered 2026-07-26.** The previous order put "build the gaps" *last*, after
+> the Aug-12 benchmark number. That was backwards. The score is a **differentiator**
+> and a differentiator needs a product to sit on — you cannot win on "we grade
+> sources better" against a vendor who can add a site when we can't. See the
+> reversal note in [`docs/CAPABILITY-MAP.md`](docs/CAPABILITY-MAP.md).
+
+1. **Now — build the spine:** site register (+ CSV import + `registryAudit` on
+   ingest), people/travellers, org + roles. Every number the buyer pays for joins
+   to these, and **none of it is blocked on Aug 12 or on customer-supplied data.**
+2. **Then — delivery:** notification subscriptions, digest, and mass-comms. This is
+   how all four incumbents actually reach the analyst (9,189 vendor messages in one
+   observed inbox).
+3. **Then — breadth:** country risk pages, real events calendar, scheduled reports,
+   official-advisory library (ingested from government sources, never authored).
+4. **~Aug 12, in parallel — no code:** engine skill flips withheld → real.
+   *That number is the pitch — but it is the proof layer, not the product.*
+5. **Ongoing:** repo tidy + landing re-lead
+   (`~/.claude/plans/get-bak-wi-the-dazzling-umbrella.md`).
 
 ## What each top-level folder is
 

@@ -1,10 +1,17 @@
 # Narrative — Capability Map (buyer need × what we have × gap)
 
 > Companion to [`POSITIONING.md`](./POSITIONING.md). Left column = what the v1
-> buyer (corporate security / GSOC / duty-of-care) **pays incumbents for today**,
-> taken from the Wipro↔MidCat/Max transcripts. Right columns = what Narrative
-> already has (with the real module) and where the gap is. **The gaps are the
-> roadmap.**
+> buyer (corporate security / GSOC / duty-of-care) **pays incumbents for today**.
+> Right columns = what Narrative already has (with the real module) and where the
+> gap is. **The gaps are the roadmap.**
+>
+> **Evidence basis.** Originally written from the Wipro↔MidCat/Max QBR transcripts
+> — i.e. from what the customer *said*. Since corrected against **first-hand
+> observation of the four-vendor incumbent stack in production use** (Crisis24
+> Horizon, MAX Intel Portal, MitKat Datasurfr, International SOS). That capture
+> holds third-party confidential material and named individuals; it is kept
+> **outside version control and git-ignored**, and nothing from it is reproduced
+> here beyond counts and feature names.
 
 ## The map
 
@@ -16,28 +23,60 @@
 | **Ask-the-analyst** (Wipro: 21 Qs/yr) | AI analyst (grounded, cited, local-LLM $0) + agentic operator loop over the graph + deep OODA reasoner | `backend/services/analyst.py`, `operator_loop.py`, `operator_tools.py`, `reasoner.py` | ✅ Have (AI form) |
 | **Cyber threat watch** (external, non-technical, global) | CYBINT discipline in the multi-INT taxonomy; CISA / threat-intel feeds | `backend/taxonomy.py` (CYBINT), `backend/feeds/` | ✅ Have |
 | **Imagery / photo interpretation** | IMINT event creation from operator imagery (vision LLM) | `backend/services/imint_event.py`, `backend/api/routes/imint.py` | ✅ Have |
-| **Country / region risk ratings** (dynamic, per-section: armed conflict / militancy / terrorism; last-updated; custom risk appetite) | Region exposure scoring exists, but not packaged as a per-section, customer-tunable "country page" | `backend/api/routes/exposure.py`, `backend/models/exposure_snapshot.py` | 🟡 **Partial** |
-| **Asset / location registry + geofencing** (Wipro: 212 assets, add/remove, admin/sub-user) | Region *lens* only — no first-class asset registry a customer curates | — | 🔴 **Gap** |
-| **Mass-comms alerting** (MidCat "Next Alert": push to distro lists / phone / WhatsApp) | — | — | 🔴 **Gap** |
+| **Country / region risk ratings** (dynamic, per-section; last-updated; custom risk appetite) | Scoring maths exists (`domainScores`/`overallScore`/`countryProfile`) but lives **client-side inside the deck** — no country page, no API | `web/src/lib/domainScore.js`; `backend/api/routes/exposure.py` | 🟡 **Partial** |
+| **Events calendar** (MAX month grid; observed `+103 more` in a day) | `CalendarGrid` renders, but over sample festivals/holidays | `web/src/pages/ExecDeck.jsx` (`CalendarGrid`), `/api/v1/context/calendar` | 🟡 **Partial** |
+| **Asset / location registry + import** (Crisis24: 199 sites w/ Add·Edit·Delete·export; Datasurfr: 42 assets) | `sites` table + CRUD + **idempotent CSV import, audited on arrival** + CSV export. The deck reads it live | `backend/api/routes/sites.py`, `backend/services/registry_audit.py`, migration `017` | 🟢 **Built** (unmerged branch) |
+| **People / traveller tracking** (Crisis24 *People*; duty-of-care attaches to people) | `people` + `trips` tables, CRUD, server-stamped check-in; travellers join sites by **id**, not city name | `backend/api/routes/people.py` | 🟢 **Built** (unmerged branch) |
+| **Org / roles / multi-tenancy** (Crisis24 filter: *"Organization: Wipro and Sub-Organizations"*) | Flat orgs + `admin`/`analyst`/`viewer` on the membership row; scoping is a dependency, not a per-route `where`. No sub-org nesting (deliberate) | `backend/api/routes/org.py`, `OrgDep` in `backend/api/dependencies.py` | 🟢 **Built** (unmerged branch) |
+| **Email alert delivery** (how all four vendors actually arrive — 9,189 msgs in one observed inbox) | Nothing sends. No subscriptions, templates, digest or delivery log | — | 🔴 **Gap** |
+| **Mass-comms alerting** (MidCat "Next Alert"; Crisis24 *New Message*) | — | — | 🔴 **Gap** |
+| **Reports / scheduled reporting** (Crisis24 *Reports*) | — | — | 🔴 **Gap** |
+| **Advice library / travel guidance** (Crisis24: 143 advice sheets, Entry-Exit / Pre-Departure / On Arrival / In Transit; ISOS city guides) | — | — | 🔴 **Gap** |
 | **Branded advisory output** (MidCat "SAM AI": customer logo / format / color) | — | — | 🔴 **Gap** |
 
 ## What the map tells us
 
-- **We already win on the two things incumbents structurally can't do** —
-  source grading/corroboration (their #1 complaint) and a self-graded track
-  record. Lead every conversation there.
-- **We're at parity or close** on consequence, ask-the-analyst, cyber, imagery.
-- **Three real gaps** separate us from a like-for-like replacement of MidCat/Max.
+> **Rewritten 2026-07-26** after auditing our own surface against the incumbent
+> stack. The earlier version said *"three real gaps"* and *"we're at parity or
+> close."* Both were too kind. Counting properly: we held **4 of ~14** table-stakes
+> surfaces, and the two most load-bearing for the buyer's daily job — *your sites*
+> and *your people* — did not exist server-side at all.
+>
+> **Updated same day:** the spine (sites · people/travellers · org+roles) is now
+> **built and verified against a real database and in a browser** — 7 of ~14 — on
+> branch `feat/product-spine-sites-people-org`. 🔴 Unmerged, so this is a claim about
+> the branch, not about `main`. Delivery (email) and breadth (country pages, calendar,
+> reports, advice) remain 🔴 untouched. The remaining rows below are still accurate.
 
-## Post-Aug-’26 build backlog (priority order)
+- **We win on the two things incumbents structurally can't do** — source
+  grading/corroboration (their #1 complaint) and a self-graded track record.
+  That remains true, and it is still the lead.
+- **But those are differentiators layered on a product that isn't there yet.**
+  You cannot win on "we grade sources better" against a vendor who can add a site
+  when we can't.
+- **The gaps are not exotic.** Registry, people, org, email, reports — this is
+  ordinary CRUD and delivery plumbing with no research risk. That is good news:
+  it is schedulable work, not invention.
 
-Do **not** start these until the engine-skill number flips from withheld → real
-(that proof is the pitch centerpiece — see [`STATUS.md`](../STATUS.md)). Then:
+## Build backlog (priority order)
 
-1. **Asset / location registry + geofencing** — turns "region lens" into "our
-   sites," which is the whole duty-of-care buy.
-2. **Alerting / mass-comms** — the Next Alert equivalent; push graded advisories
-   to a distribution list.
-3. **Branded advisory export** — customer logo/format on the output.
-4. *(Stretch)* **Country-page packaging** — promote exposure into a per-section,
-   customer-tunable risk rating with a last-updated stamp.
+> 🔴 **Sequencing reversed 2026-07-26.** This section previously read *"Do **not**
+> start these until the engine-skill number flips from withheld → real."* That
+> instruction is now **withdrawn**, and it was the costliest line in these docs:
+> it deferred the entire duty-of-care product behind a date, leaving a demo skin
+> over a real engine. The benchmark number is a *differentiator* and it needs a
+> product to sit on. Skill accrual is calendar time and needs no engineering —
+> the two tracks run in parallel, they do not queue.
+
+1. **The spine — site register, people/travellers, org + roles.** Everything else
+   joins to these. Registry import runs `web/src/lib/registryAudit.js` on ingest,
+   which turns a competitor's observed data-quality defects into our day-one value.
+2. **Delivery — subscriptions, digest, email send, mass-comms.** Real send behind
+   a flag that fail-closes when SMTP is unconfigured.
+3. **Breadth — country risk pages, real events calendar, scheduled reports.**
+   Promote `domainScore.js` out of the deck into an API + page.
+4. **Advice library — *ingested*, never authored.** Official government advisories
+   (US State Dept / UK FCDO / AU Smartraveller) with issuing authority and date
+   carried through. We do not write advisory text; that would be exactly the
+   fabrication this project refuses elsewhere.
+5. **Branded advisory export** — customer logo/format on the output.
