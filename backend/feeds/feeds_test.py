@@ -498,3 +498,31 @@ ok("every discipline_for result is a valid discipline",
 
 print(f"\nfeeds: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
+
+# ── Local coverage feeds ──────────────────────────────────────────────────────
+# 7 countries in the register had ZERO events within 150 km of any office. Google's
+# own geo-targeting was measured NOT to fix that (gl=AT returned the same global set
+# as gl=US), so these scope the QUERY to the city instead.
+from backend.feeds.rss_osint import (  # noqa: E402
+    _LOCAL_WATCH, _local_feeds, LOCAL_FEED_CAP)
+
+_local = _local_feeds()
+_DARK = ["Austria", "Finland", "Hungary", "Kenya", "Luxembourg", "Norway", "Turkey"]
+
+ok("every country that was dark now has a local feed",
+   all(any(f"gnews/{c.lower()}" == lbl for _u, lbl in _local) for c in _DARK))
+
+ok("a local feed exists for every watched country",
+   len(_local) == len(_LOCAL_WATCH))
+
+ok("every local feed is labelled distinctly (labels become the outlet fallback)",
+   len({lbl for _u, lbl in _local}) == len(_local))
+
+ok("every city is qualified by its country, so 'Vienna' cannot match Vienna, Illinois",
+   all("%22Austria%22" in u for u, lbl in _local if lbl == "gnews/austria"))
+
+ok("local feeds are capped: triage is an LLM call per post",
+   0 < LOCAL_FEED_CAP <= 25)
+
+ok("local queries carry local-consequence terms, not world-news terms",
+   all("protest" in u and "curfew" in u for u, _l in _local))

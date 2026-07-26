@@ -47,6 +47,56 @@ _GOOGLE_NEWS_ECON_Q = (
     "tariff OR embargo OR semiconductor OR chip OR pipeline OR "
     '"supply chain" OR default OR devaluation OR shortage'
 )
+# ── Local coverage for cities the global feeds never reach ────────────────────
+# Measured against the 121-office register: 28 sites and 7 whole countries had ZERO
+# events within 150 km, so their deck layers read "clear" because nothing covered
+# them — the one thing the deck's "a quiet layer reads 0 because nothing was found,
+# never because it wasn't checked" line promises cannot happen.
+#
+# Google News' own geo-targeting does NOT fix this: `gl=AT&ceid=AT:en` was measured
+# returning the identical global result set as `gl=US` for 8 of 10 countries (same
+# top story, same 77 outlets). Adding those feeds would have added several hundred
+# duplicate posts per cycle and left every dark country exactly as dark. What does
+# work is scoping the QUERY to the city, which surfaces genuinely local outlets
+# (RTL Today on a Luxembourg outage, Kenyans.co.ke on an aviation strike).
+#
+# The city is paired with its country because bare city names collide across the
+# world — an unqualified "Vienna" returned Vienna, Baltimore and Vienna, Illinois.
+_LOCAL_TERMS = ('protest OR strike OR riot OR flood OR wildfire OR storm OR '
+                'earthquake OR explosion OR "power outage" OR "road closed" OR '
+                'curfew OR evacuation OR shooting OR "airport closed"')
+
+# country -> cities we actually have offices in (from the register).
+_LOCAL_WATCH: dict[str, list[str]] = {
+    "Austria": ["Vienna"],
+    "Finland": ["Espoo"],
+    "Hungary": ["Budapest"],
+    "Kenya": ["Nairobi"],
+    "Luxembourg": ["Luxembourg"],
+    "Norway": ["Oslo"],
+    "Turkey": ["Istanbul"],
+    "Poland": ["Warsaw", "Gdansk"],
+    "Brazil": ["Barueri", "Curitiba", "Fortaleza", "Natal"],
+}
+
+# Triage is an LLM call PER POST and a cycle already runs 24-34 minutes against a
+# 5-minute cadence, so these feeds are capped hard. Ten locally-relevant items per
+# country is coverage; a hundred is a denial of service against our own pipeline.
+LOCAL_FEED_CAP = 10
+
+
+def _local_feeds() -> list[tuple[str, str]]:
+    from urllib.parse import quote
+
+    out = []
+    for country, cities in _LOCAL_WATCH.items():
+        place = " OR ".join(f'("{c}" AND "{country}")' for c in cities)
+        q = quote(f"({place}) AND ({_LOCAL_TERMS})")
+        out.append((f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en",
+                    f"gnews/{country.lower()}"))
+    return out
+
+
 DEFAULT_FEEDS: list[tuple[str, str]] = [
     (f"https://news.google.com/rss/search?q={_GOOGLE_NEWS_Q}&hl=en-US&gl=US&ceid=US:en",
      "news.google.com"),
@@ -55,7 +105,7 @@ DEFAULT_FEEDS: list[tuple[str, str]] = [
     ("https://www.reddit.com/r/worldnews/.rss", "reddit/worldnews"),
     ("https://www.reddit.com/r/CredibleDefense/.rss", "reddit/CredibleDefense"),
     ("https://www.reddit.com/r/geopolitics/.rss", "reddit/geopolitics"),
-]
+] + _local_feeds()
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
 # Strip HTML tags out of feed summaries so the triage LLM sees clean text.
@@ -204,7 +254,10 @@ def parse_rss(xml_text: str, source_label: str = "rss") -> list[dict]:
 async def _fetch_one(client, url: str, label: str) -> list[dict]:
     resp = await client.get(url)
     resp.raise_for_status()
-    return parse_rss(resp.text, label)
+    items = parse_rss(resp.text, label)
+    # Per-city local feeds are capped: see LOCAL_FEED_CAP. Applied here rather than
+    # inside parse_rss so the parser stays a pure function of the feed document.
+    return items[:LOCAL_FEED_CAP] if label.startswith("gnews/") else items
 
 
 async def fetch_rss_osint(feeds: list[tuple[str, str]] | None = None) -> list[dict]:
