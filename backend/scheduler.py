@@ -60,6 +60,7 @@ async def main():
     from backend.workers.market_ingest_worker import run_market_ingest_worker
     from backend.workers.osint_ingest_worker import run_osint_ingest_worker
     from backend.workers.digest_worker import run_digest_worker
+    from backend.workers.advisory_worker import run_advisory_worker
 
     tasks = [
         asyncio.create_task(
@@ -120,6 +121,9 @@ async def main():
         # election, so two enabled hosts means every recipient gets two copies.
         asyncio.create_task(
             _run_with_interval("digest_worker", run_digest_worker, s.digest_interval_minutes * 60)
+        ),
+        asyncio.create_task(
+            _run_with_interval("advisory_worker", run_advisory_worker, s.advisory_interval_hours * 3600)
         ),
     ]
 

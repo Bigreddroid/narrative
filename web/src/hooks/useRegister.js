@@ -36,7 +36,7 @@ const REFRESH_MS = 600_000; // 10 min
 
 export default function useRegister({ fallbackSites = [], fallbackTrips = [], enabled = true } = {}) {
   const [state, setState] = useState({
-    sites: [], trips: [], audit: null,
+    sites: [], trips: [], audit: null, holidays: {}, countryCodes: {}, noHolidaySource: [],
     source: "loading", reason: null, status: null, error: null, fetchedAt: null,
   });
   const alive = useRef(true);
@@ -44,8 +44,8 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
   const load = useCallback(async () => {
     if (!enabled) {
       setState({
-        sites: fallbackSites, trips: fallbackTrips, audit: null, source: "sample",
-        reason: "disabled", status: null, error: null, fetchedAt: new Date(),
+        sites: fallbackSites, trips: fallbackTrips, audit: null,
+        holidays: {}, countryCodes: {}, noHolidaySource: [], source: "sample", reason: "disabled", status: null, error: null, fetchedAt: new Date(),
       });
       return;
     }
@@ -65,10 +65,43 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
         trips = [];
       }
 
+      // Live public holidays for the register's own countries, keyed by ISO so the
+      // deck can attach one to each site. Best-effort for the same reason trips are:
+      // Nager.Date being slow must not cost the customer their site board.
+      //
+      // 🔴 Holidays only. There is NO keyless source of public gatherings and
+      // festivals, so the live calendar carries none and says so — the sample board's
+      // festivals are fixture data and stay behind the sample label. Curating a
+      // festival list ourselves would be authoring content we cannot keep current,
+      // and a stale gathering on a security calendar is worse than an absent one.
+      let holidays = {}, codes = {}, noCoverage = [];
+      const countries = [...new Set((s?.sites ?? [])
+        .map((x) => x.country).filter(Boolean))].slice(0, 20);
+      if (countries.length) {
+        try {
+          const cal = await api.get(
+            `/context/calendar?days=60&countries=${encodeURIComponent(countries.join(","))}`,
+            { timeoutMs: 15000 });
+          holidays = cal?.holidays ?? {};
+          codes = cal?.codes ?? {};
+          // Countries the holiday SOURCE does not cover (Nager 204s on India
+          // and the GCC). Carried through so the board can say so rather than
+          // render an empty layer that reads as 'no holidays'.
+          noCoverage = cal?.no_source_coverage ?? [];
+        } catch {
+          holidays = {};
+          codes = {};
+          noCoverage = [];
+        }
+      }
+
       if (!alive.current) return;
       setState({
         sites: s?.sites ?? [],
         trips,
+        holidays,
+        countryCodes: codes,
+        noHolidaySource: noCoverage,
         // The audit travels with the register from the server, so the board can never
         // show the numbers without the caveats that qualify them.
         audit: s?.audit ?? null,
@@ -86,7 +119,7 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
         : "error";
       setState({
         sites: fallbackSites, trips: fallbackTrips, audit: null,
-        source: "sample", reason, status: st ?? null,
+        holidays: {}, countryCodes: {}, noHolidaySource: [], source: "sample", reason, status: st ?? null,
         error: reason === "unauthenticated" ? "Sign in to load your site register"
           : reason === "no-organization" ? "No organization yet — showing the sample register"
           : reason === "unreachable" ? "Engine not answering"

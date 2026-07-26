@@ -18,6 +18,7 @@ from backend.models.benchmark_runs import BenchmarkRun
 from backend.models.organization import Organization, OrgMember
 from backend.models.site import Site
 from backend.models.person import Person, Trip
+from backend.models.advisory import Advisory
 from backend.models.delivery import (
     AlertSubscription, DistributionList, DistributionMember, Delivery,
 )
@@ -48,6 +49,7 @@ __all__ = [
     "Site",
     "Person",
     "Trip",
+    "Advisory",
     "AlertSubscription",
     "DistributionList",
     "DistributionMember",

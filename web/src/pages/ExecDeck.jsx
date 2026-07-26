@@ -326,11 +326,23 @@ export default function ExecDeck() {
     // Expired signals never reach a count. A month-old protest sitting on the board
     // is how a feed loses an executive's trust (lib/severity.js).
     const events = activeOnly(feed.events, today);
-    const base = {
-      festivals: SAMPLE.SAMPLE_FESTIVALS, holidaysByCode: SAMPLE.SAMPLE_HOLIDAYS,
-      countryCodes: SAMPLE.SAMPLE_COUNTRY_CODES, curatedHolidays: {},
-      appetite, today,
-    };
+    // Live public holidays come with the register (Nager.Date, keyless, real).
+    // 🔴 FESTIVALS DO NOT. There is no keyless source of public gatherings, so the
+    // live board carries none rather than showing invented ones — an absent layer a
+    // customer can see is honest; a curated list we cannot keep current is a stale
+    // gathering on a security calendar, which is worse than nothing. The fixture's
+    // festivals stay behind the sample label, where they belong.
+    const base = registerIsLive
+      ? {
+          festivals: [], holidaysByCode: reg.holidays,
+          countryCodes: reg.countryCodes, curatedHolidays: {},
+          appetite, today,
+        }
+      : {
+          festivals: SAMPLE.SAMPLE_FESTIVALS, holidaysByCode: SAMPLE.SAMPLE_HOLIDAYS,
+          countryCodes: SAMPLE.SAMPLE_COUNTRY_CODES, curatedHolidays: {},
+          appetite, today,
+        };
 
     // 🔴 A real register contains rows with no coordinates — our own import audit
     // raises `missing_coordinates` as CRITICAL precisely because they exist. Scoring
@@ -382,7 +394,8 @@ export default function ExecDeck() {
         : auditRegister(reg.sites, { countryCodes: SAMPLE.SAMPLE_COUNTRY_CODES }),
       byId: new Map(contexts.map((c) => [c.office.id, c])),
     };
-  }, [feed.events, isLive, today, appetite, reg.sites, reg.trips, reg.audit]);
+  }, [feed.events, isLive, today, appetite, reg.sites, reg.trips, reg.audit,
+      reg.holidays, reg.countryCodes, registerIsLive]);
 
   const { events, exp, change, queue, held, travel, ahead, contexts, siteRows, audit, byId, unmappable } = model;
 
@@ -1194,6 +1207,22 @@ export default function ExecDeck() {
         <motion.div {...rise(0)}>
           <Band label="Forward calendar · 60 days"
             note="Public holidays, gatherings and traveller departures on one grid, with the people behind each date — so leadership plans ahead of the window instead of being alerted during it.">
+            {/* What this calendar CANNOT see, said before the grid rather than after.
+                A blank layer reads as "nothing scheduled", which on a security
+                calendar is the most expensive possible misreading. */}
+            {registerIsLive && (
+              <p className="text-[11px] text-[#8A8A82] mb-3 leading-relaxed max-w-[70ch]">
+                Public holidays are live from Nager.Date.
+                {reg.noHolidaySource?.length > 0 && (
+                  <span style={{ color: "#E0A93C" }}>
+                    {" "}No holiday source covers {reg.noHolidaySource.join(", ")} — that
+                    layer is blank for those countries, not empty of holidays.
+                  </span>
+                )}
+                {" "}Public gatherings and festivals are not covered: there is no
+                keyless source for them, and we will not invent a list we cannot keep current.
+              </p>
+            )}
             <CalendarGrid ahead={ahead} trips={reg.trips} today={today} />
           </Band>
         </motion.div>

@@ -41,6 +41,7 @@ MODULES=(
   backend.feeds.mastodon_osint_test
   backend.feeds.weather_global_test
   backend.feeds.holidays_test
+  backend.feeds.advisories_test
   scripts.backfill_prediction_outcomes_test
   scripts.validate_calibration_test
   scripts.benchmark_score_test

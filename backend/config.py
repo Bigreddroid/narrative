@@ -155,6 +155,9 @@ class Settings(BaseSettings):
     # at the wrong minute would simply skip a day's digest with nothing to show for it.
     digest_interval_minutes: int = 60
     digest_send_hour_utc: int = 7
+    # Official government advisories. Six hours is generous for documents that
+    # change a few times a year, and keeps us light on two free public services.
+    advisory_interval_hours: int = 6
     # feed rebuild is now minute-based (was hourly) so newly ingested events
     # surface in the feed within ~10 min instead of up to an hour.
     feed_rebuild_interval_minutes: int = 10
