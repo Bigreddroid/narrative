@@ -62,3 +62,42 @@ ok("unknown new structured feed => official_feed, not severed",
 
 print(f"\nevents_evidence: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
+
+# ── Outlet identity: one publisher, however many feed labels ──────────────────
+# "Deutsche Welle" and "Deutsche Welle - Business" are two configured feeds and one
+# newsroom. Counting labels let that newsroom corroborate itself and clear the
+# two-source gate alone, which is manufactured corroboration, not evidence.
+from backend.consequence_engine.evidence import count_outlets, outlet_key  # noqa: E402
+
+ok("two feed labels on the same host are ONE publisher",
+   outlet_key("https://www.dw.com/en/a", "Deutsche Welle")
+   == outlet_key("https://www.dw.com/en/b", "Deutsche Welle - Business"))
+
+ok("genuinely different publishers stay distinct",
+   outlet_key("https://www.dw.com/en/a", "Deutsche Welle")
+   != outlet_key("https://www.reuters.com/x", "Reuters"))
+
+ok("www. and a bare host are the same publisher",
+   outlet_key("https://www.bbc.co.uk/news/x", "BBC")
+   == outlet_key("https://bbc.co.uk/news/y", "BBC News"))
+
+ok("a multi-part TLD keeps its registrable domain",
+   outlet_key("http://news.bbc.co.uk/2/hi/x.stm", "BBC") == "bbc.co.uk")
+
+ok("subdomains of one publisher collapse together",
+   outlet_key("https://edition.cnn.com/a", "CNN")
+   == outlet_key("https://cnn.com/b", "CNN International"))
+
+ok("no usable URL falls back to the name, never merging two sources silently",
+   outlet_key(None, "USGS") != outlet_key(None, "GDACS"))
+
+ok("a structured feed with no URL still counts as one outlet",
+   count_outlets([(None, "USGS")]) == 1)
+
+ok("the DW case counts as one, not two",
+   count_outlets([("https://www.dw.com/en/a", "Deutsche Welle"),
+                  ("https://www.dw.com/en/b", "Deutsche Welle - Business")]) == 1)
+
+ok("two real outlets still clear the two-source gate",
+   count_outlets([("https://www.dw.com/en/a", "Deutsche Welle"),
+                  ("https://www.reuters.com/x", "Reuters")]) == 2)

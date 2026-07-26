@@ -115,15 +115,23 @@ async def list_events(
     # counting articles would let a single syndicated feed clear a bar meant to require
     # genuine independence.
     outlets: dict = {}
+    counts: dict = {}
     event_ids = [e.id for e in events]
     if event_ids:
         outlet_rows = await db.execute(
-            select(Article.narrative_event_id, Source.name)
+            select(Article.narrative_event_id, Source.name, Article.url)
             .outerjoin(Source, Article.source_id == Source.id)
             .where(Article.narrative_event_id.in_(event_ids))
         )
-        for eid, outlet_name in outlet_rows.all():
-            outlets.setdefault(eid, set()).add(outlet_name or "Unknown")
+        # Keyed by PUBLISHER (evidence.outlet_key), not by feed label, so one
+        # newsroom reaching us under two feed names cannot corroborate itself.
+        # The display name is kept per key so the drawer still reads "Deutsche Welle".
+        seen: dict = {}
+        for eid, outlet_name, url in outlet_rows.all():
+            key = ev.outlet_key(url, outlet_name)
+            seen.setdefault(eid, {}).setdefault(key, outlet_name or "Unknown")
+        outlets = {eid: set(by_key.values()) for eid, by_key in seen.items()}
+        counts = {eid: len(by_key) for eid, by_key in seen.items()}
 
     return {
         "events": [
@@ -143,7 +151,7 @@ async def list_events(
                 # Independent outlets carrying this story, and their names. An event we
                 # have no article for reports 0 and [] — honestly "we cannot corroborate
                 # this", never a fabricated 1.
-                "source_count": len(outlets.get(e.id, ())),
+                "source_count": counts.get(e.id, 0),
                 "sources": sorted(outlets.get(e.id, ())),
                 # sourced | official_feed | severed. Lets the UI say WHY a signal has
                 # no outlets — "issued by USGS" is strong provenance, "we lost the
