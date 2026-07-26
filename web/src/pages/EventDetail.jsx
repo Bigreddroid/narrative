@@ -515,6 +515,36 @@ export default function EventDetail() {
                     {chain.map((node, i) => (
                       <ChainStep key={i} node={node} index={i} categoryColor={color} totalSteps={chain.length} />
                     ))}
+                    {event.source_grade && (
+                      <div className="mt-1 pt-5 border-t border-ink/10">
+                        <span className="text-[9px] font-mono text-ink/35 uppercase tracking-wider block mb-2">
+                          Source reliability · NATO Admiralty
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg font-mono font-bold px-2 py-0.5 border border-ink/25 text-ink/80 tracking-wider">
+                            {event.source_grade.grade}
+                          </span>
+                          <div className="leading-tight">
+                            <div className="text-[11px] text-ink/70">
+                              {event.source_grade.reliability.label} · {event.source_grade.credibility.label}
+                            </div>
+                            <div className="text-[9px] font-mono text-ink/40 mt-0.5">
+                              {event.source}
+                              {event.source_grade.corroboration.count > 0
+                                ? ` · corroborated by ${event.source_grade.corroboration.count} independent ${event.source_grade.corroboration.count === 1 ? "feed" : "feeds"}`
+                                : " · single source, uncorroborated"}
+                            </div>
+                          </div>
+                        </div>
+                        {event.source_grade.rationale?.length > 0 && (
+                          <ul className="mt-2 space-y-0.5">
+                            {event.source_grade.rationale.map((r, i) => (
+                              <li key={i} className="text-[9px] font-mono text-ink/30">— {r}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                     {map?.sources_analyzed?.length > 0 && (
                       <div className="mt-1 pt-5 border-t border-ink/10">
                         <span className="text-[9px] font-mono text-ink/35 uppercase tracking-wider mr-2">Analyzed</span>

@@ -50,7 +50,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if hasattr(sys.stdout, "reconfigure"):
@@ -219,6 +219,92 @@ def manifold_adapter(max_fetch: int = 500, timeout: int = 60) -> list[dict]:
     url = ("https://api.manifold.markets/v0/search-markets"
            f"?term=&filter=resolved&contractType=BINARY&sort=resolve-date&limit={int(max_fetch)}")
     return parse_manifold_markets(_http_get_json(url, timeout=timeout))
+
+
+# --- Forward mode: OPEN Manifold questions (forecast now, resolve later) ------
+# These feed scripts/publish_external_forecasts.py, not the retrospective scorer.
+# An open question has no outcome yet, so the engine's forecast on it is leak-proof
+# by construction. The quality filter below is LOAD-BEARING: without it the engine
+# would forecast jokey/personal markets (noise). Kept pure + unit-tested.
+
+def parse_manifold_open_markets(markets: list[dict], *, min_traders: int = 15,
+                                min_volume: float = 50.0, max_horizon_days: int = 14,
+                                now: datetime | None = None) -> list[dict]:
+    """Pure: Manifold market objects -> OPEN forward-question records.
+
+    Keeps only public, unresolved, BINARY markets that (a) close in the future but
+    within max_horizon_days (short horizon => resolves + accrues to the n>=20 gate
+    fast) and (b) clear liquidity floors (>= min_traders unique bettors AND
+    >= min_volume) so the engine forecasts real markets, not noise. `probability`
+    is the crowd's implied yes-probability captured at forecast time.
+    """
+    now = now or datetime.now(timezone.utc)
+    horizon = now + timedelta(days=max_horizon_days)
+    out = []
+    for m in markets:
+        if m.get("outcomeType") != "BINARY" or m.get("isResolved"):
+            continue
+        # 'public' is the default; drop unlisted/private markets.
+        if str(m.get("visibility") or "public").lower() != "public":
+            continue
+        close_dt = _parse_date(_ms_to_iso(m.get("closeTime")))
+        if close_dt is None or close_dt <= now or close_dt > horizon:
+            continue
+        if int(m.get("uniqueBettorCount") or 0) < min_traders:
+            continue
+        if float(m.get("volume") or 0.0) < float(min_volume):
+            continue
+        q = str(m.get("question") or "").strip()
+        prob = m.get("probability")
+        if not q or prob is None:
+            continue
+        out.append({
+            "id": f"manifold:{m.get('id')}",
+            "external_ref": f"manifold:{m.get('id')}",
+            "external_url": m.get("url"),
+            "question_text": q,
+            "background": str(m.get("textDescription") or m.get("description") or "").strip(),
+            "resolution_criteria": str(m.get("textDescription") or "").strip() or None,
+            "close_date": _ms_to_iso(m.get("closeTime")),
+            "crowd_prob": float(prob),
+            "source": "manifold",
+        })
+    return out
+
+
+def manifold_open_adapter(max_fetch: int = 200, timeout: int = 60, **filters) -> list[dict]:
+    """Keyless: soonest-closing OPEN binary markets, quality-filtered.
+
+    sort=close-date surfaces the shortest-horizon markets first, so a run pulls the
+    questions that will resolve (and reach the gate) fastest. `filters` are passed
+    through to parse_manifold_open_markets (min_traders/min_volume/max_horizon_days).
+    """
+    url = ("https://api.manifold.markets/v0/search-markets"
+           f"?term=&filter=open&contractType=BINARY&sort=close-date&limit={int(max_fetch)}")
+    return parse_manifold_open_markets(_http_get_json(url, timeout=timeout), **filters)
+
+
+def manifold_market_by_id(contract_id: str, timeout: int = 60) -> dict:
+    """Keyless: fetch one market's current state (used by the resolution poller)."""
+    url = f"https://api.manifold.markets/v0/market/{contract_id}"
+    return _http_get_json(url, timeout=timeout)
+
+
+def resolution_from_manifold_market(market: dict) -> float | None:
+    """Pure: a market's current state -> realised outcome 1.0/0.0, or None.
+
+    None means "not cleanly resolved yet" (still open, or resolved MKT/partial/
+    CANCEL/N-A) -> the poller leaves the ledger entry open. We never force a 0/1
+    from an ambiguous resolution.
+    """
+    if not market.get("isResolved"):
+        return None
+    res = str(market.get("resolution") or "").upper()
+    if res == "YES":
+        return 1.0
+    if res == "NO":
+        return 0.0
+    return None
 
 
 def _metaculus_outcome(res) -> float | None:

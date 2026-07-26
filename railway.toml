@@ -12,6 +12,15 @@ dockerfilePath = "Dockerfile"
 # They expose DATABASE_URL / REDIS_URL, which you reference from each service's
 # variables. Postgres needs the pgvector extension — the Alembic migrations run
 # `CREATE EXTENSION vector` on first upgrade (api start command below).
+#
+# ── REQUIRED dashboard variables on BOTH api and scheduler (set before deploy) ──
+#   APP_ENV=production      — flips the app into production mode.
+#   SECRET_KEY=<`openssl rand -hex 32`>  — JWTs are signed with it; the dev default
+#                             is rejected at boot when APP_ENV=production.
+# Safety net: these two are independent. Even if APP_ENV is forgotten, setting a
+# real SECRET_KEY alone disables /dev-login and the shared beta accounts
+# (see backend/config.py `dev_features_allowed`). Set BOTH regardless — a genuine
+# deploy running on the dev-default SECRET_KEY has forgeable admin tokens.
 # ─────────────────────────────────────────────────────────────────────────────
 
 [[services]]

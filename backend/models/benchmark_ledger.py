@@ -68,10 +68,25 @@ class LedgerEntry(Base):
     __tablename__ = "benchmark_ledger"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # One ledger entry per consequence map (unique) - re-publishing is idempotent.
-    consequence_map_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("event_consequence_maps.id"), nullable=False, unique=True
+    # One ledger entry per consequence map (unique) for INTERNAL forecasts -
+    # re-publishing is idempotent. NULLABLE because EXTERNAL forecasts (source !=
+    # 'engine') have no consequence map; Postgres allows many NULLs under a UNIQUE
+    # column, so internal one-entry-per-map uniqueness is preserved.
+    consequence_map_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_consequence_maps.id"), nullable=True, unique=True
     )
+    # Where this forecast came from: 'engine' = our internal event pipeline (graded
+    # later against internal news by outcome_worker); 'manifold' etc. = an external
+    # open question the engine forecast, graded later by the SOURCE's own resolution
+    # (external_resolution_worker). External entries are leak-proof by construction.
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="engine")
+    # External-question identity + audit context (NULL for internal 'engine' rows).
+    external_ref: Mapped[str | None] = mapped_column(Text)          # e.g. 'manifold:<contractId>'
+    external_url: Mapped[str | None] = mapped_column(Text)
+    resolution_criteria: Mapped[str | None] = mapped_column(Text)
+    # The market/crowd probability captured AT FORECAST TIME - the honest
+    # engine-vs-crowd baseline (only set for external forecasts that ship one).
+    crowd_prob: Mapped[float | None] = mapped_column(Float)
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     prediction_score: Mapped[int] = mapped_column(Integer, nullable=False)
     # Copied write-once from the consequence map - the immutable "forecast made at".

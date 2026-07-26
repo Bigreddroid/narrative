@@ -308,41 +308,15 @@ async def get_manifest(db: DbDep, manifest_date: str) -> dict:
         return {"manifest_date": d.isoformat(), "found": False, "error": "db_unavailable"}
 
 
-@router.get("/engine-skill")
-async def get_engine_skill(db: DbDep) -> dict:
-    """Engine Brier Skill Score over RESOLVED ledger forecasts - GATED at n>=20.
+def _bucket_skill(pairs: list[tuple[float, float]], required: int) -> dict:
+    """Gated Brier/BSS over one bucket of (predicted_prob, observed) pairs.
 
-    The clean, forward-looking skill claim: forecasts hashed before resolution,
-    graded later. Below the gate we return status:"withheld" and NO number - the
-    same refusal scripts/backtest_cpe.py holds. Never fabricates.
+    Below the n>=20 gate we emit NO number - the same refusal held everywhere in
+    this program. A number below the gate is anecdote, not skill.
     """
-    required = calibration.MIN_CALIBRATION_POINTS
-    pairs: list[tuple[float, float]] = []
-    try:
-        rows = (await db.execute(
-            select(LedgerEntry.prediction_score, LedgerEntry.observed_probability)
-            .where(LedgerEntry.resolved_at.isnot(None))
-            .where(LedgerEntry.observed_probability.isnot(None))
-        )).all()
-        pairs = [(s / 100.0, float(o)) for s, o in rows]
-    except Exception as exc:
-        log.warning("benchmark: engine-skill read failed (%s)", exc)
-        try:
-            await db.rollback()
-        except Exception:
-            pass
-
     n = len(pairs)
     if n < required:
-        return {
-            "status": "withheld",
-            "resolved_n": n,
-            "required": required,
-            "note": (
-                "Engine Brier Skill Score is withheld until n>=20 resolved forecasts. "
-                "Any number below the gate is anecdote, not skill."
-            ),
-        }
+        return {"status": "withheld", "resolved_n": n, "required": required}
     bss = calibration.brier_skill_score(pairs)  # None if the baseline is degenerate
     return {
         "status": "ready",
@@ -350,8 +324,88 @@ async def get_engine_skill(db: DbDep) -> dict:
         "required": required,
         "brier": round(sum(calibration.brier_score(p, o) for p, o in pairs) / n, 4),
         "brier_skill_score": round(bss, 4) if bss is not None else None,
-        "note": (
-            "Brier Skill Score over the engine's own forward forecasts, each hashed "
-            "and committed before its outcome was known. Leak-proof by construction."
-        ),
     }
+
+
+def summarize_engine_skill(rows: list[tuple], required: int) -> dict:
+    """Pure: resolved ledger rows -> gated skill, split by source, + engine-vs-crowd.
+
+    `rows` are (prediction_score, observed_probability, source, crowd_prob). The
+    top-level number stays INTERNAL-ONLY (source == 'engine') so external forecasts
+    never blend into the headline. Each source is scored + gated SEPARATELY under
+    by_source, and for external sources that ship a crowd probability we compute an
+    honest engine-vs-crowd delta over the same resolved set (also gated per bucket).
+    """
+    by_pairs: dict[str, list[tuple[float, float]]] = {}
+    crowd_pairs: dict[str, list[tuple[float, float]]] = {}   # (crowd, obs)
+    engine_on_crowd: dict[str, list[tuple[float, float]]] = {}  # (engine, obs) on same rows
+    for score, obs, source, crowd in rows:
+        src = source or "engine"
+        p, o = score / 100.0, float(obs)
+        by_pairs.setdefault(src, []).append((p, o))
+        if crowd is not None:
+            crowd_pairs.setdefault(src, []).append((float(crowd), o))
+            engine_on_crowd.setdefault(src, []).append((p, o))
+
+    internal = by_pairs.get("engine", [])
+    result = {"required": required, **_bucket_skill(internal, required)}
+    result["resolved_n"] = len(internal)
+    result["by_source"] = {src: _bucket_skill(pairs, required) for src, pairs in sorted(by_pairs.items())}
+
+    evc = {}
+    for src, cpairs in sorted(crowd_pairs.items()):
+        n = len(cpairs)
+        if n < required:
+            evc[src] = {"status": "withheld", "resolved_n": n, "required": required}
+            continue
+        eng = engine_on_crowd[src]
+        eb_ = sum(calibration.brier_score(p, o) for p, o in eng) / n
+        cb = sum(calibration.brier_score(p, o) for p, o in cpairs) / n
+        evc[src] = {
+            "status": "ready",
+            "resolved_n": n,
+            "engine_brier": round(eb_, 4),
+            "crowd_brier": round(cb, 4),
+            # Positive => engine beat the market's own probability over this set.
+            "delta": round(cb - eb_, 4),
+        }
+    if evc:
+        result["engine_vs_crowd"] = evc
+    return result
+
+
+@router.get("/engine-skill")
+async def get_engine_skill(db: DbDep) -> dict:
+    """Engine Brier Skill Score over RESOLVED ledger forecasts - GATED at n>=20.
+
+    The clean, forward-looking skill claim: forecasts hashed before resolution,
+    graded later. The headline is the INTERNAL forward ledger (source='engine');
+    external forward forecasts (Manifold etc.) are scored SEPARATELY under
+    by_source, with an engine-vs-crowd delta where the market shipped a probability
+    - never blended into one hero number. Below the gate: status:"withheld", NO
+    number, the same refusal scripts/backtest_cpe.py holds. Never fabricates.
+    """
+    required = calibration.MIN_CALIBRATION_POINTS
+    rows: list[tuple] = []
+    try:
+        rows = (await db.execute(
+            select(LedgerEntry.prediction_score, LedgerEntry.observed_probability,
+                   LedgerEntry.source, LedgerEntry.crowd_prob)
+            .where(LedgerEntry.resolved_at.isnot(None))
+            .where(LedgerEntry.observed_probability.isnot(None))
+        )).all()
+    except Exception as exc:
+        log.warning("benchmark: engine-skill read failed (%s)", exc)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+    summary = summarize_engine_skill(rows, required)
+    summary["note"] = (
+        "Headline = Brier Skill Score over the engine's INTERNAL forward forecasts, "
+        "each hashed and committed before its outcome was known. External forward "
+        "forecasts (leak-proof by construction) are scored separately under "
+        "by_source with an engine-vs-crowd delta; each bucket is gated at n>=20."
+    )
+    return summary

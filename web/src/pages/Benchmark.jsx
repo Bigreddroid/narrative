@@ -67,7 +67,8 @@ export default function Benchmark() {
   const [skill, setSkill] = useState(null);      // gated engine BSS (or "withheld")
 
   useEffect(() => {
-    api.get("/benchmark/score")
+    // Public trust page — must not blank on cold-start latency; override the 3.5s default.
+    api.get("/benchmark/score", { timeoutMs: 10000 })
       .then(setData)
       .catch((e) => setErr(e.message || "Failed to load benchmark"));
   }, []);
@@ -76,8 +77,8 @@ export default function Benchmark() {
   // are public + precomputed, so these are cheap and degrade to empty on error.
   useEffect(() => {
     if (!user) return;
-    api.get("/benchmark/ledger?limit=25").then(setLedger).catch(() => setLedger({ entries: [] }));
-    api.get("/benchmark/engine-skill").then(setSkill).catch(() => setSkill(null));
+    api.get("/benchmark/ledger?limit=25", { timeoutMs: 10000 }).then(setLedger).catch(() => setLedger({ entries: [] }));
+    api.get("/benchmark/engine-skill", { timeoutMs: 10000 }).then(setSkill).catch(() => setSkill(null));
   }, [user]);
 
   if (err) {

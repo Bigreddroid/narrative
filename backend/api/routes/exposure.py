@@ -85,6 +85,8 @@ async def _load_graph(db, limit: int, event_ids: list | None = None) -> tuple[li
             "lat": e.geo_centroid_lat,
             "lng": e.geo_centroid_lng,
             "ts": e.first_detected_at.timestamp() * 1000 if e.first_detected_at else None,
+            "embedding": e.embedding,  # enables corroboration's relatedness gate
+
             "consequence_map": None if m is None else {
                 "consequence_chain": m.consequence_chain,
                 "direct_impact": m.direct_impact,

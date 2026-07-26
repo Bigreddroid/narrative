@@ -3,87 +3,39 @@ import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { useUser } from "../hooks/useUser.js";
 
-const ROTATING_WORDS = ["IP", "DOMAIN", "ACTOR", "WALLET", "VESSEL", "CLAIM"];
+const ROTATING_WORDS = ["PEOPLE", "SITES", "SUPPLIERS", "TRAVELLERS", "REGION"];
 
 const CHAIN_EXAMPLES = [
   [
-    { label: "Red Sea Crisis",    color: "#C80028" },
-    { label: "Shipping Rerouted", color: "#B07020" },
-    { label: "Supply Delays",     color: "#B07020" },
-    { label: "Your Energy Bill",  color: "#2D7DD2" },
+    { label: "Red Sea Escalation", color: "#C80028" },
+    { label: "Port Call Cancelled", color: "#B07020" },
+    { label: "Staff Transit Risk",  color: "#C84020" },
+    { label: "Your Jeddah Site",    color: "#2D7DD2" },
   ],
   [
-    { label: "Taiwan Tensions",   color: "#C80028" },
-    { label: "PLA Exercises",     color: "#C84020" },
-    { label: "Chip Shortage",     color: "#7848C8" },
-    { label: "Your Electronics",  color: "#2D7DD2" },
+    { label: "Hormuz Tensions",     color: "#C80028" },
+    { label: "Airspace Advisory",   color: "#B07020" },
+    { label: "Evac Window Narrows", color: "#C84020" },
+    { label: "Your Dubai Travellers", color: "#2D7DD2" },
   ],
   [
-    { label: "Amazon Drought",    color: "#308050" },
-    { label: "Soy Harvest −40%",  color: "#308050" },
-    { label: "Food Price Surge",  color: "#B07020" },
-    { label: "Your Grocery Bill", color: "#2D7DD2" },
+    { label: "Nairobi Unrest",  color: "#C80028" },
+    { label: "CBD Roadblocks",  color: "#B07020" },
+    { label: "Office Lockdown", color: "#C84020" },
+    { label: "Your Nairobi Staff", color: "#2D7DD2" },
   ],
 ];
 
-const TIERS_PREVIEW = [
-  {
-    name: "Free",
-    price: "Contact us",
-    period: "",
-    features: [
-      "Top 10 events per day",
-      "Feed summaries only",
-      "Global world map",
-      "No consequence chains",
-      "No predictions or effects",
-    ],
-    limit: "Get the gist",
-    cta: "Start Free",
-  },
-  {
-    name: "Pro",
-    price: "Contact us",
-    period: "",
-    features: [
-      "Unlimited intelligence feed",
-      "Full consequence chain explorer",
-      "All 6 world regions",
-      "Predictions & chain effects",
-      "Article source & bias breakdown",
-    ],
-    limit: "For curious individuals",
-    cta: "Get Pro",
-  },
-  {
-    name: "Intelligence",
-    price: "Contact us",
-    period: "",
-    features: [
-      "Everything in Pro",
-      "Real-time push alerts",
-      "Full REST API access",
-      "Export to PDF / CSV",
-      "90-day historical archive",
-    ],
-    highlight: true,
-    limit: "For analysts & researchers",
-    cta: "Get Intelligence",
-  },
-  {
-    name: "Enterprise",
-    price: "Contact us",
-    period: "",
-    features: [
-      "Everything in Intelligence",
-      "20+ team seats with roles",
-      "Webhooks & custom integrations",
-      "Scheduled reports & briefings",
-      "SSO / SAML + dedicated support",
-    ],
-    limit: "For organisations & newsrooms",
-    cta: "Contact Us",
-  },
+// The engagement is enterprise / contact-sales — the v1 buyer is provisioned per
+// organisation, not self-serve. The consumer-tier mechanics still live in
+// web/src/lib/tiers.js for a later self-serve market; they're just not led with here.
+const ENTERPRISE_FEATURES = [
+  "Seats & roles for your GSOC / intel desk",
+  "Official-source verification on every advisory",
+  "Consequence chains scoped to your sites, travellers & suppliers",
+  "Published, self-graded calibration record",
+  "SSO / SAML, webhooks & scheduled briefings",
+  "Runs local / air-gappable — dedicated support",
 ];
 
 function RotatingWord() {
@@ -202,27 +154,31 @@ export default function Landing() {
         >
           <div className="inline-flex items-center gap-2 border border-ink/12 px-4 py-1.5 mb-10 text-[10px] font-semibold uppercase tracking-widest text-ink/40">
             <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
-            Live OSINT · 1,098 tools · entity → consequence
+            Official-source verified · Consequence to your assets · Self-graded accuracy
           </div>
 
           <h1 className="font-display text-[2.6rem] sm:text-[4rem] md:text-[5.5rem] lg:text-[7rem] leading-none tracking-tighter text-ink mb-6">
-            TRACK ANY<br />
-            <RotatingWord />{" "}
-            <span className="text-ink/20">—</span><br />
-            <span className="text-ink">TO ITS CONSEQUENCE.</span>
+            EVERY EVENT,<br />
+            CARRIED TO ITS<br />
+            <span className="text-ink">CONSEQUENCE.</span>
           </h1>
 
+          <p className="text-[13px] sm:text-[15px] font-semibold uppercase tracking-[0.2em] text-ink/45 mb-6">
+            For your <RotatingWord /> — verified, then scored.
+          </p>
+
           <p className="text-[15px] text-ink/50 max-w-xl mx-auto leading-relaxed mb-10 font-normal">
-            One open-source intelligence surface — 1,098 OSINT tools, live entity enrichment,
-            and a consequence engine. Most OSINT stops at the link. We carry the signal to what it means.
+            Corporate security intelligence that verifies against official sources,
+            traces each signal to your specific exposure, and publishes its own accuracy
+            record — the three things travel-risk incumbents can't.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
-              onClick={() => navigate(isLoggedIn ? "/analyst" : "/auth")}
+              onClick={() => isLoggedIn ? navigate("/world") : (window.location.href = "mailto:hello@narrative.com")}
               className="px-8 py-3.5 bg-ink text-paper text-[12px] font-bold uppercase tracking-widest hover:bg-crimson transition-colors"
             >
-              Start Investigating →
+              {isLoggedIn ? "Open App →" : "Book a briefing →"}
             </button>
             <button
               onClick={() => document.getElementById("how")?.scrollIntoView({ behavior: "smooth" })}
@@ -242,7 +198,7 @@ export default function Landing() {
           </p>
           <ChainDemo />
           <p className="text-[11px] text-ink/35 mt-6 tracking-wide">
-            One event. Four consequence steps. Your life at the end of the chain.
+            One event. The chain to your people and sites at the end of it.
           </p>
         </div>
       </section>
@@ -255,18 +211,18 @@ export default function Landing() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             {
-              title: "Entity Investigation",
-              desc: "Parse any IP, domain, CVE, hash, wallet or actor across 1,098 OSINT tools — live-enriched server-side and tiered by what's actually verifiable.",
+              title: "Official-Source Verification",
+              desc: "Every signal graded on the NATO-Admiralty scale and gated on ≥2 independent sources. Brief leadership on verified fact, not media reports.",
               accent: "#C80028",
             },
             {
-              title: "Consequence Chains",
-              desc: "The OSINT others can't do: a verified signal unfolded to its downstream effect — facts → mechanisms → impact — scored and self-graded.",
+              title: "Consequence to Your People & Sites",
+              desc: "Not another event feed. A world event traced to your specific facilities, travellers and suppliers — with evidence at every step.",
               accent: "#B07020",
             },
             {
-              title: "Threat & Disinfo Feed",
-              desc: "OSINT-driven threat and disinformation signals, corroborated across open sources and ranked by consequence before they land.",
+              title: "A Record You Can Check",
+              desc: "The only vendor that grades its own accuracy — a published, tamper-evident calibration ledger. Trust on receipts, not reputation.",
               accent: "#2D7DD2",
             },
           ].map(item => (
@@ -279,65 +235,42 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── Pricing ── */}
+      {/* ── Engagement (enterprise / contact-sales) ── */}
       <section id="pricing" className="border-t border-ink/8 py-20 px-8 md:px-14">
-        <div className="max-w-4xl mx-auto">
-          <p className="text-[9px] font-bold uppercase tracking-[0.45em] text-ink/30 mb-2 text-center">
-            Pricing
+        <div className="max-w-xl mx-auto text-center">
+          <p className="text-[9px] font-bold uppercase tracking-[0.45em] text-ink/30 mb-2">
+            Engagement
           </p>
-          <p className="text-center text-[13px] text-ink/40 mb-12">Start free. Upgrade when you need more.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {TIERS_PREVIEW.map(t => (
-              <div
-                key={t.name}
-                className="border p-6 relative flex flex-col"
-                style={{
-                  borderColor: t.highlight ? "#C80028" : "rgba(26,26,26,0.10)",
-                  backgroundColor: t.highlight ? "rgba(200,0,40,0.03)" : "transparent",
-                }}
-              >
-                {t.highlight && <div className="absolute -top-px left-0 right-0 h-0.5 bg-crimson" />}
-                {t.highlight && (
-                  <div className="absolute -top-3 left-4 bg-crimson px-2 py-px">
-                    <span className="text-[8px] font-bold uppercase tracking-widest text-paper">Most Popular</span>
-                  </div>
-                )}
+          <p className="text-[13px] text-ink/40 mb-10">Provisioned per organisation. Book a briefing.</p>
 
-                <div className="mb-4">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-ink/35 mb-2">{t.name}</p>
-                  <div className="flex items-baseline gap-0.5">
-                    <span className="font-display text-3xl text-ink">{t.price}</span>
-                    {t.period && <span className="text-[11px] text-ink/35">{t.period}</span>}
-                  </div>
-                  <p className="text-[10px] text-ink/30 mt-1">{t.limit}</p>
-                </div>
+          <div
+            className="border p-8 relative text-left"
+            style={{ borderColor: "#C80028", backgroundColor: "rgba(200,0,40,0.03)" }}
+          >
+            <div className="absolute -top-px left-0 right-0 h-0.5 bg-crimson" />
+            <p className="text-[10px] font-bold uppercase tracking-widest text-ink/35 mb-1">Enterprise</p>
+            <h3 className="font-display text-3xl text-ink mb-6 leading-tight">Corporate Security Intelligence</h3>
 
-                <ul className="space-y-2 mb-6 flex-1">
-                  {t.features.map(f => (
-                    <li key={f} className="flex items-start gap-2 text-[12px] text-ink/55">
-                      <span className="w-1 h-1 rounded-full bg-crimson flex-shrink-0 mt-1.5" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
+            <ul className="space-y-2.5 mb-8">
+              {ENTERPRISE_FEATURES.map(f => (
+                <li key={f} className="flex items-start gap-2.5 text-[13px] text-ink/60">
+                  <span className="w-1 h-1 rounded-full bg-crimson flex-shrink-0 mt-2" />
+                  {f}
+                </li>
+              ))}
+            </ul>
 
-                <button
-                  onClick={() => {
-                    if (t.name === "Enterprise") { window.location.href = "mailto:hello@narrative.com"; }
-                    else navigate("/auth");
-                  }}
-                  className="pricing-cta w-full py-2.5 text-[11px] font-bold uppercase tracking-widest border"
-                  style={t.highlight
-                    ? { backgroundColor: "#C80028", color: "#F0EDE8", borderColor: "#C80028" }
-                    : { borderColor: "rgba(26,26,26,0.15)", color: "rgba(26,26,26,0.6)" }
-                  }
-                  data-highlight={t.highlight ? "true" : undefined}
-                >
-                  {t.cta}
-                </button>
-              </div>
-            ))}
+            <button
+              onClick={() => { window.location.href = "mailto:hello@narrative.com"; }}
+              className="pricing-cta w-full py-3 text-[12px] font-bold uppercase tracking-widest"
+              style={{ backgroundColor: "#C80028", color: "#F0EDE8" }}
+              data-highlight="true"
+            >
+              Book a briefing →
+            </button>
           </div>
+
+          <p className="text-[11px] text-ink/30 mt-6">Self-serve tiers for smaller teams are on the roadmap.</p>
         </div>
       </section>
 
@@ -348,11 +281,11 @@ export default function Landing() {
             <polygon points="11,1 20,6 20,16 11,21 2,16 2,6" stroke="#C80028" strokeWidth="1.5" fill="none" />
           </svg>
           <span className="text-[9px] font-bold uppercase tracking-[0.35em] text-ink/30">
-            The Narrative · OSINT
+            The Narrative · Corporate Security Intelligence
           </span>
         </div>
         <p className="text-[9px] font-mono text-ink/25 uppercase tracking-widest">
-          © 2026 · Open-source signal to scored consequence.
+          © 2026 · Verified signal to scored consequence.
         </p>
       </footer>
     </div>

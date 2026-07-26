@@ -65,5 +65,18 @@ ok("production + empty secret → boot refused", _raises(app_env="production", s
 ok("production + real secret → boots",
    Settings(app_env="production", secret_key="a" * 64).secret_key == "a" * 64)
 
+# ── dev-backdoor gating (fail closed on BOTH signals, not app_env alone) ──────────
+# /dev-login and the shared beta accounts key off dev_features_allowed. The point:
+# a real SECRET_KEY alone must disable them even if APP_ENV was never set, so one
+# missing env var can't leave a live host wide open.
+ok("local dev (dev secret, non-prod) → dev features ON",
+   Settings(app_env="development", secret_key=_DEF).dev_features_allowed is True)
+ok("APP_ENV unset but real SECRET_KEY set → dev features OFF (the misconfig guard)",
+   Settings(app_env="development", secret_key="a" * 64).dev_features_allowed is False)
+ok("production + real secret → dev features OFF",
+   Settings(app_env="production", secret_key="a" * 64).dev_features_allowed is False)
+ok("empty secret is treated as insecure",
+   Settings(app_env="development", secret_key="").is_using_insecure_secret is True)
+
 print(f"\nconfig: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -12,29 +12,33 @@ const TYPE_COLORS = {
   SPECULATIVE: "#6A3090",
 };
 
-const FALLBACK_CHAIN = [
-  { type: "VERIFIED",    content: "Event confirmed by multiple primary sources." },
-  { type: "INFERRED",    content: "Secondary effects propagating through connected systems." },
-  { type: "SPECULATIVE", content: "Long-term implications remain uncertain pending further developments." },
-];
-
 function useEventDetail(eventId) {
-  const [data, setData] = useState(null);
+  const [data, setData]     = useState(null);
+  const [status, setStatus] = useState("loading"); // loading | loaded | error
   useEffect(() => {
     if (!eventId) return;
-    api.get(`/events/${eventId}`).then(setData).catch(() => {});
+    let live = true;
+    setStatus("loading");
+    // Consequence maps are LLM-generated; give the fetch real headroom rather than
+    // the 3.5s api.js default, which aborts under live latency.
+    api.get(`/events/${eventId}`, { timeoutMs: 15000 })
+      .then((d) => { if (live) { setData(d); setStatus("loaded"); } })
+      .catch(() => { if (live) setStatus("error"); });
+    return () => { live = false; };
   }, [eventId]);
-  return data;
+  return { data, status };
 }
 
 function TrackedEvent({ event, onUnfollow, onOpenAnalysis }) {
   const [expanded, setExpanded] = useState(true);
-  const detail   = useEventDetail(event.id);
+  const { data: detail, status } = useEventDetail(event.id);
   const color    = getCategoryColor(event.category);
   const since    = new Date(event.followedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const isLive   = event.current_status === "escalating" || event.current_status === "developing";
 
-  const chain    = detail?.consequence_map?.consequence_chain || FALLBACK_CHAIN;
+  // Real chain only — never a canned placeholder. If the live map isn't available,
+  // say so honestly instead of fabricating a consequence chain.
+  const chain    = detail?.consequence_map?.consequence_chain || [];
   const articles = detail?.articles || [];
 
   return (
@@ -99,36 +103,46 @@ function TrackedEvent({ event, onUnfollow, onOpenAnalysis }) {
                 Consequence Chain
               </p>
 
-              <div className="space-y-0">
-                {chain.map((step, i) => {
-                  const tc = TYPE_COLORS[step.type] || TYPE_COLORS[step.evidence_type] || "#6A6A60";
-                  const text = step.content || step.text || "";
-                  return (
-                    <div key={i} className="flex gap-3">
-                      <div className="flex flex-col items-center flex-shrink-0 w-5">
-                        <div
-                          className="w-5 h-5 flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                          style={{ backgroundColor: tc + "15", color: tc, border: `1px solid ${tc}35` }}
-                        >
-                          {i + 1}
+              {chain.length > 0 ? (
+                <div className="space-y-0">
+                  {chain.map((step, i) => {
+                    const tc = TYPE_COLORS[step.type] || TYPE_COLORS[step.evidence_type] || "#6A6A60";
+                    const text = step.content || step.text || "";
+                    return (
+                      <div key={i} className="flex gap-3">
+                        <div className="flex flex-col items-center flex-shrink-0 w-5">
+                          <div
+                            className="w-5 h-5 flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                            style={{ backgroundColor: tc + "15", color: tc, border: `1px solid ${tc}35` }}
+                          >
+                            {i + 1}
+                          </div>
+                          {i < chain.length - 1 && (
+                            <div className="w-px flex-1 mt-1 mb-1" style={{ backgroundColor: tc + "20", minHeight: 12 }} />
+                          )}
                         </div>
-                        {i < chain.length - 1 && (
-                          <div className="w-px flex-1 mt-1 mb-1" style={{ backgroundColor: tc + "20", minHeight: 12 }} />
-                        )}
+                        <div className="flex-1 pb-3 min-w-0">
+                          <span
+                            className="inline-block text-[9px] font-mono uppercase tracking-widest border px-1.5 py-px mb-1.5"
+                            style={{ color: tc, borderColor: tc + "30" }}
+                          >
+                            {step.type || step.evidence_type || "—"}
+                          </span>
+                          <p className="text-[13px] text-ink/80 leading-relaxed">{text}</p>
+                        </div>
                       </div>
-                      <div className="flex-1 pb-3 min-w-0">
-                        <span
-                          className="inline-block text-[9px] font-mono uppercase tracking-widest border px-1.5 py-px mb-1.5"
-                          style={{ color: tc, borderColor: tc + "30" }}
-                        >
-                          {step.type || step.evidence_type || "—"}
-                        </span>
-                        <p className="text-[13px] text-ink/80 leading-relaxed">{text}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[12px] text-ink/40 leading-relaxed py-1">
+                  {status === "loading"
+                    ? "Loading the consequence chain from the live feed…"
+                    : status === "error"
+                    ? "Couldn't load this event from the live feed. Open Full Analysis to retry."
+                    : "No consequence chain has been built for this event yet."}
+                </p>
+              )}
 
               {articles.length > 0 && (
                 <>
@@ -176,10 +190,78 @@ function TrackedEvent({ event, onUnfollow, onOpenAnalysis }) {
   );
 }
 
+// The user's watched sites & regions — the duty-of-care buyer works from *assets
+// and regions*, not a personal follow feed. Managed in Settings (watched_assets +
+// regions); shown here as the standing watchlist the developments below are read
+// against. Named assets = suppliers / ports / facilities / firms.
+function WatchList({ assets, regions, navigate }) {
+  const empty = assets.length === 0 && regions.length === 0;
+  return (
+    <div className="border border-ink/10 bg-ink/[0.02] mb-8">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-ink/10">
+        <span className="text-[10px] font-bold uppercase tracking-[0.35em] text-ink/40">
+          Sites &amp; regions you watch
+        </span>
+        <button
+          onClick={() => navigate("/settings")}
+          className="text-[10px] font-semibold uppercase tracking-wider text-ink/35 hover:text-crimson transition-colors"
+        >
+          Manage →
+        </button>
+      </div>
+
+      {empty ? (
+        <p className="px-4 py-5 text-[12px] text-ink/40 leading-relaxed">
+          You haven't named any sites or regions yet. Add your facilities, suppliers,
+          ports and regions of interest in{" "}
+          <button onClick={() => navigate("/settings")} className="text-crimson hover:underline">Settings</button>{" "}
+          — developments below are read against that watchlist.
+        </p>
+      ) : (
+        <div className="px-4 py-4 space-y-3">
+          {assets.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <span className="text-[9px] font-mono uppercase tracking-wider text-ink/30 w-16">Assets</span>
+              {assets.map((a) => (
+                <span key={a} className="text-[11px] px-1.5 py-0.5 border border-crimson/40 text-crimson bg-crimson/[0.05]">
+                  {a}
+                </span>
+              ))}
+            </div>
+          )}
+          {regions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <span className="text-[9px] font-mono uppercase tracking-wider text-ink/30 w-16">Regions</span>
+              {regions.map((r) => (
+                <span key={r} className="text-[11px] px-1.5 py-0.5 border border-ink/15 text-ink/55">
+                  {r}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Following() {
   const navigate = useNavigate();
   const { followed, unfollow } = useFollowing();
   const [activeTab, setActiveTab] = useState("following");
+  const [assets, setAssets]   = useState([]);
+  const [regions, setRegions] = useState([]);
+
+  // The standing watchlist (sites/regions) lives on the user profile; pull it so
+  // this page leads with "what you protect", then the developments touching it.
+  useEffect(() => {
+    api.get("/users/me", { timeoutMs: 15000 })
+      .then((d) => {
+        setAssets(d.watched_assets || []);
+        setRegions(d.regions || []);
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-paper">
@@ -198,15 +280,24 @@ export default function Following() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 pb-28 md:pb-8">
 
-          <div className="flex items-baseline justify-between mb-6">
-            <div>
-              <h2 className="font-display text-2xl text-ink tracking-tight">TRACKED EVENTS</h2>
-              <p className="text-[12px] text-ink/40 mt-0.5">
-                {followed.length === 0
-                  ? "No events tracked yet"
-                  : `${followed.length} event${followed.length !== 1 ? "s" : ""} — chains update as events develop`}
-              </p>
-            </div>
+          <div className="mb-6">
+            <h2 className="font-display text-2xl text-ink tracking-tight">WATCHED</h2>
+            <p className="text-[12px] text-ink/40 mt-0.5">
+              Your sites and regions, and the developments touching them.
+            </p>
+          </div>
+
+          <WatchList assets={assets} regions={regions} navigate={navigate} />
+
+          <div className="flex items-baseline justify-between mb-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.35em] text-ink/40">
+              Developments affecting your watchlist
+            </p>
+            {followed.length > 0 && (
+              <span className="text-[11px] text-ink/35 whitespace-nowrap">
+                {followed.length} tracked
+              </span>
+            )}
           </div>
 
           {followed.length === 0 && (
@@ -215,7 +306,8 @@ export default function Following() {
                 <path d="M7 1.5C5.5 1.5 3.5 2.8 3.5 5.2c0 2.8 3.5 6.8 3.5 6.8s3.5-4 3.5-6.8C10.5 2.8 8.5 1.5 7 1.5z" />
               </svg>
               <p className="text-[13px] text-ink/40 mb-4">
-                Tap the bookmark icon on any event to start tracking its consequence chain.
+                Nothing on watch yet. Bookmark any event to track its consequence chain
+                against your sites and regions.
               </p>
               <button
                 onClick={() => navigate("/world")}
