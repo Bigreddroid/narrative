@@ -14,7 +14,7 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from backend.api.routes.events import _evidence_state
+from backend.consequence_engine.evidence import state as _evidence_state
 
 passed = failed = 0
 
