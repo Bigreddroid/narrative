@@ -106,7 +106,32 @@ except Exception:
 # Importing the module also proves the @limiter.limit decorators on login/signup apply
 # cleanly at import time.
 from backend.api.routes import auth as _auth_mod  # noqa: E402
-ok("beta_accounts_enabled defaults to False (off in prod)", settings.beta_accounts_enabled is False)
+
+# Assert the CODE's default, not this machine's merged settings. The earlier version read
+# get_settings(), which loads .env — so every dev box that legitimately enables the shared
+# demo logins failed this test. A security check that is red in normal local work teaches
+# people to ignore it, which costs more than it protects. Build a production-like Settings
+# from scratch instead: no .env, and BETA_ACCOUNTS_ENABLED cleared from the process env so
+# the result reflects the declared default on any machine and in CI.
+import os  # noqa: E402
+import secrets as _secrets  # noqa: E402
+
+from backend.config import Settings  # noqa: E402
+
+ok("beta_accounts_enabled is declared False (secure-by-default in code)",
+   Settings.model_fields["beta_accounts_enabled"].default is False)
+
+_saved = os.environ.pop("BETA_ACCOUNTS_ENABLED", None)
+try:
+    _prod = Settings(_env_file=None, app_env="production", secret_key=_secrets.token_hex(32))
+finally:
+    if _saved is not None:
+        os.environ["BETA_ACCOUNTS_ENABLED"] = _saved
+
+# The property that actually matters: on a genuine deploy (production + a real SECRET_KEY)
+# both doors to the shared hardcoded logins are shut unless someone opts in explicitly.
+ok("prod settings: beta accounts off unless explicitly enabled", _prod.beta_accounts_enabled is False)
+ok("prod settings: dev backdoors (/dev-login, beta fallthrough) off", _prod.dev_features_allowed is False)
 ok("login + signup are registered routes", any(
     getattr(r, "path", "").endswith("/login") for r in _auth_mod.router.routes) and any(
     getattr(r, "path", "").endswith("/signup") for r in _auth_mod.router.routes))
