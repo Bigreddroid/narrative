@@ -12,6 +12,7 @@ MODULES=(
   backend.api.rate_limit_test
   backend.api.benchmark_route_test
   backend.api.imint_route_test
+  backend.api.calendar_route_test
   backend.api.spine_live_test
   backend.services.analyst_test
   backend.services.llm_test
@@ -48,6 +49,7 @@ MODULES=(
   scripts.benchmark_score_test
   scripts.external_benchmark_test
   scripts.publish_external_forecasts_test
+  scripts.published_register_test
   scripts.test_registration_test
 )
 

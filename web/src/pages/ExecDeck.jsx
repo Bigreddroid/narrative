@@ -1219,6 +1219,13 @@ export default function ExecDeck() {
                     layer is blank for those countries, not empty of holidays.
                   </span>
                 )}
+                {reg.holidayOmitted?.length > 0 && (
+                  <span style={{ color: "#E0A93C" }}>
+                    {" "}{reg.holidayOmitted.length} of the register's countries
+                    ({reg.holidayOmitted.join(", ")}) are past the calendar's per-request
+                    limit and were not fetched — blank here means not asked, not clear.
+                  </span>
+                )}
                 {" "}Public gatherings and festivals are not covered: there is no
                 keyless source for them, and we will not invent a list we cannot keep current.
               </p>
@@ -1281,6 +1288,20 @@ function LayerStrip({ contexts, appetite, onPick }) {
     return acc;
   }, [contexts, appetite]);
 
+  // 🔴 A zero layer has TWO causes and they are not interchangeable: nothing was
+  // found, or something was found and none of it scores yet. The holiday layer only
+  // reaches "watch" on the day itself (officeContext.holidayStatus), so with a live
+  // 43-country calendar the strip read "Nothing found across the estate" directly
+  // above a list of ten upcoming holidays. Same words, opposite meaning.
+  const nextHoliday = useMemo(() => {
+    let best = null;
+    for (const c of contexts) {
+      const h = c.holidays?.[0];
+      if (h && (!best || h.in_days < best.in_days)) best = h;
+    }
+    return best;
+  }, [contexts]);
+
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[#1C1C1C] mt-3">
       {rows.map((r) => {
@@ -1306,7 +1327,9 @@ function LayerStrip({ contexts, appetite, onPick }) {
                 ? r.evidence.title
                 : r.score > 0 && r.driver
                   ? `Highest at ${r.driver.name}`
-                  : "Nothing found across the estate"}
+                  : r.key === "holidays" && nextHoliday
+                    ? `None today — next is ${nextHoliday.name} in ${nextHoliday.in_days}d`
+                    : "Checked — nothing scoring across the estate"}
             </div>
             {r.driver && r.scope !== "organisation" && (
               <button type="button" onClick={() => onPick(r.driver.id)}

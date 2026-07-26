@@ -36,7 +36,7 @@ const REFRESH_MS = 600_000; // 10 min
 
 export default function useRegister({ fallbackSites = [], fallbackTrips = [], enabled = true } = {}) {
   const [state, setState] = useState({
-    sites: [], trips: [], audit: null, holidays: {}, countryCodes: {}, noHolidaySource: [],
+    sites: [], trips: [], audit: null, holidays: {}, countryCodes: {}, noHolidaySource: [], holidayOmitted: [],
     source: "loading", reason: null, status: null, error: null, fetchedAt: null,
   });
   const alive = useRef(true);
@@ -45,7 +45,8 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
     if (!enabled) {
       setState({
         sites: fallbackSites, trips: fallbackTrips, audit: null,
-        holidays: {}, countryCodes: {}, noHolidaySource: [], source: "sample", reason: "disabled", status: null, error: null, fetchedAt: new Date(),
+        holidays: {}, countryCodes: {}, noHolidaySource: [], holidayOmitted: [],
+        source: "sample", reason: "disabled", status: null, error: null, fetchedAt: new Date(),
       });
       return;
     }
@@ -74,9 +75,13 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
       // festivals are fixture data and stay behind the sample label. Curating a
       // festival list ourselves would be authoring content we cannot keep current,
       // and a stale gathering on a security calendar is worse than an absent one.
-      let holidays = {}, codes = {}, noCoverage = [];
+      let holidays = {}, codes = {}, noCoverage = [], omitted = [];
+      // 🔴 Not sliced. This used to send the first 20 countries, which silently cut
+      // 23 of the register's 43 the moment it stopped being a demo-sized list — and
+      // a country whose holiday layer was cut looks exactly like a country with no
+      // holidays. The server bounds the list instead, and returns what it dropped.
       const countries = [...new Set((s?.sites ?? [])
-        .map((x) => x.country).filter(Boolean))].slice(0, 20);
+        .map((x) => x.country).filter(Boolean))];
       if (countries.length) {
         try {
           const cal = await api.get(
@@ -88,10 +93,14 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
           // and the GCC). Carried through so the board can say so rather than
           // render an empty layer that reads as 'no holidays'.
           noCoverage = cal?.no_source_coverage ?? [];
+          // Countries the server's cap dropped. Carried for the same reason as
+          // noCoverage: a blank layer must always name its cause.
+          omitted = cal?.omitted ?? [];
         } catch {
           holidays = {};
           codes = {};
           noCoverage = [];
+          omitted = [];
         }
       }
 
@@ -102,6 +111,7 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
         holidays,
         countryCodes: codes,
         noHolidaySource: noCoverage,
+        holidayOmitted: omitted,
         // The audit travels with the register from the server, so the board can never
         // show the numbers without the caveats that qualify them.
         audit: s?.audit ?? null,
@@ -119,7 +129,8 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
         : "error";
       setState({
         sites: fallbackSites, trips: fallbackTrips, audit: null,
-        holidays: {}, countryCodes: {}, noHolidaySource: [], source: "sample", reason, status: st ?? null,
+        holidays: {}, countryCodes: {}, noHolidaySource: [], holidayOmitted: [],
+        source: "sample", reason, status: st ?? null,
         error: reason === "unauthenticated" ? "Sign in to load your site register"
           : reason === "no-organization" ? "No organization yet — showing the sample register"
           : reason === "unreachable" ? "Engine not answering"
