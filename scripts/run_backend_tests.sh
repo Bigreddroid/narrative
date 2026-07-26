@@ -35,6 +35,7 @@ MODULES=(
   backend.consequence_engine.importance_scorer_test
   backend.models.benchmark_ledger_test
   backend.workers.benchmark_worker_test
+  backend.workers.digest_worker_test
   backend.workers.external_resolution_worker_test
   backend.feeds.feeds_test
   backend.feeds.mastodon_osint_test

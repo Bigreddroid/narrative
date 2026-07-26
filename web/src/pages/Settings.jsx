@@ -151,6 +151,54 @@ export default function Settings() {
   const setPref = (key, value) =>
     setUser({ ...user, notification_preferences: { ...(user.notification_preferences || {}), [key]: value } });
 
+  // ── Email digest — a real subscription row, not a preference flag ───────────
+  // This toggle shipped writing to notification_preferences.email_digest, which NO
+  // backend code read. It looked like a feature and sent nothing, for months. It now
+  // creates and deletes an actual row in alert_subscriptions, and reports the send
+  // posture underneath, because "subscribed" while sending is disabled is the same
+  // lie in a new place.
+  const [digest, setDigest] = useState({ loading: true, sub: null, status: null, enabled: false });
+
+  useEffect(() => {
+    if (DEMO_MODE) { setDigest({ loading: false, sub: null, status: "Demo mode", enabled: false }); return; }
+    let alive = true;
+    api.get("/subscriptions")
+      .then((d) => {
+        if (!alive) return;
+        const mine = (d?.subscriptions || []).find(
+          (x) => x.channel === "email" && x.scope === "org" && x.user_id);
+        setDigest({ loading: false, sub: mine || null, status: d?.sending_status || null,
+                    enabled: Boolean(d?.sending_enabled) });
+      })
+      // 403 is the ordinary case for an account with no organization, not an error
+      // worth shouting about — the control simply explains why it is unavailable.
+      .catch((e) => alive && setDigest({
+        loading: false, sub: null, enabled: false,
+        status: e?.status === 403 ? "Available once your account belongs to an organization"
+          : "Could not read your subscriptions",
+      }));
+    return () => { alive = false; };
+  }, []);
+
+  const toggleDigest = async () => {
+    const prev = digest;
+    try {
+      if (digest.sub) {
+        // Optimistic, but reverted on failure — a toggle that flips and silently
+        // fails is how this control got its reputation in the first place.
+        setDigest({ ...digest, sub: null });
+        await api.delete(`/subscriptions/${digest.sub.id}`, { timeoutMs: 10000 });
+      } else {
+        const created = await api.post("/subscriptions",
+          { channel: "email", scope: "org", cadence: "daily", min_severity: "high" },
+          { timeoutMs: 10000 });
+        setDigest({ ...digest, sub: created });
+      }
+    } catch (e) {
+      setDigest({ ...prev, status: e?.message || "That did not save" });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-paper pb-20 md:pb-0">
       {/* Header */}
@@ -361,11 +409,45 @@ export default function Settings() {
                   )}
                 </div>
 
+                {/* Email digest lives outside the preference loop below because it is
+                    no longer a preference: it is a subscription row the digest worker
+                    reads. The status line under it is not decoration — a customer must
+                    be able to tell "subscribed and sending" from "subscribed, sending
+                    switched off", and only one of those results in mail. */}
+                <div className="flex items-center justify-between py-1">
+                  <div className="pr-4">
+                    <p className="text-sm text-ink">Email digest</p>
+                    <p className="text-[11px] text-ink/35">
+                      Daily summary of what we escalated for your sites — and what we held, with the reason
+                    </p>
+                    {digest.status && (
+                      <p className="text-[11px] mt-0.5"
+                        style={{ color: digest.enabled ? "rgba(26,26,26,0.35)" : "#C80028" }}>
+                        {digest.status}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={toggleDigest}
+                    disabled={digest.loading}
+                    aria-pressed={Boolean(digest.sub)}
+                    className="relative w-10 h-5 rounded-full transition-colors shrink-0 disabled:opacity-40"
+                    style={{ backgroundColor: digest.sub ? "#C80028" : "rgba(26,26,26,0.15)" }}
+                  >
+                    <span
+                      className="absolute top-0.5 w-4 h-4 rounded-full bg-paper transition-all"
+                      style={{ left: digest.sub ? "22px" : "2px" }}
+                    />
+                  </button>
+                </div>
+
                 {[
-                  { key: "event_alerts", label: "Event alerts", hint: "Notify me when a followed event escalates" },
-                  { key: "email_digest", label: "Email digest", hint: "Periodic summary of high-impact consequences" },
+                  { key: "event_alerts", label: "Event alerts", hint: "Notify me when a followed event escalates (mobile push)" },
                 ].map(({ key, label, hint }) => {
-                  const on = !!(user.notification_preferences || {})[key];
+                  // Unset means ON, matching alert_worker's default. Showing OFF while
+                  // the worker still sends would be the same disagreement between
+                  // control and behaviour that this whole section just fixed.
+                  const on = (user.notification_preferences || {})[key] !== false;
                   return (
                     <div key={key} className="flex items-center justify-between py-1">
                       <div className="pr-4">

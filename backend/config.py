@@ -74,11 +74,25 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_id: str = ""
 
-    # Email (cost alerts)
+    # Email (cost alerts, and — behind the flag below — customer digests)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
+
+    # 🔴 THE MASTER SWITCH FOR SENDING MAIL TO REAL PEOPLE. Defaults to False and
+    # must stay that way, for the same reason benchmark_publish_enabled exists (see
+    # below) but with a worse failure mode: local Docker AND Railway both run a
+    # scheduler, and this repo has no leader election of any kind. With the flag off,
+    # the digest worker still assembles and logs everything — it simply records the
+    # deliveries as `suppressed` instead of sending. Turn it on for exactly ONE host.
+    email_send_enabled: bool = False
+    # No hardcoded sender. cost_alert.py hardcodes alerts@thenarrative.io at :32,
+    # which cannot be right for two deployments and a local catcher.
+    email_from_address: str = ""
+    # Where an unsubscribe link points. Empty means the digest says who to contact
+    # instead of rendering a link that 404s.
+    public_base_url: str = ""
 
     # Notifications
     firebase_service_account_json: str = ""
@@ -135,6 +149,12 @@ class Settings(BaseSettings):
     graph_interval_hours: int = 1
     evolution_interval_hours: int = 1
     alert_interval_minutes: int = 10
+    # Digest assembly. Runs hourly and decides for itself which subscriptions are due
+    # (daily at/after the send hour, weekly on Monday), because a worker whose cadence
+    # IS the customer's cadence cannot recover from a missed tick — a scheduler restart
+    # at the wrong minute would simply skip a day's digest with nothing to show for it.
+    digest_interval_minutes: int = 60
+    digest_send_hour_utc: int = 7
     # feed rebuild is now minute-based (was hourly) so newly ingested events
     # surface in the feed within ~10 min instead of up to an hour.
     feed_rebuild_interval_minutes: int = 10
