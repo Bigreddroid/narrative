@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query
 
 from backend.api.dependencies import UserDep
 from backend.countries import to_iso2
+from backend.feeds.gatherings import fetch_gatherings
 from backend.feeds.holidays import fetch_holidays, upcoming
 
 router = APIRouter(prefix="/context", tags=["context"])
@@ -93,8 +94,17 @@ async def get_calendar(
         if not had_data:
             no_data.append(code)
         out[code] = up
+    # Public gatherings, keyless from Wikidata. This layer used to be absent with the
+    # deck stating outright that no keyless source existed — which was measured to be
+    # untrue (see backend/feeds/gatherings.py). `gatherings_checked` distinguishes "we
+    # asked and there is nothing near you" from "we never asked", because the deck
+    # renders those two identically and only one of them is honest.
+    gatherings = await fetch_gatherings(days=days)
     return {
         "holidays": out,
+        "gatherings": gatherings or [],
+        # None means the source could not be reached; [] means it answered "nothing".
+        "gatherings_checked": gatherings is not None,
         "no_source_coverage": no_data,
         # Countries the CAP dropped, as opposed to ones the source does not cover.
         "omitted": omitted,
