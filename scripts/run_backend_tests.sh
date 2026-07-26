@@ -12,12 +12,14 @@ MODULES=(
   backend.api.rate_limit_test
   backend.api.benchmark_route_test
   backend.api.imint_route_test
+  backend.api.spine_live_test
   backend.services.analyst_test
   backend.services.llm_test
   backend.services.imint_test
   backend.services.imint_event_test
   backend.services.geolocate_test
   backend.services.source_reliability_test
+  backend.services.registry_audit_test
   backend.services.operator_test
   backend.services.reasoner_test
   backend.services.osint_extract_test
@@ -33,11 +35,13 @@ MODULES=(
   backend.consequence_engine.importance_scorer_test
   backend.models.benchmark_ledger_test
   backend.workers.benchmark_worker_test
+  backend.workers.digest_worker_test
   backend.workers.external_resolution_worker_test
   backend.feeds.feeds_test
   backend.feeds.mastodon_osint_test
   backend.feeds.weather_global_test
   backend.feeds.holidays_test
+  backend.feeds.advisories_test
   scripts.backfill_prediction_outcomes_test
   scripts.validate_calibration_test
   scripts.benchmark_score_test

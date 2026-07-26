@@ -100,6 +100,16 @@ async def run_alert_worker() -> dict:
                 if user.tier == "free":
                     continue
 
+                # Honour the "Event alerts" switch in Settings. It has been on screen
+                # since before this check existed, writing to notification_preferences
+                # while NOTHING read the column — so turning it off did nothing and the
+                # alerts kept arriving. A preference control that the sender ignores is
+                # worse than no control at all. Default ON when unset: existing users
+                # opted in by following the event, and a silent opt-OUT would drop
+                # alerts people are relying on.
+                if (user.notification_preferences or {}).get("event_alerts", True) is False:
+                    continue
+
                 try:
                     payload = {
                         "event_id": str(event_id),

@@ -8,6 +8,7 @@ from datetime import date
 from fastapi import APIRouter, Query
 
 from backend.api.dependencies import UserDep
+from backend.countries import to_iso2
 from backend.feeds.holidays import fetch_holidays, upcoming
 
 router = APIRouter(prefix="/context", tags=["context"])
@@ -37,13 +38,47 @@ async def get_calendar(
 ) -> dict:
     """Upcoming public holidays per country within the look-ahead window. Keyed by
     ISO code so the deck can attach a holiday to each office by its country."""
-    codes = [c.strip().upper() for c in countries.split(",") if c.strip()][:20]
+    # Accepts NAMES as well as codes. A site register stores "United Arab Emirates",
+    # not "AE", so requiring codes would have pushed a country→ISO table into the
+    # browser bundle — a second copy to drift out of step with backend/countries.py.
+    codes: list[str] = []
+    resolved: dict[str, str] = {}
+    unresolved: list[str] = []
+    for raw in [c.strip() for c in countries.split(",") if c.strip()][:40]:
+        iso = to_iso2(raw)
+        if not iso:
+            unresolved.append(raw)
+            continue
+        resolved[raw] = iso
+        if iso not in codes:
+            codes.append(iso)
+    codes = codes[:20]
+
     today = date.today()
     out: dict[str, list] = {}
+    # 🔴 Countries the SOURCE does not cover at all. Nager.Date returns 204 for India
+    # and the GCC — the customer's largest markets. Without this list a country with
+    # no coverage is indistinguishable from a country with no holidays in the window,
+    # and a security calendar that silently omits Diwali because of an upstream gap is
+    # worse than one that says "we have no holiday source for India".
+    no_data: list[str] = []
     for code in codes:
-        up = upcoming(await _holidays_cached(code, today.year), days, today)
+        year_all = await _holidays_cached(code, today.year)
+        if not year_all:
+            no_data.append(code)
+        up = upcoming(year_all, days, today)
         # A window crossing Dec 31 needs next year's calendar too (e.g. New Year's Day).
         if today.month == 12:
             up += upcoming(await _holidays_cached(code, today.year + 1), days, today)
         out[code] = up
-    return {"holidays": out, "as_of": today.isoformat(), "window_days": days}
+    return {
+        "holidays": out,
+        "no_source_coverage": no_data,
+        # The name→ISO map the caller needs to attach a holiday to each site, and the
+        # names we could NOT resolve. A country silently missing its holiday layer
+        # looks identical to a country with no holidays, and only one of those is true.
+        "codes": resolved,
+        "unresolved": unresolved,
+        "as_of": today.isoformat(),
+        "window_days": days,
+    }

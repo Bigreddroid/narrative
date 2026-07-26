@@ -59,6 +59,8 @@ async def main():
     from backend.workers.hazard_ingest_worker import run_hazard_ingest_worker
     from backend.workers.market_ingest_worker import run_market_ingest_worker
     from backend.workers.osint_ingest_worker import run_osint_ingest_worker
+    from backend.workers.digest_worker import run_digest_worker
+    from backend.workers.advisory_worker import run_advisory_worker
 
     tasks = [
         asyncio.create_task(
@@ -112,6 +114,16 @@ async def main():
         ),
         asyncio.create_task(
             _run_with_interval("osint_ingest_worker", run_osint_ingest_worker, s.osint_ingest_interval_minutes * 60)
+        ),
+        # Safe to run on every host: with EMAIL_SEND_ENABLED unset (the default) it
+        # assembles and logs but sends nothing. Turn it on for exactly ONE stack —
+        # local Docker and Railway both run this scheduler and there is no leader
+        # election, so two enabled hosts means every recipient gets two copies.
+        asyncio.create_task(
+            _run_with_interval("digest_worker", run_digest_worker, s.digest_interval_minutes * 60)
+        ),
+        asyncio.create_task(
+            _run_with_interval("advisory_worker", run_advisory_worker, s.advisory_interval_hours * 3600)
         ),
     ]
 

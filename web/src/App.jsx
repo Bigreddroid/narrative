@@ -25,6 +25,7 @@ const Benchmark = lazy(() => import("./pages/Benchmark.jsx"));
 // (/wipro), intentionally not in the nav. Next tenant = another config + route.
 const CustomerDeck = lazy(() => import("./pages/CustomerDeck.jsx"));
 const ExecDeck = lazy(() => import("./pages/ExecDeck.jsx"));
+const Advice = lazy(() => import("./pages/Advice.jsx"));
 const SignalBoard = lazy(() => import("./pages/SignalBoard.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
 const PipelineMonitor = lazy(() => import("./admin/PipelineMonitor.jsx"));
@@ -95,6 +96,7 @@ export default function App() {
             analyst board at /wipro is deliberately untouched — two personas, two
             altitudes. Runs on a sample dataset until the real site list lands. */}
         <Route path="/wipro/exec"      element={<PrivateRoute><ExecDeck /></PrivateRoute>} />
+        <Route path="/advice"          element={<PrivateRoute><Advice /></PrivateRoute>} />
         {/* The TweetDeck-style operator board, full viewport. Lived in a 600px box
             at the bottom of /wipro; it earns its own room. Needs the backend. */}
         <Route path="/deck"            element={<PrivateRoute><SignalBoard /></PrivateRoute>} />
