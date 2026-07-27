@@ -40,6 +40,7 @@ MODULES=(
   backend.workers.benchmark_worker_test
   backend.workers.digest_worker_test
   backend.workers.external_resolution_worker_test
+  backend.taxonomy_test
   backend.scrapers.engine_test
   backend.feeds.feeds_test
   backend.feeds.gnews_resolve_test
