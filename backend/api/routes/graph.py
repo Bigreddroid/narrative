@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import or_, select
 
 from backend.api.dependencies import DbDep, UserDep
+from backend.consequence_engine import evidence as ev
 from backend.models.event_connection import EventConnection
 from backend.models.narrative_event import NarrativeEvent
 
@@ -30,6 +31,12 @@ async def get_world_graph(
         select(NarrativeEvent)
         .where(NarrativeEvent.is_mapped == True)
         .where(NarrativeEvent.merged_into_id.is_(None))  # hide near-duplicates folded into a canonical event
+        # The map took the merge gate but never the evidence gate, and it is ranked
+        # by importance — exactly the ordering severed events skew into. Measured on
+        # the live corpus, 2,174 of the 4,177 rows behind this predicate (52%) were
+        # severed: an article-derived event whose articles are gone. Every one of
+        # them was a dot on the world map that opened to nothing.
+        .where(ev.evidenced())
         .where(NarrativeEvent.geo_centroid_lat.isnot(None))
         .where(NarrativeEvent.geo_centroid_lng.isnot(None))
         .order_by(NarrativeEvent.global_importance_score.desc())
@@ -116,8 +123,16 @@ async def get_event_graph(
         connected_ids.add(c.event_b_id)
     connected_ids.discard(event_id)
 
+    # The connection table is built over the whole corpus, so an edge can point at
+    # a severed event or at a duplicate that was later folded into a canonical one.
+    # This is the consequence chain — the surface whose entire claim is that every
+    # node opens to its evidence — so a node that opens to nothing does more damage
+    # here than anywhere else on the board.
     connected_events_result = await db.execute(
-        select(NarrativeEvent).where(NarrativeEvent.id.in_(connected_ids))
+        select(NarrativeEvent)
+        .where(NarrativeEvent.id.in_(connected_ids))
+        .where(NarrativeEvent.merged_into_id.is_(None))
+        .where(ev.evidenced())
     )
     connected_events = connected_events_result.scalars().all()
 
