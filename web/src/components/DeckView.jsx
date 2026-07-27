@@ -178,9 +178,13 @@ function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowi
         <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: C.fg80 }}>
           {column.title}
         </span>
+        {/* A count is a claim. While the column is still loading, or after its query
+            failed, we do not KNOW the count — printing "0" there states a fact about
+            the world that we have not established. */}
         <span className="text-[9px] font-mono tabular-nums px-1.5 py-px rounded-sm"
-          style={{ color: C.fg50, backgroundColor: "rgba(240,237,232,0.06)" }}>
-          {events.length}
+          style={{ color: error ? "#E0A93C" : C.fg50, backgroundColor: "rgba(240,237,232,0.06)" }}
+          title={loading ? "Still loading" : error ? "This column could not be loaded" : undefined}>
+          {loading ? "…" : error ? "—" : events.length}
         </span>
         {column.pinned ? (
           <span className="ml-auto text-[8px] font-mono uppercase tracking-widest" style={{ color: C.crimson }}>◆ You</span>

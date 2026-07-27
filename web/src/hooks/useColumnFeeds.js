@@ -34,7 +34,6 @@ export function useColumnFeeds(columns, { limit = 100 } = {}) {
   const signature = [...new Set(keys)].sort().join("|");
 
   useEffect(() => {
-    let cancelled = false;
     const wanted = [...new Set(signature ? signature.split("|") : [])];
 
     for (const key of wanted) {
@@ -49,18 +48,22 @@ export function useColumnFeeds(columns, { limit = 100 } = {}) {
       // "nothing matches" — the exact lie this hook exists to remove.
       api.get(`/events/?${q}`, { timeoutMs: 12000 })
         .then((data) => {
-          if (cancelled) return;
           const raw = Array.isArray(data) ? data : data?.events || [];
           setByKey((m) => ({ ...m, [key]: { events: raw, loading: false, error: null } }));
         })
         .catch((err) => {
-          if (cancelled) return;
           // An error must NOT leave an empty list that renders as a real zero.
           setByKey((m) => ({ ...m, [key]: { events: [], loading: false, error: err } }));
         })
         .finally(() => { inFlight.current.delete(key); });
     }
-    return () => { cancelled = true; };
+    // NO per-run "cancelled" flag, deliberately. StrictMode double-invokes effects:
+    // run #1 starts the fetches and registers them in inFlight, cleanup marks that
+    // run cancelled, run #2 sees the keys already in flight and skips — then run #1's
+    // results arrive and a cancelled-guard would DISCARD them, with nothing left to
+    // refetch. Every column stuck on "Loading…" forever, over an API answering 200.
+    // Results are keyed by the FILTER, not by a component instance, so a late result
+    // is still the right answer for that key and is safe to keep.
   }, [signature, limit]);
 
   return byKey;
