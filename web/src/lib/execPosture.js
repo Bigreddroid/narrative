@@ -428,7 +428,9 @@ export function forward(contexts = [], opts = {}) {
       if (s == null) continue;
       const inDays = Math.floor((s - t0) / dayMs);
       if (inDays >= 0 && inDays <= windowDays) {
-        add(f.startISO, f.name, "festival", c.office, inDays);
+        // The gathering's own kind, not a blanket "festival" — the board was
+        // calling a stadium fixture and a trade fair the same thing.
+        add(f.startISO, f.name, f.kind || "festival", c.office, inDays);
       }
     }
   }

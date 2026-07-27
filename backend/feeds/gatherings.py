@@ -40,17 +40,94 @@ USER_AGENT = "the-narrative-osint/0.2 (+https://thenarrative.io)"
 
 # Event classes worth treating as a mass gathering. Deliberately narrow: these are
 # the classes whose members reliably carry a date AND a venue.
+#
+# The set was widened after measuring, not guessing. Counting DISTINCT items that
+# carry both a forward date (90d) and a resolvable coordinate, per class:
+#
+#     concert            Q182832      65
+#     trade fair         Q57305        3
+#     music festival     Q868557       2
+#     wedding            Q49836        0
+#     state funeral      Q1052001      0
+#     demonstration      Q175331       0
+#     strike             Q49776        0
+#     marathon           Q40244        0
+#     pilgrimage         Q1644573      0
+#     rally              Q19609158     0
+#     political rally    Q110455182    0
+#     concert tour       Q1573906      0
+#
+# So the disruptive-but-unscheduled classes — a celebrity wedding, a protest, a
+# strike, a marathon — are NOT available here. Wikidata records those after the
+# fact, not as forward-dated located events, and adding their QIDs would have
+# bought a longer class list and zero extra rows. They are left out rather than
+# listed to look thorough; if they are wanted they need a different source, not a
+# wider SPARQL query.
+# wd:Q1656682 ("event") was dropped, not forgotten. It is the superclass of very
+# nearly everything, so P279* over it is the walk that makes Wikidata give up: it
+# returned 502/504 on every attempt, contributed zero rows, and cost ~50s of latency
+# per refresh while doing it. Every useful member is reachable through the specific
+# classes below.
 _CLASSES = (
     "wd:Q132241",    # festival
-    "wd:Q1656682",   # event
     "wd:Q13406554",  # sports competition
     "wd:Q464980",    # sporting event / tournament edition
     "wd:Q27968055",  # recurrent event edition
+    "wd:Q182832",    # concert            — measured +65
+    "wd:Q868557",    # music festival     — measured +2
+    "wd:Q57305",     # trade fair         — measured +3
 )
 
+# Matched class -> the word the board shows. Ordered most specific first: an item is
+# usually an instance of several of these (a music festival is also a festival, which
+# is also an event), and the deck was calling a baseball fixture a "festival" because
+# whichever binding arrived first won. Lower index wins.
+_KINDS = (
+    ("Q182832", "concert"),
+    ("Q868557", "music festival"),
+    ("Q57305", "trade fair"),
+    ("Q13406554", "sport"),
+    ("Q464980", "sport"),
+    ("Q132241", "festival"),
+    ("Q27968055", "event"),
+    ("Q1656682", "event"),
+)
+_KIND_RANK = {qid: i for i, (qid, _) in enumerate(_KINDS)}
+_KIND_LABEL = dict(_KINDS)
+
+# Rank by the LABEL too, for merging rows that came back from separate per-class
+# queries. Labels repeat ("sport" appears twice), so the first — most specific —
+# occurrence wins.
+_LABEL_RANK: dict[str, int] = {}
+for _i, (_q, _lab) in enumerate(_KINDS):
+    _LABEL_RANK.setdefault(_lab, _i)
+
+
+def label_rank(kind: str | None) -> int:
+    """Specificity of a kind label; unknown sorts last."""
+    return _LABEL_RANK.get(kind or "", len(_KINDS))
+
+
+def classify(cls_uri: str | None) -> tuple[int, str]:
+    """Wikidata class URI -> (specificity rank, label). Unknown sorts last as 'event'."""
+    qid = (cls_uri or "").rsplit("/", 1)[-1]
+    if qid in _KIND_RANK:
+        return _KIND_RANK[qid], _KIND_LABEL[qid]
+    return len(_KINDS), "event"
+
+# ONE class per query, fanned out concurrently — NOT a single VALUES block over all
+# of them. Measured: the combined query 504s at Wikidata after ~65s, and it does so on
+# the ORIGINAL five classes too, so this layer was already dead in production and the
+# deck was honestly reporting "not checked" over a source that could never answer.
+# The subclass walk (P279*) is the expensive part and its cost compounds when several
+# large trees are unioned; each class on its own returns comfortably.
+#
+# Splitting also fixes the bias the module docstring admitted to. With one shared
+# LIMIT, sport crowded everything else out because it simply had the most rows; a
+# per-class limit means a concert cannot be pushed off the board by a fixture list.
 _QUERY = """
-SELECT ?item ?itemLabel ?coord ?countryLabel ?start WHERE {{
-  VALUES ?cls {{ {classes} }}
+SELECT ?item ?itemLabel ?coord ?countryLabel ?start ?cls WHERE {{
+  VALUES ?cls {{ {cls} }}
   ?item wdt:P31/wdt:P279* ?cls .
   ?item wdt:P580|wdt:P585 ?start .
   FILTER(?start >= "{start}"^^xsd:dateTime && ?start <= "{end}"^^xsd:dateTime)
@@ -64,11 +141,12 @@ LIMIT {limit}
 """
 
 
-def build_query(days: int, limit: int, now: datetime | None = None) -> str:
+def build_query(days: int, limit: int, now: datetime | None = None,
+                cls: str = "wd:Q13406554") -> str:
     now = now or datetime.now(timezone.utc)
     end = now + timedelta(days=days)
     return _QUERY.format(
-        classes=" ".join(_CLASSES),
+        cls=cls,
         start=now.strftime("%Y-%m-%dT00:00:00Z"),
         end=end.strftime("%Y-%m-%dT00:00:00Z"),
         limit=limit,
@@ -99,6 +177,7 @@ def parse_response(payload: dict) -> list[dict]:
     except (KeyError, TypeError):
         return []
     seen: dict[tuple[str, str], dict] = {}
+    rank: dict[tuple[str, str], int] = {}
     for b in rows:
         name = (b.get("itemLabel", {}).get("value") or "").strip()
         start = (b.get("start", {}).get("value") or "")[:10]
@@ -110,14 +189,22 @@ def parse_response(payload: dict) -> list[dict]:
         if name.startswith("Q") and name[1:].isdigit():
             continue
         key = (name.lower(), start)
+        cls_rank, kind = classify(b.get("cls", {}).get("value"))
         if key in seen:
+            # Same event, different class binding. Keep the most specific label rather
+            # than whichever row Wikidata happened to return first.
+            if cls_rank < rank[key]:
+                seen[key]["kind"] = kind
+                rank[key] = cls_rank
             continue
+        rank[key] = cls_rank
         seen[key] = {
             "name": name,
             "date": start,
             "lat": point[0],
             "lng": point[1],
             "country": (b.get("countryLabel", {}).get("value") or "").strip() or None,
+            "kind": kind,
             "source": "wikidata",
         }
     return sorted(seen.values(), key=lambda g: (g["date"], g["name"]))
@@ -201,19 +288,56 @@ async def fetch_gatherings(days: int = 60, limit: int = 300) -> list[dict] | Non
     if hit is not None:
         return hit
 
-    query = build_query(days, limit)
+    # Per-class limit. The old single LIMIT was a global budget the biggest class ate.
+    per_class = max(20, limit // len(_CLASSES))
+
+    async def one(client, cls: str) -> list[dict] | None:
+        """Rows for a single class, or None if THIS class could not be answered."""
+        try:
+            resp = await client.get(ENDPOINT, params={
+                "query": build_query(days, per_class, cls=cls), "format": "json",
+            })
+            if resp.status_code >= 400:
+                logger.warning("gatherings: wikidata returned %s for %s", resp.status_code, cls)
+                return None
+            return parse_response(resp.json())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gatherings: %s failed (%s): %s", cls, type(exc).__name__, exc)
+            return None
+
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True, headers={
             "User-Agent": USER_AGENT,
             "Accept": "application/sparql-results+json",
         }) as client:
-            resp = await client.get(ENDPOINT, params={"query": query, "format": "json"})
-            if resp.status_code >= 400:
-                logger.warning("gatherings: wikidata returned %s", resp.status_code)
-                return None
-            out = parse_response(resp.json())
+            results = await asyncio.gather(*(one(client, c) for c in _CLASSES))
     except Exception as exc:  # noqa: BLE001 — a missing layer must never sink the page
         logger.warning("gatherings: fetch failed (%s): %s", type(exc).__name__, exc)
         return None
+
+    # Every class failed -> we did not check. Distinct from "checked, found nothing",
+    # which is what an empty list means and is a legitimate answer.
+    if all(r is None for r in results):
+        logger.warning("gatherings: every class failed; reporting NOT CHECKED")
+        return None
+
+    failed = [c for c, r in zip(_CLASSES, results) if r is None]
+    if failed:
+        # Partial answers are still worth showing, but not silently: a half-checked
+        # layer that looks fully checked is the failure mode this module exists to
+        # avoid, so the gap is logged rather than smoothed over.
+        logger.warning("gatherings: %d of %d classes failed (%s); result is partial",
+                       len(failed), len(_CLASSES), ", ".join(failed))
+
+    merged: dict[tuple[str, str], dict] = {}
+    for rows in results:
+        for gth in rows or []:
+            key = (gth["name"].lower(), gth["date"])
+            prev = merged.get(key)
+            # Same event reached through two class queries — keep the more specific
+            # label, matching the rule parse_response applies within one response.
+            if prev is None or label_rank(gth["kind"]) < label_rank(prev["kind"]):
+                merged[key] = gth
+    out = sorted(merged.values(), key=lambda g: (g["date"], g["name"]))
     _CACHE[days] = (time.time(), out)
     return out

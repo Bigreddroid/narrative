@@ -1482,7 +1482,21 @@ function CalendarGrid({ ahead, trips, today, onOpenSite }) {
     });
   }, [ahead, trips, today]);
 
-  const KIND = { holiday: "#E0A93C", festival: "#FF5C43", trip: "#5FBF74" };
+  // One colour per kind of crowd. These are CATEGORY hues, not severity — severity
+  // is carried by the site's own level elsewhere on the board — so they are free to
+  // be distinct without colliding with the alert/watch/clear scale. The legend below
+  // renders from this map, so a new kind cannot appear on the grid without also
+  // appearing in the key.
+  const KIND = {
+    holiday: "#E0A93C",
+    festival: "#FF5C43",
+    "music festival": "#FF8A6E",
+    concert: "#B08BC7",
+    sport: "#6C9BD1",
+    "trade fair": "#9C8F7A",
+    event: "#7A7469",
+    trip: "#5FBF74",
+  };
   const todayISO = today.toISOString().slice(0, 10);
 
   // The detail used to be a native `title` on a 6px dot: ~1s delay, invisible on

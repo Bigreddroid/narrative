@@ -57,6 +57,9 @@ function toGatherings(rows) {
       startISO: g.date,
       endISO: g.date,
       routine: true,
+      // What this crowd actually IS — concert, sport, trade fair — rather than the
+      // blanket "festival" the calendar used to print over a baseball fixture.
+      kind: g.kind || "festival",
       source: g.source || "wikidata",
     }));
 }

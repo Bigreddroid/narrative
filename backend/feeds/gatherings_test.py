@@ -17,12 +17,17 @@ def ok(label, cond):
         print(f"  FAIL {label}")
 
 
-def _row(name, start, point, country="India"):
+WD = "http://www.wikidata.org/entity/"
+
+
+def _row(name, start, point, country="India", cls="Q13406554"):
     r = {"itemLabel": {"value": name}, "start": {"value": start}}
     if point:
         r["coord"] = {"value": point}
     if country:
         r["countryLabel"] = {"value": country}
+    if cls:
+        r["cls"] = {"value": WD + cls}
     return r
 
 
@@ -36,6 +41,9 @@ PAYLOAD = {"results": {"bindings": [
          "Point(17.243055555 40.471111111)", "Italy"),
     _row("no coordinate event", "2026-08-30T00:00:00Z", None),
     _row("Q12345678", "2026-08-30T00:00:00Z", "Point(1.0 2.0)"),
+    # a concert -- the class that measurement showed actually carries forward dates
+    _row("Some Band at Wembley", "2026-08-19T00:00:00Z",
+         "Point(-0.279444 51.556111)", "United Kingdom", cls="Q182832"),
 ]}}
 
 
@@ -61,6 +69,28 @@ ok("results are ordered by date", [x["date"] for x in out] == sorted(x["date"] f
 ok("Delhi gathering keeps its real coordinates",
    any(abs(x["lat"] - 28.6138) < 0.01 and abs(x["lng"] - 77.2089) < 0.01 for x in out))
 
+# -- kind: the deck called a baseball fixture a "festival" ---------------------
+ok("every gathering carries a kind", all(x.get("kind") for x in out))
+ok("a sports competition is labelled sport, not festival",
+   next(x for x in out if x["name"].startswith("2026 Badminton"))["kind"] == "sport")
+ok("a concert is labelled concert",
+   next(x for x in out if x["name"] == "Some Band at Wembley")["kind"] == "concert")
+ok("an unknown class degrades to 'event' rather than raising",
+   g.classify("http://www.wikidata.org/entity/Q999999999")[1] == "event"
+   and g.classify(None)[1] == "event")
+
+# The same item arrives once per class binding; the most SPECIFIC label must win
+# regardless of which order Wikidata returned them in.
+_mixed = {"results": {"bindings": [
+    _row("Glastonbury 2026", "2026-08-05T00:00:00Z", "Point(-2.58 51.15)", cls="Q1656682"),
+    _row("Glastonbury 2026", "2026-08-05T00:00:00Z", "Point(-2.58 51.15)", cls="Q868557"),
+    _row("Reading 2026", "2026-08-06T00:00:00Z", "Point(-0.97 51.45)", cls="Q868557"),
+    _row("Reading 2026", "2026-08-06T00:00:00Z", "Point(-0.97 51.45)", cls="Q1656682"),
+]}}
+_m = {x["name"]: x["kind"] for x in g.parse_response(_mixed)}
+ok("the most specific class wins whichever binding arrives first",
+   _m["Glastonbury 2026"] == "music festival" and _m["Reading 2026"] == "music festival")
+
 # ── degradation ──────────────────────────────────────────────────────────────
 ok("a shape we do not recognise yields [] rather than raising",
    g.parse_response({}) == [] and g.parse_response({"results": {}}) == []
@@ -72,6 +102,16 @@ ok("the window starts today", "2026-07-27T00:00:00Z" in q)
 ok("the window ends `days` later", "2026-09-25T00:00:00Z" in q)
 ok("the query asks for a location hop, not just a direct coordinate",
    "wdt:P276" in q and "wdt:P1001" in q and "wdt:P625" in q)
+ok("the query selects the matched class, so a row can be labelled", "?cls" in q)
+ok("the measured-productive classes are queried (concert, music festival, trade fair)",
+   {"wd:Q182832", "wd:Q868557", "wd:Q57305"} <= set(g._CLASSES))
+# One class per query, never a VALUES block over all of them: the combined form 504s
+# at Wikidata (measured on the ORIGINAL five classes too), which killed the layer.
+ok("each query carries exactly ONE class, so the subclass walk stays answerable",
+   all(sum(other in g.build_query(60, 20, cls=c) for other in g._CLASSES) == 1
+       for c in g._CLASSES))
+ok("build_query targets the class it is given",
+   "wd:Q182832" in g.build_query(60, 20, cls="wd:Q182832"))
 ok("the limit is applied", "LIMIT 300" in q)
 
 # ── failure is not emptiness ─────────────────────────────────────────────────
