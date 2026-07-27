@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -32,6 +32,36 @@ def is_scrapeable(source: Source) -> bool:
     if method in ("bs4", "playwright"):
         return bool((source.url or "").strip())
     return False
+
+
+# A feed that has failed this many consecutive cycles is treated as dead for now.
+# 19 of 118 feeds are currently in that state (Reuters retired public RSS, several
+# publishers 403 every request), and each one costs a full HTTP timeout on every run —
+# roughly 9 minutes of the cycle spent re-confirming what we already know.
+QUARANTINE_AFTER = 8
+# ...but it is NEVER retired permanently. Publishers move feeds and come back, and a
+# source silently dropped from the work list is exactly the failure this module was
+# just fixed for. After this long it gets probed again; one success resets the streak
+# to 0 (see scrape_source) and the feed rejoins the rotation on its own.
+QUARANTINE_RETRY_HOURS = 24
+
+
+def is_quarantined(source, now: datetime | None = None) -> bool:
+    """True when a persistently-failing feed should be skipped THIS cycle.
+
+    Quarantine is a scheduling decision, not a retirement: the row stays active and
+    its scrape_error_count stays on the record, so GET /admin/sources still reports
+    it as a failing feed rather than it quietly vanishing.
+    """
+    if (source.scrape_error_count or 0) < QUARANTINE_AFTER:
+        return False
+    last = source.last_scraped_at
+    if last is None:
+        return False                      # never attempted — always worth one try
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    return (now - last) < timedelta(hours=QUARANTINE_RETRY_HOURS)
 
 
 def scrapeable_clause():

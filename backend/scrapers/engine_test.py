@@ -177,5 +177,39 @@ _r = _with_client(_Resp(200, "<rss><channel></channel></rss>"),
 ok("a reachable feed with no items returns [] — a real answer, not a failure",
    _r == [])
 
+# ── quarantine: skip a dead feed for a day, but never retire it silently ─────
+# 19 of 118 feeds are dead; each costs a full HTTP timeout every cycle (~9 min a run
+# spent re-confirming what we already know). Quarantine is a SCHEDULING decision — the
+# row stays active and keeps its error count, so /admin/sources still reports it as a
+# failing feed rather than it quietly vanishing from the register.
+from datetime import timedelta  # noqa: E402
+
+NOW = datetime(2026, 7, 28, 12, 0, tzinfo=timezone.utc)
+
+s = _source(scrape_error_count=e.QUARANTINE_AFTER, last_scraped_at=NOW - timedelta(hours=1))
+ok("a feed past the failure bar is skipped this cycle", e.is_quarantined(s, NOW) is True)
+
+s = _source(scrape_error_count=e.QUARANTINE_AFTER - 1, last_scraped_at=NOW - timedelta(hours=1))
+ok("a feed below the bar is still attempted", e.is_quarantined(s, NOW) is False)
+
+s = _source(scrape_error_count=99,
+            last_scraped_at=NOW - timedelta(hours=e.QUARANTINE_RETRY_HOURS + 1))
+ok("quarantine EXPIRES, so a publisher that moved its feed is found again",
+   e.is_quarantined(s, NOW) is False)
+
+s = _source(scrape_error_count=99, last_scraped_at=None)
+ok("a never-attempted feed is never quarantined", e.is_quarantined(s, NOW) is False)
+
+s = _source(scrape_error_count=99,
+            last_scraped_at=NOW.replace(tzinfo=None) - timedelta(hours=1))
+ok("a naive stored timestamp does not raise against an aware now",
+   e.is_quarantined(s, NOW) is True)
+
+# Recovery is automatic: scrape_source zeroes the streak on any successful read.
+s = _source(scrape_error_count=99, last_scraped_at=NOW - timedelta(hours=1))
+asyncio.run(_run(s, [_article()]))
+ok("one good read clears the streak, releasing the feed from quarantine",
+   s.scrape_error_count == 0 and e.is_quarantined(s, NOW) is False)
+
 print(f"\nscraper engine: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

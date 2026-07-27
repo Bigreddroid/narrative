@@ -16,7 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import AsyncSessionLocal
 from backend.models.pipeline_metrics import PipelineMetric
 from backend.models.source import Source
-from backend.scrapers.engine import scrape_source, scrapeable_clause, seed_sources
+from backend.scrapers.engine import (
+    is_quarantined,
+    scrape_source,
+    scrapeable_clause,
+    seed_sources,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +52,15 @@ async def run_scrape_worker() -> dict:
         )
         not_feeds = skipped_result.scalar() or 0
 
+        quarantined = 0
         for source in sources:
+            # Persistently dead feeds are skipped for a day rather than re-timing-out
+            # every cycle. They stay active and keep their error count, so they are
+            # still reported as failing — this is scheduling, not retirement.
+            if is_quarantined(source):
+                quarantined += 1
+                continue
+
             # A feed that cannot be READ no longer raises — fetch_rss returns None and
             # scrape_source records the failure on the row. Counting only exceptions
             # therefore reported errors=0 on a run where 20 of 118 feeds were dead,
@@ -81,16 +94,18 @@ async def run_scrape_worker() -> dict:
 
     logger.info(
         "Scrape worker done: feeds=%d scraped=%d new=%d errors=%d "
-        "not_feeds_skipped=%d duration=%.1fs",
+        "quarantined=%d not_feeds_skipped=%d duration=%.1fs",
         len(sources),
         total_scraped,
         total_new,
         errors,
+        quarantined,
         not_feeds,
         duration,
     )
     return {"scraped": total_scraped, "new": total_new, "errors": errors,
-            "feeds": len(sources), "not_feeds_skipped": not_feeds}
+            "feeds": len(sources), "quarantined": quarantined,
+            "not_feeds_skipped": not_feeds}
 
 
 if __name__ == "__main__":
