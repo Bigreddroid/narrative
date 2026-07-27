@@ -31,12 +31,12 @@ function Chip({ opt, onClick }) {
         "group inline-flex items-center gap-1.5 pl-2 pr-1.5 py-1 rounded-[2px] border",
         "font-mono text-[10px] tracking-[0.06em] uppercase whitespace-nowrap transition-colors",
         dead
-          ? "border-[#1A1A1A] text-[#3A3A38] cursor-default"
+          ? "border-[var(--xd-7)] text-[var(--xd-14)] cursor-default"
           : opt.selected
-            ? "border-transparent text-[#050505]"
-            : "border-[#2A2A2A] text-[#8A8A82] hover:border-[#4A4A47] hover:text-[#D8D4CC]",
+            ? "border-transparent text-[var(--xd-0)]"
+            : "border-[var(--xd-12)] text-[var(--xd-20)] hover:border-[var(--xd-17)] hover:text-[var(--xd-22)]",
       ].join(" ")}
-      style={opt.selected ? { background: opt.color || "#F0EDE8" } : undefined}
+      style={opt.selected ? { background: opt.color || "var(--xd-23)" } : undefined}
     >
       {opt.color && !opt.selected && !dead && (
         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: opt.color }} />
@@ -44,7 +44,7 @@ function Chip({ opt, onClick }) {
       <span>{opt.label}</span>
       <span className={[
         "tabular-nums px-1 rounded-[2px] text-[9px]",
-        opt.selected ? "bg-[rgba(0,0,0,0.22)] text-[#050505]" : "bg-[#141414] text-[#6A6A64]",
+        opt.selected ? "bg-[rgba(0,0,0,0.22)] text-[var(--xd-0)]" : "bg-[var(--xd-5)] text-[var(--xd-19)]",
       ].join(" ")}>
         {opt.count}
       </span>
@@ -57,7 +57,7 @@ export default function FilterBar({
 }) {
   const filtered = shown !== total;
   return (
-    <div className="no-print border-y border-[#1C1C1C] bg-[#080808]">
+    <div className="no-print border-y border-[var(--xd-8)] bg-[var(--xd-1)]">
       <div className="px-6 lg:px-10 py-3 flex flex-col gap-2.5">
 
         {facets.map((f) => (
@@ -69,14 +69,14 @@ export default function FilterBar({
               title={f.selectedCount ? `Clear ${f.label}` : undefined}
               className={[
                 "font-mono text-[9px] tracking-[0.2em] uppercase w-[104px] shrink-0 text-left pt-1",
-                f.selectedCount ? "text-[#C80028] hover:underline cursor-pointer" : "text-[#5A5A55] cursor-default",
+                f.selectedCount ? "text-[#C80028] hover:underline cursor-pointer" : "text-[var(--xd-18)] cursor-default",
               ].join(" ")}
             >
               {f.label}{f.selectedCount ? ` ·${f.selectedCount}` : ""}
             </button>
             <div className="flex flex-wrap gap-1.5 min-w-0">
               {f.options.length === 0 && (
-                <span className="font-mono text-[10px] text-[#3A3A38] pt-1">none in view</span>
+                <span className="font-mono text-[10px] text-[var(--xd-14)] pt-1">none in view</span>
               )}
               {f.options.map((o) => (
                 <Chip key={String(o.value)} opt={o} onClick={() => onToggle?.(f.key, o.value)} />
@@ -85,11 +85,11 @@ export default function FilterBar({
           </div>
         ))}
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 border-t border-[#141414] mt-0.5">
-          <span className="font-mono text-[10px] tracking-[0.12em] uppercase text-[#8A8A82] tabular-nums">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 border-t border-[var(--xd-5)] mt-0.5">
+          <span className="font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--xd-20)] tabular-nums">
             {filtered
-              ? <>Showing <span className="text-[#F0EDE8]">{shown.toLocaleString()}</span> of {total.toLocaleString()}</>
-              : <>All <span className="text-[#F0EDE8]">{total.toLocaleString()}</span> shown</>}
+              ? <>Showing <span className="text-[var(--xd-23)]">{shown.toLocaleString()}</span> of {total.toLocaleString()}</>
+              : <>All <span className="text-[var(--xd-23)]">{total.toLocaleString()}</span> shown</>}
           </span>
           {/* Always mounted, disabled when there is nothing to clear.
               It used to unmount at zero — which orphaned keyboard focus and dropped
@@ -103,12 +103,12 @@ export default function FilterBar({
             disabled={activeCount === 0}
             className={[
               "font-mono text-[10px] tracking-[0.12em] uppercase",
-              activeCount ? "text-[#C80028] hover:underline" : "text-[#2E2E2C] cursor-default",
+              activeCount ? "text-[#C80028] hover:underline" : "text-[var(--xd-13)] cursor-default",
             ].join(" ")}
           >
             Clear all{activeCount ? ` (${activeCount})` : ""}
           </button>
-          {note && <span className="text-[11px] text-[#4A4845] flex-1 min-w-[200px]">{note}</span>}
+          {note && <span className="text-[11px] text-[var(--xd-16)] flex-1 min-w-[200px]">{note}</span>}
         </div>
       </div>
     </div>

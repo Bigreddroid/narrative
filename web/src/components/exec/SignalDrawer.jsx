@@ -56,11 +56,11 @@ function Grade({ grade, title }) {
 
 function Row({ label, children }) {
   return (
-    <div className="flex gap-3 py-1.5 border-b border-[#141414] last:border-0">
-      <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-[#5A5A55] w-[92px] shrink-0 pt-0.5">
+    <div className="flex gap-3 py-1.5 border-b border-[var(--xd-5)] last:border-0">
+      <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-[var(--xd-18)] w-[92px] shrink-0 pt-0.5">
         {label}
       </span>
-      <div className="min-w-0 flex-1 text-[12px] text-[#C8C4BC]">{children}</div>
+      <div className="min-w-0 flex-1 text-[12px] text-[var(--xd-22)]">{children}</div>
     </div>
   );
 }
@@ -155,35 +155,35 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
         role="dialog"
         aria-modal="true"
         aria-label={event.canonical_title || "Signal"}
-        className="relative h-full w-full max-w-[520px] bg-[#080808] border-l border-[#1F1F1F] overflow-y-auto outline-none shadow-[0_0_60px_rgba(0,0,0,0.6)]"
+        className="relative h-full w-full max-w-[520px] bg-[var(--xd-1)] border-l border-[var(--xd-9)] overflow-y-auto outline-none shadow-[0_0_60px_rgba(0,0,0,0.6)]"
       >
         {/* header */}
-        <div className="sticky top-0 bg-[#080808] border-b border-[#1C1C1C] px-5 py-4 z-10">
+        <div className="sticky top-0 bg-[var(--xd-1)] border-b border-[var(--xd-8)] px-5 py-4 z-10">
           <div className="flex items-start justify-between gap-3">
-            <span className="font-mono text-[9px] tracking-[0.2em] uppercase text-[#5A5A55]">Signal</span>
+            <span className="font-mono text-[9px] tracking-[0.2em] uppercase text-[var(--xd-18)]">Signal</span>
             <button
               type="button" onClick={onClose}
-              className="font-mono text-[10px] tracking-[0.12em] uppercase text-[#8A8A82] hover:text-[#F0EDE8]"
+              className="font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--xd-20)] hover:text-[var(--xd-23)]"
             >
               Close · Esc
             </button>
           </div>
-          <h2 className="mt-2 text-[17px] leading-snug text-[#F0EDE8]">{event.canonical_title}</h2>
+          <h2 className="mt-2 text-[17px] leading-snug text-[var(--xd-23)]">{event.canonical_title}</h2>
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
             <span
-              className="font-mono text-[9px] tracking-[0.1em] uppercase px-2 py-0.5 rounded-[2px] text-[#050505]"
+              className="font-mono text-[9px] tracking-[0.1em] uppercase px-2 py-0.5 rounded-[2px] text-[var(--xd-0)]"
               style={{ background: c.band.color }}
             >
               {c.band.label} · {c.score.toFixed(1)}
             </span>
             <span className={[
               "font-mono text-[9px] tracking-[0.1em] uppercase px-2 py-0.5 rounded-[2px] border",
-              isIntel ? "border-[#2F5D3A] text-[#7FA88C]" : "border-[#2A2A2A] text-[#8A8A82]",
+              isIntel ? "border-[#2F5D3A] text-[#7FA88C]" : "border-[var(--xd-12)] text-[var(--xd-20)]",
             ].join(" ")}>
               {c.type.label}
             </span>
             {event.category && (
-              <span className="font-mono text-[9px] tracking-[0.1em] uppercase px-2 py-0.5 rounded-[2px] border border-[#2A2A2A] text-[#8A8A82]">
+              <span className="font-mono text-[9px] tracking-[0.1em] uppercase px-2 py-0.5 rounded-[2px] border border-[var(--xd-12)] text-[var(--xd-20)]">
                 {event.category}
               </span>
             )}
@@ -192,7 +192,7 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
                 "font-mono text-[9px] tracking-[0.1em] uppercase px-2 py-0.5 rounded-[2px] border",
                 c.validity.state === "expired" ? "border-[#3A2020] text-[#7A5555]"
                   : c.validity.state === "expiring" ? "border-[#5A4A1E] text-[#E0A93C]"
-                    : "border-[#2A2A2A] text-[#8A8A82]",
+                    : "border-[var(--xd-12)] text-[var(--xd-20)]",
               ].join(" ")}>
                 {c.validity.state === "expired" ? "Expired"
                   : c.validity.state === "expiring" ? `Expiring · ${c.validity.remainingHours}h`
@@ -201,29 +201,29 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
             )}
           </div>
           {/* The band's operative meaning, not its threshold. */}
-          <p className="mt-2.5 text-[11px] leading-relaxed text-[#8A8A82]">{c.consequence}</p>
+          <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--xd-20)]">{c.consequence}</p>
         </div>
 
         <div className="px-5 py-4 space-y-5">
           {event.canonical_summary && (
-            <p className="text-[12.5px] leading-relaxed text-[#C8C4BC]">{event.canonical_summary}</p>
+            <p className="text-[12.5px] leading-relaxed text-[var(--xd-22)]">{event.canonical_summary}</p>
           )}
 
           {/* ── SOURCES ── the whole point of this drawer ── */}
           <section>
             <div className="flex items-baseline justify-between gap-3 mb-2">
-              <h3 className="font-mono text-[9px] tracking-[0.2em] uppercase text-[#5A5A55]">
+              <h3 className="font-mono text-[9px] tracking-[0.2em] uppercase text-[var(--xd-18)]">
                 Source documents
               </h3>
               {detail.state === "ready" && (
-                <span className="font-mono text-[9px] tracking-[0.1em] uppercase text-[#5A5A55] tabular-nums">
+                <span className="font-mono text-[9px] tracking-[0.1em] uppercase text-[var(--xd-18)] tabular-nums">
                   {documentsOnFile} on file · {outletCount} {outletCount === 1 ? "outlet" : "outlets"}
                 </span>
               )}
             </div>
 
             {detail.state === "loading" && (
-              <p className="text-[11px] text-[#5A5A55]">Loading sources…</p>
+              <p className="text-[11px] text-[var(--xd-18)]">Loading sources…</p>
             )}
 
             {detail.state === "error" && (
@@ -234,9 +234,9 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
             )}
 
             {detail.state === "ready" && detail.articles.length === 0 && (
-              <p className="text-[11px] leading-relaxed text-[#8A8A82]">
+              <p className="text-[11px] leading-relaxed text-[var(--xd-20)]">
                 No source document is stored for this signal. It came from the{" "}
-                <span className="text-[#C8C4BC] font-mono">{event.source || "feed"}</span>{" "}
+                <span className="text-[var(--xd-22)] font-mono">{event.source || "feed"}</span>{" "}
                 feed, which publishes structured alerts rather than articles — so there is
                 a grade but no link to follow. We do not invent one.
               </p>
@@ -245,12 +245,12 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
             {detail.state === "ready" && detail.articles.length > 0 && (
               <ul className="space-y-1.5">
                 {detail.articles.map((a, i) => (
-                  <li key={`${a.url}-${i}`} className="border border-[#1C1C1C] rounded-[2px] p-2.5 hover:border-[#2E2E2C] transition-colors">
+                  <li key={`${a.url}-${i}`} className="border border-[var(--xd-8)] rounded-[2px] p-2.5 hover:border-[var(--xd-13)] transition-colors">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-[10px] tracking-[0.06em] uppercase text-[#C8C4BC] truncate">
+                      <span className="font-mono text-[10px] tracking-[0.06em] uppercase text-[var(--xd-22)] truncate">
                         {a.source || "Unknown outlet"}
                       </span>
-                      {a.date && <span className="font-mono text-[9px] text-[#5A5A55] shrink-0">{a.date}</span>}
+                      {a.date && <span className="font-mono text-[9px] text-[var(--xd-18)] shrink-0">{a.date}</span>}
                     </div>
                     <a
                       href={a.url} target="_blank" rel="noopener noreferrer"
@@ -267,7 +267,7 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
             {detail.state === "ready" && (
               <p className={[
                 "mt-2 text-[11px] leading-relaxed",
-                corroborated ? "text-[#7FA88C]" : "text-[#8A8A82]",
+                corroborated ? "text-[#7FA88C]" : "text-[var(--xd-20)]",
               ].join(" ")}>
                 {corroborated
                   ? `Corroborated — ${gateCount} independent sources carry this. Meets the two-source bar.`
@@ -280,19 +280,19 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
           {/* ── Grading ── */}
           {detail.grade?.grade && (
             <section>
-              <h3 className="font-mono text-[9px] tracking-[0.2em] uppercase text-[#5A5A55] mb-2">
+              <h3 className="font-mono text-[9px] tracking-[0.2em] uppercase text-[var(--xd-18)] mb-2">
                 Source grading
               </h3>
               <div className="flex items-center gap-2 mb-1.5">
                 <Grade grade={detail.grade.grade} />
-                <span className="text-[11px] text-[#8A8A82]">
+                <span className="text-[11px] text-[var(--xd-20)]">
                   {detail.grade.reliability?.label} · {detail.grade.credibility?.label}
                 </span>
               </div>
               {Array.isArray(detail.grade.rationale) && detail.grade.rationale.length > 0 && (
                 <ul className="space-y-0.5">
                   {detail.grade.rationale.map((r, i) => (
-                    <li key={i} className="text-[11px] text-[#5A5A55]">— {r}</li>
+                    <li key={i} className="text-[11px] text-[var(--xd-18)]">— {r}</li>
                   ))}
                 </ul>
               )}
@@ -301,20 +301,20 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
 
           {/* ── Assets affected ── signal→asset attribution at the item level ── */}
           <section>
-            <h3 className="font-mono text-[9px] tracking-[0.2em] uppercase text-[#5A5A55] mb-2">
+            <h3 className="font-mono text-[9px] tracking-[0.2em] uppercase text-[var(--xd-18)] mb-2">
               Assets affected
             </h3>
             {!c.assets || c.assets.count === 0 ? (
-              <p className="text-[11px] text-[#8A8A82]">
+              <p className="text-[11px] text-[var(--xd-20)]">
                 {event.geo_centroid_lat == null
                   ? "Not geolocated — cannot be attributed to specific sites."
                   : "No site falls within this event's extent."}
               </p>
             ) : (
               <>
-                <p className="text-[11px] text-[#C8C4BC] mb-1.5 tabular-nums">
-                  <span className="text-[#F0EDE8]">{c.assets.count}</span> sites ·{" "}
-                  <span className="text-[#F0EDE8]">{c.assets.people.toLocaleString()}</span> people
+                <p className="text-[11px] text-[var(--xd-22)] mb-1.5 tabular-nums">
+                  <span className="text-[var(--xd-23)]">{c.assets.count}</span> sites ·{" "}
+                  <span className="text-[var(--xd-23)]">{c.assets.people.toLocaleString()}</span> people
                 </p>
                 <ul className="space-y-0.5">
                   {c.assets.sites.slice(0, 8).map(({ office, km }) => (
@@ -322,7 +322,7 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
                       <button
                         type="button"
                         onClick={() => { onSelectSite?.(office.id); onClose?.(); }}
-                        className="w-full text-left flex items-baseline justify-between gap-3 py-0.5 hover:text-[#F0EDE8] text-[#8A8A82]"
+                        className="w-full text-left flex items-baseline justify-between gap-3 py-0.5 hover:text-[var(--xd-23)] text-[var(--xd-20)]"
                       >
                         <span className="text-[11.5px] truncate">{office.name || office.city}</span>
                         <span className="font-mono text-[10px] tabular-nums shrink-0">{km} km</span>
@@ -330,7 +330,7 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
                     </li>
                   ))}
                   {c.assets.sites.length > 8 && (
-                    <li className="text-[10px] text-[#5A5A55] pt-0.5">
+                    <li className="text-[10px] text-[var(--xd-18)] pt-0.5">
                       +{c.assets.sites.length - 8} more
                     </li>
                   )}
@@ -341,7 +341,7 @@ export default function SignalDrawer({ event, contexts = [], onClose, onSelectSi
 
           {/* ── Record ── */}
           <section>
-            <h3 className="font-mono text-[9px] tracking-[0.2em] uppercase text-[#5A5A55] mb-2">Record</h3>
+            <h3 className="font-mono text-[9px] tracking-[0.2em] uppercase text-[var(--xd-18)] mb-2">Record</h3>
             <Row label="Detected">{fmtDate(event.first_detected_at) || "—"}</Row>
             <Row label="Updated">{fmtDate(event.last_updated_at) || "—"}</Row>
             <Row label="Feed">{event.source || "—"}</Row>

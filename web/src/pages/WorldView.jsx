@@ -370,18 +370,39 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
 
         {/* Cards */}
         <div>
-          {/* An empty, non-search feed means the live pipeline is still building its
-              first batch (fresh boot) — show the Initializing screen, not "no events". */}
-          {!isSearching && displayEvents.length === 0 ? (
-            <InitializingScreen />
-          ) : loading ? (
+          {/* Order matters here, and it was wrong. The empty check ran BEFORE the
+              loading check, so the Initializing screen appeared on every load — the
+              list is empty for as long as the request is in flight — and, worse, any
+              filter matching nothing claimed the pipeline was still booting.
+              "We are still starting up" and "nothing matched that filter" are
+              different statements, and only one of them was ever true.
+
+              Loading first (skeletons). Then a genuinely empty UNFILTERED feed, the
+              only case that really means the pipeline has produced nothing yet.
+              An empty result under a filter says so, and offers the way out. */}
+          {loading ? (
             Array(6).fill(0).map((_, i) => <EventCardSkeleton key={i} />)
+          ) : displayEvents.length === 0 && !isSearching && !category && !status ? (
+            <InitializingScreen />
           ) : displayEvents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 gap-2">
+            <div className="flex flex-col items-center justify-center h-48 gap-3 px-6 text-center">
               <p className="text-xs font-mono text-ink/30 uppercase tracking-widest">
                 No matching signals.
               </p>
-              <p className="text-[11px] text-ink/25">Try a different term or browse the feed.</p>
+              <p className="text-[11px] text-ink/25">
+                {isSearching
+                  ? "Nothing in the current window matches that term."
+                  : `Nothing in the current window is ${[category, status].filter(Boolean).join(" · ")}.`}
+              </p>
+              {!isSearching && (category || status) && (
+                <button
+                  type="button"
+                  onClick={() => { onCategoryChange(null); setStatus(null); }}
+                  className="text-[11px] font-semibold uppercase tracking-wider text-crimson hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
             displayEvents.map(e => (

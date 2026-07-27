@@ -27,9 +27,10 @@
 //  auditAdapter · domainScore · severity · deckFilters). Capabilities we cannot
 //  compute (mass-comms delivery) are absent rather than faked.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useMemo, useState, useEffect, useRef } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { Link, useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
+import { useTheme } from "../hooks/useTheme.js";
 import { officeContext, topSignal, LAYER_KEYS, LAYER_LABELS } from "../lib/officeContext.js";
 import { haversineKm as _havKm } from "../lib/geoAssoc.js";
 import {
@@ -64,12 +65,86 @@ const rise = (i = 0) => ({
   transition: { duration: 0.45, delay: 0.04 * i, ease: [0.22, 1, 0.36, 1] },
 });
 
-function Band({ label, note, children, right }) {
+// ── Deck navigation ──────────────────────────────────────────────────────────
+// The board used to be a cul-de-sac: you could reach /wipro/exec and then only
+// leave it by editing the address bar. Every other surface in the product is one
+// click from every other, and an executive who cannot get back to the analyst
+// board stops trusting that the two are the same system.
+//
+// Back is history-aware on purpose. The deck writes its own state to the query
+// string with replace:true, so history holds the page the reader ARRIVED from —
+// going back returns them there rather than to a hardcoded parent they may never
+// have visited. With no history to pop (a deep link opened cold) it falls through
+// to the analyst board, which is the deck's real parent.
+const SURFACES = [
+  { to: "/wipro", label: "Analyst board" },
+  { to: "/world", label: "Feed" },
+  { to: "/deck",  label: "Signal deck" },
+  { to: "/benchmark", label: "Benchmark" },
+];
+
+function DeckNav({ onBack, isDark, onToggleTheme }) {
+  const { pathname } = useLocation();
   return (
-    <section className="border-t border-[#1C1C1C]">
+    <nav className="no-print border-b border-[var(--xd-8)] bg-[var(--xd-1)] px-6 lg:px-10 py-2
+                    flex flex-wrap items-center gap-x-5 gap-y-2 sticky top-0 z-40">
+      <button type="button" onClick={onBack}
+        className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.14em] uppercase
+                   text-[var(--xd-20)] hover:text-[var(--xd-23)] transition-colors">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+          strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M7.5 2L3.5 6l4 4" />
+        </svg>
+        Back
+      </button>
+
+      <span className="w-px h-3 bg-[var(--xd-11)]" aria-hidden="true" />
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {SURFACES.map((s) => (
+          <Link key={s.to} to={s.to}
+            aria-current={pathname === s.to ? "page" : undefined}
+            className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-19)]
+                       hover:text-[var(--xd-23)] transition-colors">
+            {s.label}
+          </Link>
+        ))}
+      </div>
+
+      {/* Day/night. The deck is dark by default and most at home there, but it is
+          read in daylit boardrooms and printed from; the switch is the same
+          ThemeContext the rest of the app uses, so the choice follows the reader
+          across surfaces instead of resetting here. */}
+      <button type="button" onClick={onToggleTheme}
+        aria-pressed={!isDark}
+        title={isDark ? "Switch to day mode" : "Switch to night mode"}
+        className="ml-auto flex items-center gap-1.5 font-mono text-[10px] tracking-[0.14em] uppercase
+                   text-[var(--xd-19)] hover:text-[var(--xd-23)] border border-[var(--xd-11)]
+                   hover:border-[var(--xd-15)] px-2.5 py-1 rounded-[2px] transition-colors">
+        {isDark ? (
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+            strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+            <circle cx="7" cy="7" r="2.5" />
+            <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.93 2.93l1.06 1.06M10.01 10.01l1.06 1.06M11.07 2.93l-1.06 1.06M3.99 10.01l-1.06 1.06" />
+          </svg>
+        ) : (
+          <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor"
+            strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+            <path d="M11 8.5A5.5 5.5 0 1 1 4.5 2a4 4 0 0 0 6.5 6.5z" />
+          </svg>
+        )}
+        {isDark ? "Day" : "Night"}
+      </button>
+    </nav>
+  );
+}
+
+function Band({ label, note, children, right, id }) {
+  return (
+    <section id={id} className="border-t border-[var(--xd-8)] scroll-mt-12">
       <div className="px-6 lg:px-10 pt-5 pb-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h2 className="font-mono text-[10px] tracking-[0.22em] uppercase text-[#8A8A82]">{label}</h2>
-        {note && <p className="text-[11px] text-[#5A5A55] max-w-2xl leading-snug flex-1">{note}</p>}
+        <h2 className="font-mono text-[10px] tracking-[0.22em] uppercase text-[var(--xd-20)]">{label}</h2>
+        {note && <p className="text-[11px] text-[var(--xd-18)] max-w-2xl leading-snug flex-1">{note}</p>}
         {right}
       </div>
       {children}
@@ -96,7 +171,7 @@ function ScoreBar({ score }) {
       <span className="font-mono text-[11px] tabular-nums w-6 text-right" style={{ color: b.color }}>
         {score.toFixed(1)}
       </span>
-      <span className="w-16 h-1.5 bg-[#1C1C1C] rounded-[1px] overflow-hidden inline-block">
+      <span className="w-16 h-1.5 bg-[var(--xd-8)] rounded-[1px] overflow-hidden inline-block">
         <span className="block h-full rounded-[1px]" style={{ width: `${(score / 5) * 100}%`, background: b.color }} />
       </span>
     </span>
@@ -135,14 +210,14 @@ const SITE_COLUMNS = [
     render: (r) => (
       <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.08em]">
         <span style={{ color: r.band.color }}>{r.band.label}</span>
-        <span className="tabular-nums text-[#5A5A55]">{r.overall.score.toFixed(1)}</span>
+        <span className="tabular-nums text-[var(--xd-18)]">{r.overall.score.toFixed(1)}</span>
       </span>
     ),
   },
   {
     key: "driver", label: "Driven by",
     value: (r) => r.overall.driver?.label ?? "—",
-    render: (r) => <span className="text-[#8A8A82]">{r.overall.driver?.label ?? "—"}</span>,
+    render: (r) => <span className="text-[var(--xd-20)]">{r.overall.driver?.label ?? "—"}</span>,
   },
 ];
 
@@ -172,20 +247,20 @@ const TRAVEL_COLUMNS = [
     render: (r) => (
       <span className="min-w-0">
         <span className="truncate block">{r.trip.traveler}</span>
-        <span className="font-mono text-[10px] text-[#5A5A55]">{r.trip.role}</span>
+        <span className="font-mono text-[10px] text-[var(--xd-18)]">{r.trip.role}</span>
       </span>
     ),
   },
   {
     key: "route", label: "Route", defaultDir: "asc",
     value: (r) => `${r.trip.from} → ${r.trip.to}`,
-    render: (r) => <span className="text-[#B8B5AE]">{r.trip.from} → {r.trip.to}</span>,
+    render: (r) => <span className="text-[var(--xd-21)]">{r.trip.from} → {r.trip.to}</span>,
   },
   {
     key: "depart", label: "Dates", defaultDir: "asc", mono: true,
     value: (r) => r.trip.departISO,
     csvValue: (r) => `${r.trip.departISO} → ${r.trip.returnISO}`,
-    render: (r) => <span className="font-mono text-[10px] text-[#6A6A64]">{r.trip.departISO} → {r.trip.returnISO}</span>,
+    render: (r) => <span className="font-mono text-[10px] text-[var(--xd-19)]">{r.trip.departISO} → {r.trip.returnISO}</span>,
   },
   { key: "status", label: "Status", defaultDir: "asc", mono: true, value: (r) => r.status },
   {
@@ -201,7 +276,7 @@ const TRAVEL_COLUMNS = [
     value: (r) => (r.unaccounted ? "no record" : r.lastSeen ? new Date(r.lastSeen).toISOString().slice(0, 16).replace("T", " ") : "—"),
     sortValue: (r) => (r.unaccounted ? Number.POSITIVE_INFINITY : r.lastSeen ? -new Date(r.lastSeen).getTime() : 0),
     render: (r) => (
-      <span className="font-mono text-[10px]" style={{ color: r.unaccounted ? SEV.alert.c : "#6A6A64" }}>
+      <span className="font-mono text-[10px]" style={{ color: r.unaccounted ? SEV.alert.c : "var(--xd-19)" }}>
         {r.unaccounted ? "no record" : r.lastSeen ? new Date(r.lastSeen).toISOString().slice(0, 16).replace("T", " ") : "—"}
       </span>
     ),
@@ -226,6 +301,14 @@ export default function ExecDeck() {
   // with replace:true, because a history entry per filter chip would bury the page the
   // reader arrived from under fifty of its own states.
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { isDark, toggle: toggleTheme } = useTheme();
+  // See DeckNav: pop history when there is somewhere to pop to, else fall through
+  // to the analyst board. `idx` is null for the first entry in a history session.
+  const goBack = useCallback(() => {
+    if (window.history.state?.idx > 0) navigate(-1);
+    else navigate("/wipro");
+  }, [navigate]);
   const [view, setView] = useState(() => {
     const v = searchParams.get("v");
     return VIEWS.includes(v) ? v : "Overview";   // validated: a junk param must not blank the board
@@ -470,10 +553,13 @@ export default function ExecDeck() {
   // a board computed from a register we have not read yet is a guess with a chart on it.
   if (reg.source === "loading") {
     return (
-      <div className="min-h-screen bg-[#050505] text-[#F0EDE8] flex items-center justify-center">
-        <p className="font-mono text-[11px] tracking-[0.2em] uppercase text-[#6A6A64]">
-          Reading the site register…
-        </p>
+      <div className="exec-deck min-h-screen bg-[var(--xd-0)] text-[var(--xd-23)]">
+        <DeckNav onBack={goBack} isDark={isDark} onToggleTheme={toggleTheme} />
+        <div className="flex items-center justify-center" style={{ minHeight: "70vh" }}>
+          <p className="font-mono text-[11px] tracking-[0.2em] uppercase text-[var(--xd-19)]">
+            Reading the site register…
+          </p>
+        </div>
       </div>
     );
   }
@@ -484,31 +570,36 @@ export default function ExecDeck() {
   // could display. A customer who has uploaded nothing is told exactly that.
   if (registerIsLive && reg.sites.length === 0) {
     return (
-      <div className="min-h-screen bg-[#050505] text-[#F0EDE8] px-6 lg:px-10 py-16">
-        <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-[#6A6A64]">
+      <div className="exec-deck min-h-screen bg-[var(--xd-0)] text-[var(--xd-23)]">
+        <DeckNav onBack={goBack} isDark={isDark} onToggleTheme={toggleTheme} />
+        <div className="px-6 lg:px-10 py-16">
+        <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-[var(--xd-19)]">
           Wipro · Global Security
         </p>
         <h1 className="font-display leading-[0.9] tracking-tight mt-3" style={{ fontSize: "clamp(2rem, 4vw, 3rem)" }}>
           NO SITES IN THE <span className="text-crimson-light">REGISTER</span>
         </h1>
-        <p className="text-[13px] text-[#8A8A82] mt-5 max-w-[54ch] leading-relaxed">
+        <p className="text-[13px] text-[var(--xd-20)] mt-5 max-w-[54ch] leading-relaxed">
           This board scores signals against your sites, so with none loaded it can tell you
           nothing — and it will not pretend otherwise by showing zeros. The engine is still
-          ingesting: <span className="text-[#F0EDE8]">{events.length}</span> signals are in
+          ingesting: <span className="text-[var(--xd-23)]">{events.length}</span> signals are in
           force right now, waiting for somewhere to land.
         </p>
-        <p className="text-[12px] text-[#6A6A64] mt-4 max-w-[54ch] leading-relaxed">
+        <p className="text-[12px] text-[var(--xd-19)] mt-4 max-w-[54ch] leading-relaxed">
           Import a register (CSV) to begin. Every row is audited on arrival — duplicate
           identifiers, wrong countries, missing coordinates and missing headcount are
           reported back naming the rows they came from, before anything is scored.
         </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#F0EDE8]">
+    <div className="exec-deck min-h-screen bg-[var(--xd-0)] text-[var(--xd-23)] pb-20 md:pb-0">
       <style>{`@media print{.no-print{display:none!important}body{background:#fff}}`}</style>
+
+      <DeckNav onBack={goBack} isDark={isDark} onToggleTheme={toggleTheme} />
 
       {/* ── Provenance bar ───────────────────────────────────────────────────
           The split is the honest part: the SIGNALS are live off the engine, the
@@ -530,9 +621,9 @@ export default function ExecDeck() {
               : "Engine not answering"}
           </span>
         </span>
-        <span className="text-[11px] text-[#8A8A82] tabular-nums">
+        <span className="text-[11px] text-[var(--xd-20)] tabular-nums">
           {isLive
-            ? <>{feed.count} ingested · <span className="text-[#F0EDE8]">{events.length}</span> in force · {feed.fetchedAt?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</>
+            ? <>{feed.count} ingested · <span className="text-[var(--xd-23)]">{events.length}</span> in force · {feed.fetchedAt?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</>
             : <>{feed.error || "…"} — showing the sample signal set so the board is never falsely all-clear</>}
         </span>
         {/* The register half of the provenance claim. It has its own dot because it
@@ -542,21 +633,21 @@ export default function ExecDeck() {
         <span className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full"
             style={{ background: registerIsLive ? "#5FBF74" : "#FF5C43" }} />
-          <span className="text-[11px]" style={{ color: registerIsLive ? "#8A8A82" : "#FF7A63" }}>
+          <span className="text-[11px]" style={{ color: registerIsLive ? "var(--xd-20)" : "#FF7A63" }}>
             {registerIsLive
               ? <>Register live · {reg.sites.length} site{reg.sites.length === 1 ? "" : "s"} · {reg.trips.length} {reg.trips.length === 1 ? "itinerary" : "itineraries"}</>
               : <>Sites and itineraries are SAMPLE data — {reg.error || "register unavailable"}</>}
           </span>
         </span>
         <button type="button" onClick={() => { feed.refresh(); reg.refresh(); }}
-          className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#6A6A64] hover:text-[#F0EDE8] border border-[#242424] px-2 py-0.5 rounded-[2px]">
+          className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-19)] hover:text-[var(--xd-23)] border border-[var(--xd-11)] px-2 py-0.5 rounded-[2px]">
           Refresh
         </button>
       </div>
 
       {/* ── Header ───────────────────────────────────────────────────────────── */}
       <header className="px-6 lg:px-10 pt-7">
-        <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-[#6A6A64]">
+        <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-[var(--xd-19)]">
           Wipro · Global Security · {today.toISOString().slice(0, 10)}
         </p>
         <h1 className="font-display leading-[0.85] tracking-tight mt-2" style={{ fontSize: "clamp(2.6rem, 6vw, 4.6rem)" }}>
@@ -564,11 +655,11 @@ export default function ExecDeck() {
         </h1>
 
         <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 no-print">
-          <nav className="flex gap-px bg-[#1C1C1C] rounded-[2px] overflow-hidden">
+          <nav className="flex gap-px bg-[var(--xd-8)] rounded-[2px] overflow-hidden">
             {VIEWS.map((v) => (
               <button key={v} type="button" onClick={() => setView(v)}
                 className="px-4 py-2 font-mono text-[10px] tracking-[0.14em] uppercase transition-colors"
-                style={{ background: view === v ? "#1F1F1F" : "#0A0A0A", color: view === v ? "#F0EDE8" : "#6A6A64" }}>
+                style={{ background: view === v ? "var(--xd-9)" : "var(--xd-2)", color: view === v ? "var(--xd-23)" : "var(--xd-19)" }}>
                 {v}
               </button>
             ))}
@@ -576,18 +667,18 @@ export default function ExecDeck() {
 
           <input value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="Search sites, cities, countries…"
-            className="bg-[#0E0E0E] border border-[#242424] rounded-[2px] px-3 py-1.5 text-[12px] w-56 focus:outline-none focus:border-[#3A3A3A]" />
+            className="bg-[var(--xd-3)] border border-[var(--xd-11)] rounded-[2px] px-3 py-1.5 text-[12px] w-56 focus:outline-none focus:border-[var(--xd-15)]" />
 
           <button type="button" onClick={() => window.print()}
-            className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82] border border-[#242424] px-3 py-2 rounded-[2px] hover:text-[#F0EDE8] hover:border-[#3A3A3A]">
+            className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)] border border-[var(--xd-11)] px-3 py-2 rounded-[2px] hover:text-[var(--xd-23)] hover:border-[var(--xd-15)]">
             Print brief
           </button>
 
           {/* Tolerance is a stated organisational posture, not a dial to drag during
               a briefing. It still sets every threshold on the board. */}
-          <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#5A5A55] ml-auto"
+          <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-18)] ml-auto"
             title="Organisational risk tolerance — a settings-level posture, held constant for the duration of a briefing so the board you read is the board that was assessed.">
-            Tolerance · <span className="text-[#B8B5AE]">{TOLERANCE_WORD}</span>
+            Tolerance · <span className="text-[var(--xd-21)]">{TOLERANCE_WORD}</span>
           </span>
         </div>
       </header>
@@ -613,22 +704,57 @@ export default function ExecDeck() {
         <motion.div {...rise(0)}>
           <section className="grid lg:grid-cols-2 items-center gap-2 px-6 lg:px-10 pt-6 pb-2">
             <div>
+              {/* The four figures the board exists to answer — and, until now, the
+                  four deadest things on it. A reader who asks "which situations?"
+                  or "which countries?" had no way to ask it of the number itself
+                  and had to go hunting through the views. Each now drills to the
+                  panel that can actually answer it: the decision queue is on this
+                  page so it scrolls, the other three change view. Nothing is
+                  re-scored by the drill-in — it only changes what is on screen. */}
               <div className="grid grid-cols-2 gap-x-8 gap-y-6 max-w-lg">
                 {[
-                  { v: queue.total, l: "situations need a decision", c: "#FF5C43" },
-                  { v: n(exp.peopleExposed), l: `of ${n(exp.people)} people exposed` },
-                  { v: `${exp.countriesAffected}/${exp.countries}`, l: "countries affected" },
-                  { v: travel.unaccounted.length, l: "travellers unaccounted for", c: travel.unaccounted.length ? "#FF5C43" : "#5FBF74" },
+                  {
+                    v: queue.total, l: "situations need a decision", c: "#FF5C43",
+                    go: () => document.getElementById("needs-a-decision")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                    hint: queue.total
+                      ? `Go to the ${queue.total} situation${queue.total === 1 ? "" : "s"} awaiting a decision`
+                      : "Go to the decision queue — nothing clears the bar at this appetite",
+                  },
+                  {
+                    v: n(exp.peopleExposed), l: `of ${n(exp.people)} people exposed`,
+                    go: () => setView("People"),
+                    hint: "Open People — headcount at elevated sites, and who is travelling",
+                  },
+                  {
+                    v: `${exp.countriesAffected}/${exp.countries}`, l: "countries affected",
+                    go: () => setView("Countries"),
+                    hint: `Open the country risk profile — ${exp.countriesAffected} of ${exp.countries} carrying a live signal`,
+                  },
+                  {
+                    v: travel.unaccounted.length, l: "travellers unaccounted for",
+                    c: travel.unaccounted.length ? "#FF5C43" : "#5FBF74",
+                    go: () => setView("People"),
+                    hint: travel.unaccounted.length
+                      ? `Open People — ${travel.unaccounted.length} traveller${travel.unaccounted.length === 1 ? "" : "s"} without a confirmed location`
+                      : "Open People — every traveller is accounted for",
+                  },
                 ].map((t) => (
-                  <div key={t.l}>
-                    <div className="font-display leading-none tabular-nums" style={{ fontSize: "clamp(2rem,3.4vw,3.2rem)", color: t.c || "#F0EDE8" }}>{t.v}</div>
-                    <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82] mt-2">{t.l}</div>
-                  </div>
+                  <button key={t.l} type="button" onClick={t.go} title={t.hint}
+                    className="text-left group focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--xd-15)] rounded-[2px]">
+                    <div className="font-display leading-none tabular-nums group-hover:opacity-80 transition-opacity"
+                      style={{ fontSize: "clamp(2rem,3.4vw,3.2rem)", color: t.c || "var(--xd-23)" }}>{t.v}</div>
+                    <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)]
+                                    group-hover:text-[var(--xd-23)] mt-2 transition-colors
+                                    border-b border-dotted border-transparent group-hover:border-[var(--xd-15)] inline-block">
+                      {t.l}
+                    </div>
+                  </button>
                 ))}
               </div>
-              <div className="mt-7 pt-5 border-t border-[#1C1C1C] flex flex-wrap items-center gap-x-6 gap-y-3">
+              <div className="mt-7 pt-5 border-t border-[var(--xd-8)] flex flex-wrap items-center gap-x-6 gap-y-3">
                 <span className="font-display text-[1.5rem] leading-none" style={{ color: posture.c }}>{posture.label}</span>
-                <span className="font-mono text-[10px] tracking-[0.12em] uppercase text-[#6A6A64]">
+                <span className="font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--xd-19)]">
                   vs last look · {change.deteriorated.length} worse, {change.improved.length} better
                 </span>
               </div>
@@ -655,13 +781,13 @@ export default function ExecDeck() {
                         : on ? "Show all sites on the map" : `Show only ${SEV[k].label} sites on the map`}
                       className={[
                         "flex items-center gap-1.5 px-2 py-1 rounded-[2px] border transition-colors",
-                        count === 0 && !on ? "border-[#1A1A1A] cursor-default opacity-50"
-                          : on ? "border-[#6A6A64] bg-[#141414]" : "border-[#242424] hover:border-[#4A4A47]",
+                        count === 0 && !on ? "border-[var(--xd-7)] cursor-default opacity-50"
+                          : on ? "border-[var(--xd-19)] bg-[var(--xd-5)]" : "border-[var(--xd-11)] hover:border-[var(--xd-17)]",
                       ].join(" ")}
                     >
                       <span className="w-2 h-2 rounded-full" style={{ background: SEV[k].c }} />
-                      <span className="font-mono text-[10px] tabular-nums text-[#B8B5AE]">{count}</span>
-                      <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[#6A6A64]">{SEV[k].label}</span>
+                      <span className="font-mono text-[10px] tabular-nums text-[var(--xd-21)]">{count}</span>
+                      <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[var(--xd-19)]">{SEV[k].label}</span>
                     </button>
                   );
                 })}
@@ -671,7 +797,7 @@ export default function ExecDeck() {
                     Showing {SEV[mapFilter].label} only · show all
                   </button>
                 ) : (
-                  <span className="font-mono text-[9px] text-[#3A3A38] self-center tracking-[0.1em] uppercase">
+                  <span className="font-mono text-[9px] text-[var(--xd-14)] self-center tracking-[0.1em] uppercase">
                     Extreme + High = Alert · Moderate = Watch · Low + Minimal = Clear
                   </span>
                 )}
@@ -699,27 +825,27 @@ export default function ExecDeck() {
               } : {}} />
           </Band>
 
-          <Band label="Needs a decision"
+          <Band id="needs-a-decision" label="Needs a decision"
             note="Grouped by situation, not by building. Every item clears the same bar: a real incident, above your threshold, carried by at least two independent sources."
-            right={<span className="font-mono text-[10px] text-[#5A5A55] tabular-nums">{queue.items.length} of {queue.total}</span>}>
+            right={<span className="font-mono text-[10px] text-[var(--xd-18)] tabular-nums">{queue.items.length} of {queue.total}</span>}>
             {queue.items.length === 0 ? (
-              <p className="px-6 lg:px-10 pb-8 pt-2 text-[12px] text-[#5A5A55]">
+              <p className="px-6 lg:px-10 pb-8 pt-2 text-[12px] text-[var(--xd-18)]">
                 Nothing clears the escalation bar at this appetite. Everything considered is in the held list below, with its reason.
               </p>
             ) : (
-              <div className="grid lg:grid-cols-3 gap-px bg-[#1C1C1C] mt-3">
+              <div className="grid lg:grid-cols-3 gap-px bg-[var(--xd-8)] mt-3">
                 {queue.items.map((it) => (
-                  <article key={it.id} className="bg-[#0A0A0A] p-6 border-t-2" style={{ borderColor: "#FF5C43" }}>
+                  <article key={it.id} className="bg-[var(--xd-2)] p-6 border-t-2" style={{ borderColor: "#FF5C43" }}>
                     <div className="flex items-baseline justify-between gap-3">
-                      <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#8A8A82]">
+                      <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--xd-20)]">
                         {it.orgScope ? "Organisation" : it.cities[0] || "Multiple"}
                       </span>
                       <span className="font-mono text-[10px]" style={{ color: SEV.alert.c }}>Alert</span>
                     </div>
                     <div className="font-display leading-none tabular-nums mt-3" style={{ fontSize: "clamp(2rem,3.2vw,2.8rem)" }}>
-                      {it.orgScope ? <span className="text-[#5A5A55]">—</span> : n(it.people)}
+                      {it.orgScope ? <span className="text-[var(--xd-18)]">—</span> : n(it.people)}
                     </div>
-                    <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82] mt-1.5">
+                    <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)] mt-1.5">
                       {it.orgScope ? "not yet scoped" : "people"}
                     </div>
                     {/* The card's headline is the way into the evidence. It used to be
@@ -729,10 +855,10 @@ export default function ExecDeck() {
                       <button
                         type="button"
                         onClick={() => setSignal(it.event)}
-                        className="block w-full text-left text-[14px] leading-snug mt-5 hover:text-[#F0EDE8] text-[#E8E4DC] group"
+                        className="block w-full text-left text-[14px] leading-snug mt-5 hover:text-[var(--xd-23)] text-[var(--xd-22)] group"
                       >
                         {it.why}
-                        <span className="font-mono text-[10px] text-[#6A6A64] group-hover:text-crimson-light ml-1.5">
+                        <span className="font-mono text-[10px] text-[var(--xd-19)] group-hover:text-crimson-light ml-1.5">
                           — sources ↗
                         </span>
                       </button>
@@ -741,25 +867,25 @@ export default function ExecDeck() {
                     )}
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3">
                       <Grade grade={it.grade} />
-                      <span className="font-mono text-[10px] text-[#6A6A64]">{it.sources} sources</span>
-                      <span className="font-mono text-[10px] text-[#6A6A64]">
+                      <span className="font-mono text-[10px] text-[var(--xd-19)]">{it.sources} sources</span>
+                      <span className="font-mono text-[10px] text-[var(--xd-19)]">
                         {it.orgScope ? "no distance claimed"
                           : `${it.siteCount} site${it.siteCount === 1 ? "" : "s"} in range${it.travellerCount ? ` · ${it.travellerCount} travelling` : ""}`}
                       </span>
                     </div>
-                    {it.consequence && <p className="text-[12px] text-[#B8B5AE] leading-relaxed mt-4 pl-3 border-l border-[#2A2A2A]">{it.consequence}</p>}
+                    {it.consequence && <p className="text-[12px] text-[var(--xd-21)] leading-relaxed mt-4 pl-3 border-l border-[var(--xd-12)]">{it.consequence}</p>}
                     {it.recommend && (
                       <p className="text-[12px] mt-3">
-                        <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-[#6A6A64] block mb-1">Recommend</span>
+                        <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-[var(--xd-19)] block mb-1">Recommend</span>
                         <span>{it.recommend}</span>
                       </p>
                     )}
                     {it.topSites?.length > 0 && (
-                      <div className="mt-4 pt-3 border-t border-[#1C1C1C] flex flex-wrap gap-x-3 gap-y-1 no-print">
+                      <div className="mt-4 pt-3 border-t border-[var(--xd-8)] flex flex-wrap gap-x-3 gap-y-1 no-print">
                         {it.topSites.map((s) => (
                           <button key={s.office.id} type="button"
                             onClick={() => { setSelected(s.office.id); setView("Sites"); }}
-                            className="font-mono text-[10px] text-[#6A6A64] hover:text-crimson-light underline decoration-dotted">
+                            className="font-mono text-[10px] text-[var(--xd-19)] hover:text-crimson-light underline decoration-dotted">
                             {s.office.name}
                           </button>
                         ))}
@@ -779,35 +905,35 @@ export default function ExecDeck() {
               COMPLETENESS record, not a withholding notice, and it says so. */}
           <Band label="Everything we checked"
             note="The full ledger, not a summary. Every signal that touched a site today is accounted for here — the ones that need you, and the ones that were checked and cleared, each with the reason it was cleared. Nothing is removed from the record; you can read every line."
-            right={<span className="font-mono text-[10px] text-[#5A5A55] tabular-nums">{held.considered} accounted for</span>}>
+            right={<span className="font-mono text-[10px] text-[var(--xd-18)] tabular-nums">{held.considered} accounted for</span>}>
             <div className="px-6 lg:px-10 pb-8 pt-2">
               <div className="space-y-2.5">
                 {[
-                  { v: held.considered, l: "Signals checked", c: "#2E2E2E" },
-                  { v: held.suppressed, l: "Checked and cleared", c: "#4A4845" },
+                  { v: held.considered, l: "Signals checked", c: "var(--xd-13)" },
+                  { v: held.suppressed, l: "Checked and cleared", c: "var(--xd-16)" },
                   { v: queue.total, l: "Needs your decision", c: "#FF5C43" },
                 ].map((r) => (
                   <div key={r.l} className="flex items-center gap-4">
                     <span className="font-display text-[2rem] leading-none tabular-nums w-[4.5rem] text-right"
-                      style={{ color: r.l === "Needs your decision" ? "#FF5C43" : "#F0EDE8" }}>{r.v}</span>
+                      style={{ color: r.l === "Needs your decision" ? "#FF5C43" : "var(--xd-23)" }}>{r.v}</span>
                     <div className="flex-1 h-7 relative">
                       <div className="absolute inset-y-0 left-0 rounded-r-[3px]"
                         style={{ width: `${Math.max((r.v / Math.max(held.considered, 1)) * 100, 0.8)}%`, background: r.c }} />
                     </div>
-                    <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82] w-[10.5rem]">{r.l}</span>
+                    <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)] w-[10.5rem]">{r.l}</span>
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-[#5A5A55] mt-4 leading-relaxed max-w-3xl">
+              <p className="text-[11px] text-[var(--xd-18)] mt-4 leading-relaxed max-w-3xl">
                 Cleared does not mean discarded. Every one is listed on its site with the reason it
                 was cleared, and opens to its sources — select a site to read them. Thresholds follow
                 the organisation's stated tolerance ({TOLERANCE_WORD.toLowerCase()}), set by your
                 security team rather than adjusted while reading this board.
               </p>
-              <div className="flex flex-wrap gap-x-7 gap-y-1.5 mt-5 pt-4 border-t border-[#1C1C1C]">
+              <div className="flex flex-wrap gap-x-7 gap-y-1.5 mt-5 pt-4 border-t border-[var(--xd-8)]">
                 {Object.entries(held.byReason).map(([k, v]) => (
-                  <span key={k} className="text-[11px] text-[#6A6A64]">
-                    <span className="font-mono tabular-nums text-[#B8B5AE]">{v}</span> {SUPPRESSION_REASONS[k]?.toLowerCase()}
+                  <span key={k} className="text-[11px] text-[var(--xd-19)]">
+                    <span className="font-mono tabular-nums text-[var(--xd-21)]">{v}</span> {SUPPRESSION_REASONS[k]?.toLowerCase()}
                   </span>
                 ))}
               </div>
@@ -815,30 +941,30 @@ export default function ExecDeck() {
           </Band>
 
           <Band label="Movement">
-            <div className="grid lg:grid-cols-2 gap-px bg-[#1C1C1C] mt-3">
-              <div className="bg-[#0A0A0A] p-6">
-                <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#8A8A82]">Changed since last look</p>
+            <div className="grid lg:grid-cols-2 gap-px bg-[var(--xd-8)] mt-3">
+              <div className="bg-[var(--xd-2)] p-6">
+                <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--xd-20)]">Changed since last look</p>
                 <div className="mt-4 space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
                   {change.deteriorated.length + change.improved.length === 0
-                    ? <p className="text-[12px] text-[#5A5A55]">No site changed status.</p>
+                    ? <p className="text-[12px] text-[var(--xd-18)]">No site changed status.</p>
                     : [...change.deteriorated.slice(0, 8), ...change.improved.slice(0, 4)].map((r) => (
                       <button key={r.office.id} type="button"
                         onClick={() => { setSelected(r.office.id); setView("Sites"); }}
-                        className="w-full text-left flex items-center gap-3 hover:bg-[#111] rounded-[2px] px-1 py-0.5">
+                        className="w-full text-left flex items-center gap-3 hover:bg-[var(--xd-4)] rounded-[2px] px-1 py-0.5">
                         <span className="w-1 h-6 flex-shrink-0" style={{ background: SEV[r.to].c }} />
                         <div className="min-w-0 flex-1">
                           <div className="text-[12px] truncate">{r.office.name}</div>
-                          <div className="font-mono text-[10px] text-[#6A6A64] truncate">
+                          <div className="font-mono text-[10px] text-[var(--xd-19)] truncate">
                             {r.from} → {r.to} · {r.drivers.map((d) => d.label).join(", ") || "—"}
                           </div>
                         </div>
-                        <span className="font-mono text-[11px] tabular-nums text-[#8A8A82]">{n(r.people)}</span>
+                        <span className="font-mono text-[11px] tabular-nums text-[var(--xd-20)]">{n(r.people)}</span>
                       </button>
                     ))}
                 </div>
               </div>
-              <div className="bg-[#0A0A0A] p-6">
-                <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#8A8A82]">What's coming · 60 days</p>
+              <div className="bg-[var(--xd-2)] p-6">
+                <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--xd-20)]">What's coming · 60 days</p>
                 <div className="mt-4 space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
                   {/* These sat inert directly beside the "changed since last look" rows,
                       which ARE buttons and look identical — an asymmetry inside one panel
@@ -858,13 +984,13 @@ export default function ExecDeck() {
                         } : {})}
                         className={[
                           "w-full text-left flex items-baseline gap-3",
-                          siteId ? "hover:text-[#F0EDE8] group" : "",
+                          siteId ? "hover:text-[var(--xd-23)] group" : "",
                         ].join(" ")}
                       >
-                        <span className="font-mono text-[11px] tabular-nums text-[#8A8A82] w-12 flex-shrink-0">{f.inDays}d</span>
+                        <span className="font-mono text-[11px] tabular-nums text-[var(--xd-20)] w-12 flex-shrink-0">{f.inDays}d</span>
                         <div className="min-w-0 flex-1">
-                          <div className={["text-[12px] truncate", siteId ? "group-hover:text-[#F0EDE8]" : ""].join(" ")}>{f.name}</div>
-                          <div className="font-mono text-[10px] text-[#6A6A64]">{n(f.people)} people · {f.sites.length} sites</div>
+                          <div className={["text-[12px] truncate", siteId ? "group-hover:text-[var(--xd-23)]" : ""].join(" ")}>{f.name}</div>
+                          <div className="font-mono text-[10px] text-[var(--xd-19)]">{n(f.people)} people · {f.sites.length} sites</div>
                         </div>
                       </Tag>
                     );
@@ -878,18 +1004,18 @@ export default function ExecDeck() {
             note="The last question, not the first. Every figure above traces to graded, corroborated signals — and our own accuracy is published rather than asserted.">
             <div className="px-6 lg:px-10 pb-10 grid md:grid-cols-3 gap-8 mt-2">
               <div>
-                <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#8A8A82]">Source grading</div>
-                <p className="text-[12px] text-[#6A6A64] mt-2 leading-relaxed">Every signal carries a NATO-Admiralty grade — source reliability and information credibility, scored separately.</p>
+                <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--xd-20)]">Source grading</div>
+                <p className="text-[12px] text-[var(--xd-19)] mt-2 leading-relaxed">Every signal carries a NATO-Admiralty grade — source reliability and information credibility, scored separately.</p>
               </div>
               <div>
-                <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#8A8A82]">Corroboration gate</div>
-                <p className="text-[12px] text-[#6A6A64] mt-2 leading-relaxed">
+                <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--xd-20)]">Corroboration gate</div>
+                <p className="text-[12px] text-[var(--xd-19)] mt-2 leading-relaxed">
                   Nothing reaches this screen on a single source — {held.byReason.uncorroborated || 0} held on that basis today.
                 </p>
               </div>
               <div>
-                <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#8A8A82]">Our own track record</div>
-                <p className="text-[12px] text-[#6A6A64] mt-2 leading-relaxed">
+                <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--xd-20)]">Our own track record</div>
+                <p className="text-[12px] text-[var(--xd-19)] mt-2 leading-relaxed">
                   Published, and honestly withheld until enough forecasts resolve to earn a number.{" "}
                   <Link to="/benchmark" className="text-crimson-light hover:underline">See the benchmark →</Link>
                 </p>
@@ -916,8 +1042,8 @@ export default function ExecDeck() {
                   { v: audit.affectedSites, l: "rows affected" },
                 ].map((s) => (
                   <div key={s.l}>
-                    <div className="font-display text-[1.7rem] leading-none tabular-nums" style={{ color: s.c || "#F0EDE8" }}>{s.v}</div>
-                    <div className="font-mono text-[9px] tracking-[0.12em] uppercase text-[#6A6A64] mt-1.5">{s.l}</div>
+                    <div className="font-display text-[1.7rem] leading-none tabular-nums" style={{ color: s.c || "var(--xd-23)" }}>{s.v}</div>
+                    <div className="font-mono text-[9px] tracking-[0.12em] uppercase text-[var(--xd-19)] mt-1.5">{s.l}</div>
                   </div>
                 ))}
               </div>
@@ -946,29 +1072,29 @@ export default function ExecDeck() {
                         } : {})}
                         className={[
                           "w-full text-left flex flex-wrap items-baseline gap-x-3 text-[11px]",
-                          reachable ? "hover:bg-[#0E0E0E] group" : "",
+                          reachable ? "hover:bg-[var(--xd-3)] group" : "",
                         ].join(" ")}
                       >
                         <span className="font-mono text-[10px] uppercase tracking-[0.1em] w-[130px] flex-shrink-0"
                           style={{ color: f.severity === "critical" ? SEV.alert.c : SEV.watch.c }}>{f.severity}</span>
-                        <span className={["text-[#B8B5AE] w-[210px] flex-shrink-0 truncate", reachable ? "group-hover:text-[#F0EDE8]" : ""].join(" ")}>{f.label}</span>
+                        <span className={["text-[var(--xd-21)] w-[210px] flex-shrink-0 truncate", reachable ? "group-hover:text-[var(--xd-23)]" : ""].join(" ")}>{f.label}</span>
                         {/* The row it came from. Without this the panel reports that
                             something is wrong somewhere, which is an accusation, not a
                             finding — and the customer cannot go and fix it. */}
-                        <span className="font-mono text-[10px] text-[#6A6A64] w-[190px] flex-shrink-0 truncate"
+                        <span className="font-mono text-[10px] text-[var(--xd-19)] w-[190px] flex-shrink-0 truncate"
                           title={[ref, f.siteName].filter(Boolean).join(" · ")}>
-                          {ref ? <span className="text-[#8A8A82]">{ref}</span> : null}
+                          {ref ? <span className="text-[var(--xd-20)]">{ref}</span> : null}
                           {ref && f.siteName ? " · " : null}
                           {f.siteName || (ref ? null : "—")}
                         </span>
-                        <span className="text-[#5A5A55] flex-1 min-w-[220px]">{f.detail}</span>
+                        <span className="text-[var(--xd-18)] flex-1 min-w-[220px]">{f.detail}</span>
                       </Tag>
                     );
                   })}
                 </div>
               )}
               {audit.clean && (
-                <p className="text-[12px] text-[#5A5A55] mt-4">
+                <p className="text-[12px] text-[var(--xd-18)] mt-4">
                   No duplicates, no missing or out-of-range coordinates, no unmapped countries, every row carries a headcount.
                 </p>
               )}
@@ -984,7 +1110,7 @@ export default function ExecDeck() {
             note={unmappable > 0
               ? `Sortable, paginated, exportable. Click any row to open its full picture. ${unmappable} further row${unmappable === 1 ? " is" : "s are"} in your register but cannot be scored or listed here — ${unmappable === 1 ? "it has" : "they have"} no usable coordinates, and ${unmappable === 1 ? "is" : "are"} named in the integrity findings above.`
               : "Sortable on every column, paginated, and exportable. Click any row to open its full picture."}>
-            <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-px bg-[#1C1C1C] mt-3">
+            <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-px bg-[var(--xd-8)] mt-3">
               <DataTable
                 rows={matchSites}
                 rowKey={(r) => r.office.id}
@@ -997,9 +1123,9 @@ export default function ExecDeck() {
                 columns={SITE_COLUMNS}
               />
 
-              <div className="bg-[#0A0A0A] p-6">
+              <div className="bg-[var(--xd-2)] p-6">
                 {!sel ? (
-                  <p className="text-[12px] text-[#5A5A55]">Select a site — or click a dot on the globe — to see all eight layers, its domain scores, and everything held for it.</p>
+                  <p className="text-[12px] text-[var(--xd-18)]">Select a site — or click a dot on the globe — to see all eight layers, its domain scores, and everything held for it.</p>
                 ) : (() => {
                   const scores = domainScores(sel, { appetite });
                   const overall = overallScore(scores);
@@ -1020,10 +1146,10 @@ export default function ExecDeck() {
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                           <h3 className="text-[16px]">{sel.office.name}</h3>
-                          <p className="font-mono text-[10px] text-[#6A6A64] mt-1">
+                          <p className="font-mono text-[10px] text-[var(--xd-19)] mt-1">
                             {sel.office.city} · {sel.office.country} · {sel.office.type} · {sel.office.criticality} · {n(sel.office.headcount)} people
                           </p>
-                          <p className="font-mono text-[10px] text-[#4A4845] mt-0.5">
+                          <p className="font-mono text-[10px] text-[var(--xd-16)] mt-0.5">
                             {Number.isFinite(sel.office.lat) && Number.isFinite(sel.office.lng)
                               ? `${sel.office.lat.toFixed(3)}, ${sel.office.lng.toFixed(3)}`
                               : "no coordinates on this row"}
@@ -1042,20 +1168,20 @@ export default function ExecDeck() {
                       <div className="mt-6 space-y-2">
                         {LAYER_KEYS.map((k) => (
                           <div key={k} className="flex items-center gap-3">
-                            <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[#8A8A82] w-[86px]">{LAYER_LABELS[k]}</span>
+                            <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[var(--xd-20)] w-[86px]">{LAYER_LABELS[k]}</span>
                             <ScoreBar score={scores[k].score} />
                             {scores[k].evidence ? (
                               <button
                                 type="button"
                                 onClick={() => openSignal(scores[k].evidence.id)}
-                                className="text-[11px] text-[#6A6A64] hover:text-crimson-light truncate flex-1 text-left underline decoration-dotted decoration-[#2E2E2C]"
+                                className="text-[11px] text-[var(--xd-19)] hover:text-crimson-light truncate flex-1 text-left underline decoration-dotted decoration-[var(--xd-13)]"
                                 title="Open the signal driving this score"
                               >
                                 {scores[k].evidence.title}
                                 {scores[k].evidence.km != null ? ` · ${Math.round(scores[k].evidence.km)} km` : ""}
                               </button>
                             ) : (
-                              <span className="text-[11px] text-[#6A6A64] truncate flex-1">
+                              <span className="text-[11px] text-[var(--xd-19)] truncate flex-1">
                                 {scores[k].scope === "organisation" ? "organisation-wide" : "nothing found"}
                               </span>
                             )}
@@ -1064,23 +1190,23 @@ export default function ExecDeck() {
                       </div>
 
                       {tripsHere.length > 0 && (
-                        <div className="mt-6 pt-4 border-t border-[#1C1C1C]">
-                          <p className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82]">Travellers here · {tripsHere.length}</p>
+                        <div className="mt-6 pt-4 border-t border-[var(--xd-8)]">
+                          <p className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)]">Travellers here · {tripsHere.length}</p>
                           <div className="mt-2 space-y-1">
                             {tripsHere.slice(0, 5).map((r) => (
                               <div key={r.trip.id} className="text-[11px] flex items-center gap-2">
                                 <span style={{ color: r.verdict.color }} className="font-mono text-[10px] w-[76px]">{r.verdict.label}</span>
-                                <span className="text-[#B8B5AE]">{r.trip.traveler}</span>
-                                <span className="text-[#5A5A55]">· {r.trip.departISO} → {r.trip.returnISO}</span>
+                                <span className="text-[var(--xd-21)]">{r.trip.traveler}</span>
+                                <span className="text-[var(--xd-18)]">· {r.trip.departISO} → {r.trip.returnISO}</span>
                               </div>
                             ))}
                           </div>
                         </div>
                       )}
 
-                      <div className="mt-6 pt-4 border-t border-[#1C1C1C]">
-                        <p className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82]">Checked and cleared here · {heldHere.length}</p>
-                        {heldHere.length === 0 ? <p className="text-[11px] text-[#5A5A55] mt-2">Nothing else reached this site today.</p> : (
+                      <div className="mt-6 pt-4 border-t border-[var(--xd-8)]">
+                        <p className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)]">Checked and cleared here · {heldHere.length}</p>
+                        {heldHere.length === 0 ? <p className="text-[11px] text-[var(--xd-18)] mt-2">Nothing else reached this site today.</p> : (
                           <div className="mt-2 space-y-1 max-h-[160px] overflow-y-auto">
                             {/* The trust surface: what we saw and chose NOT to escalate.
                                 It is the first thing a sceptical buyer interrogates, so
@@ -1089,10 +1215,10 @@ export default function ExecDeck() {
                               <button
                                 key={h.id} type="button"
                                 onClick={() => openSignal(h.eventId)}
-                                className="w-full text-left text-[11px] flex flex-wrap gap-x-2 hover:text-[#F0EDE8] group"
+                                className="w-full text-left text-[11px] flex flex-wrap gap-x-2 hover:text-[var(--xd-23)] group"
                               >
-                                <span className="text-[#B8B5AE] group-hover:text-[#F0EDE8] flex-1 min-w-[160px] truncate">{h.title}</span>
-                                <span className="text-[#5A5A55]">{h.reasonLabel}</span>
+                                <span className="text-[var(--xd-21)] group-hover:text-[var(--xd-23)] flex-1 min-w-[160px] truncate">{h.title}</span>
+                                <span className="text-[var(--xd-18)]">{h.reasonLabel}</span>
                               </button>
                             ))}
                           </div>
@@ -1121,8 +1247,8 @@ export default function ExecDeck() {
                 { v: n(exp.peopleAlert), l: "resident people at elevated sites" },
               ].map((s) => (
                 <div key={s.l}>
-                  <div className="font-display text-[2rem] leading-none tabular-nums" style={{ color: s.c || "#F0EDE8" }}>{s.v}</div>
-                  <div className="font-mono text-[9px] tracking-[0.12em] uppercase text-[#6A6A64] mt-1.5">{s.l}</div>
+                  <div className="font-display text-[2rem] leading-none tabular-nums" style={{ color: s.c || "var(--xd-23)" }}>{s.v}</div>
+                  <div className="font-mono text-[9px] tracking-[0.12em] uppercase text-[var(--xd-19)] mt-1.5">{s.l}</div>
                 </div>
               ))}
             </div>
@@ -1158,16 +1284,16 @@ export default function ExecDeck() {
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-left min-w-[900px]">
                 <thead>
-                  <tr className="font-mono text-[9px] tracking-[0.14em] uppercase text-[#6A6A64]">
-                    <th className="px-4 py-2.5 font-normal border-b border-[#1C1C1C]">Country</th>
-                    <th className="px-4 py-2.5 font-normal border-b border-[#1C1C1C]">Overall</th>
-                    {LAYER_KEYS.map((k) => <th key={k} className="px-2 py-2.5 font-normal border-b border-[#1C1C1C]">{LAYER_LABELS[k]}</th>)}
-                    <th className="px-4 py-2.5 font-normal border-b border-[#1C1C1C]">Worst site</th>
+                  <tr className="font-mono text-[9px] tracking-[0.14em] uppercase text-[var(--xd-19)]">
+                    <th className="px-4 py-2.5 font-normal border-b border-[var(--xd-8)]">Country</th>
+                    <th className="px-4 py-2.5 font-normal border-b border-[var(--xd-8)]">Overall</th>
+                    {LAYER_KEYS.map((k) => <th key={k} className="px-2 py-2.5 font-normal border-b border-[var(--xd-8)]">{LAYER_LABELS[k]}</th>)}
+                    <th className="px-4 py-2.5 font-normal border-b border-[var(--xd-8)]">Worst site</th>
                   </tr>
                 </thead>
                 <tbody>
                   {countries.filter((c) => !q || c.country.toLowerCase().includes(q)).map((c) => (
-                    <tr key={c.country} className="border-b border-[#151515] hover:bg-[#0E0E0E]">
+                    <tr key={c.country} className="border-b border-[var(--xd-6)] hover:bg-[var(--xd-3)]">
                       {/* Drills into the register filtered to this country, reusing the
                           existing country dimension rather than inventing a second
                           filtering concept. Replaces (not adds to) any country already
@@ -1183,7 +1309,7 @@ export default function ExecDeck() {
                           className="text-left hover:text-crimson-light group"
                         >
                           <div className="text-[12px] group-hover:underline decoration-dotted">{c.country}</div>
-                          <div className="font-mono text-[10px] text-[#5A5A55]">{c.sites} sites · {n(c.people)} people</div>
+                          <div className="font-mono text-[10px] text-[var(--xd-18)]">{c.sites} sites · {n(c.people)} people</div>
                         </button>
                       </td>
                       <td className="px-4 py-3">
@@ -1200,7 +1326,7 @@ export default function ExecDeck() {
                       <td className="px-4 py-3">
                         {c.worstSite && (
                           <button type="button" onClick={() => { setSelected(c.worstSite.office.id); setView("Sites"); }}
-                            className="text-[11px] text-[#8A8A82] hover:text-crimson-light underline decoration-dotted">
+                            className="text-[11px] text-[var(--xd-20)] hover:text-crimson-light underline decoration-dotted">
                             {c.worstSite.office.name}
                           </button>
                         )}
@@ -1223,7 +1349,7 @@ export default function ExecDeck() {
                 A blank layer reads as "nothing scheduled", which on a security
                 calendar is the most expensive possible misreading. */}
             {registerIsLive && (
-              <p className="text-[11px] text-[#8A8A82] mb-3 leading-relaxed max-w-[70ch]">
+              <p className="text-[11px] text-[var(--xd-20)] mb-3 leading-relaxed max-w-[70ch]">
                 Public holidays are live from Nager.Date.
                 {reg.noHolidaySource?.length > 0 && (
                   <span style={{ color: "#E0A93C" }}>
@@ -1259,8 +1385,8 @@ export default function ExecDeck() {
         </motion.div>
       )}
 
-      <footer className="px-6 lg:px-10 py-6 border-t border-[#1C1C1C]">
-        <p className="font-mono text-[10px] text-[#4A4845] leading-relaxed">
+      <footer className="px-6 lg:px-10 py-6 border-t border-[var(--xd-8)]">
+        <p className="font-mono text-[10px] text-[var(--xd-16)] leading-relaxed">
           Advisory only — physical response (evacuation, ground support) via partner.
           {registerIsLive ? "Board" : "Sample board"}: {exp.sites} sites · {n(exp.people)} people · {reg.trips.length} {reg.trips.length === 1 ? "itinerary" : "itineraries"}
           {unmappable > 0 ? ` · ${unmappable} site${unmappable === 1 ? "" : "s"} unmappable (no coordinates)` : ""}.
@@ -1332,27 +1458,27 @@ function LayerStrip({ contexts, appetite, onPick, unchecked = {} }) {
   }, [contexts]);
 
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[#1C1C1C] mt-3">
+    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--xd-8)] mt-3">
       {rows.map((r) => {
         const b = bandFor(r.score);
         return (
-          <div key={r.key} className="bg-[#0A0A0A] p-4">
+          <div key={r.key} className="bg-[var(--xd-2)] p-4">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82]">{r.label}</span>
+              <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)]">{r.label}</span>
               <span className="font-display text-[1.5rem] leading-none tabular-nums" style={{ color: b.color }}>
                 {r.score.toFixed(1)}
               </span>
             </div>
-            <div className="h-1 bg-[#161616] mt-2 rounded-[1px] overflow-hidden">
+            <div className="h-1 bg-[var(--xd-7)] mt-2 rounded-[1px] overflow-hidden">
               <div className="h-full rounded-[1px]" style={{ width: `${(r.score / 5) * 100}%`, background: b.color }} />
             </div>
-            <div className="font-mono text-[10px] text-[#6A6A64] mt-2">
+            <div className="font-mono text-[10px] text-[var(--xd-19)] mt-2">
               {r.scope === "organisation"
                 ? "organisation-wide"
                 : `${r.alert} alert · ${r.watch} watch of ${contexts.length}`}
             </div>
             <div className="text-[11px] mt-1.5 leading-snug min-h-[2.4em]"
-              style={{ color: unchecked[r.key] && !r.evidence && !(r.score > 0) ? "#E0A93C" : "#5A5A55" }}>
+              style={{ color: unchecked[r.key] && !r.evidence && !(r.score > 0) ? "#E0A93C" : "var(--xd-18)" }}>
               {r.evidence
                 ? r.evidence.title
                 : r.score > 0 && r.driver
@@ -1365,7 +1491,7 @@ function LayerStrip({ contexts, appetite, onPick, unchecked = {} }) {
             </div>
             {r.driver && r.scope !== "organisation" && (
               <button type="button" onClick={() => onPick(r.driver.id)}
-                className="font-mono text-[10px] text-[#6A6A64] hover:text-crimson-light underline decoration-dotted mt-1 no-print">
+                className="font-mono text-[10px] text-[var(--xd-19)] hover:text-crimson-light underline decoration-dotted mt-1 no-print">
                 {r.driver.name} →
               </button>
             )}
@@ -1411,23 +1537,23 @@ function CalendarGrid({ ahead, trips, today }) {
     <div className="px-6 lg:px-10 pb-10 pt-3 grid lg:grid-cols-3 gap-6">
       {months.map((m) => (
         <div key={m.label}>
-          <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#8A8A82] mb-3">{m.label}</p>
-          <div className="grid grid-cols-7 gap-px bg-[#141414]">
+          <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--xd-20)] mb-3">{m.label}</p>
+          <div className="grid grid-cols-7 gap-px bg-[var(--xd-5)]">
             {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-              <div key={i} className="bg-[#0A0A0A] py-1 text-center font-mono text-[9px] text-[#4A4845]">{d}</div>
+              <div key={i} className="bg-[var(--xd-2)] py-1 text-center font-mono text-[9px] text-[var(--xd-16)]">{d}</div>
             ))}
             {m.cells.map((c, i) => (
-              <div key={i} className="bg-[#0A0A0A] min-h-[52px] p-1"
+              <div key={i} className="bg-[var(--xd-2)] min-h-[52px] p-1"
                 style={{ outline: c?.iso === todayISO ? "1px solid #FF5C43" : undefined }}>
                 {c && (
                   <>
-                    <div className="font-mono text-[9px] text-[#5A5A55]">{c.d}</div>
+                    <div className="font-mono text-[9px] text-[var(--xd-18)]">{c.d}</div>
                     <div className="flex flex-wrap gap-0.5 mt-0.5">
                       {c.items.slice(0, 4).map((it, j) => (
                         <span key={j} title={`${it.name}${it.people > 1 ? ` · ${it.people.toLocaleString()} people` : ""}`}
-                          className="w-1.5 h-1.5 rounded-full" style={{ background: KIND[it.kind] || "#6A6A64" }} />
+                          className="w-1.5 h-1.5 rounded-full" style={{ background: KIND[it.kind] || "var(--xd-19)" }} />
                       ))}
-                      {c.items.length > 4 && <span className="font-mono text-[8px] text-[#5A5A55]">+{c.items.length - 4}</span>}
+                      {c.items.length > 4 && <span className="font-mono text-[8px] text-[var(--xd-18)]">+{c.items.length - 4}</span>}
                     </div>
                   </>
                 )}
@@ -1436,14 +1562,14 @@ function CalendarGrid({ ahead, trips, today }) {
           </div>
         </div>
       ))}
-      <div className="lg:col-span-3 flex flex-wrap gap-x-6 gap-y-2 pt-2 border-t border-[#1C1C1C]">
+      <div className="lg:col-span-3 flex flex-wrap gap-x-6 gap-y-2 pt-2 border-t border-[var(--xd-8)]">
         {Object.entries(KIND).map(([k, c]) => (
           <span key={k} className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} />
-            <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[#6A6A64]">{k}</span>
+            <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[var(--xd-19)]">{k}</span>
           </span>
         ))}
-        <span className="font-mono text-[10px] text-[#4A4845]">hover a marker for detail</span>
+        <span className="font-mono text-[10px] text-[var(--xd-16)]">hover a marker for detail</span>
       </div>
     </div>
   );
