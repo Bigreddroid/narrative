@@ -10,13 +10,13 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import AsyncSessionLocal
 from backend.models.pipeline_metrics import PipelineMetric
 from backend.models.source import Source
-from backend.scrapers.engine import scrape_source, seed_sources
+from backend.scrapers.engine import scrape_source, scrapeable_clause, seed_sources
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,21 @@ async def run_scrape_worker() -> dict:
         await seed_sources(db)
         await db.commit()
 
+        # `is_active` alone is not "is a feed". hazard_ingest_worker creates a sources
+        # row per PUBLISHER name so corroboration counts outlets, and those have no
+        # rss_url; they were 570 of 688 active rows, every one of them fetched-then-
+        # skipped on every run. Filter them out in SQL so the work list is the set we
+        # can actually scrape, and the coverage numbers mean something.
         sources_result = await db.execute(
-            select(Source).where(Source.is_active == True)
+            select(Source).where(Source.is_active == True, scrapeable_clause())
         )
         sources = sources_result.scalars().all()
+
+        skipped_result = await db.execute(
+            select(func.count()).select_from(Source)
+            .where(Source.is_active == True, ~scrapeable_clause())
+        )
+        not_feeds = skipped_result.scalar() or 0
 
         for source in sources:
             try:
@@ -61,13 +72,17 @@ async def run_scrape_worker() -> dict:
         await db.commit()
 
     logger.info(
-        "Scrape worker done: scraped=%d new=%d errors=%d duration=%.1fs",
+        "Scrape worker done: feeds=%d scraped=%d new=%d errors=%d "
+        "not_feeds_skipped=%d duration=%.1fs",
+        len(sources),
         total_scraped,
         total_new,
         errors,
+        not_feeds,
         duration,
     )
-    return {"scraped": total_scraped, "new": total_new, "errors": errors}
+    return {"scraped": total_scraped, "new": total_new, "errors": errors,
+            "feeds": len(sources), "not_feeds_skipped": not_feeds}
 
 
 if __name__ == "__main__":

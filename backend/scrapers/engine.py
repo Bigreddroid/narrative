@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,19 +15,68 @@ from backend.scrapers.rss_parser import fetch_rss
 logger = logging.getLogger(__name__)
 
 
+def is_scrapeable(source: Source) -> bool:
+    """True when this row actually names something we can fetch.
+
+    Not every `sources` row is a feed. hazard_ingest_worker creates one per distinct
+    PUBLISHER name so corroboration can count outlets rather than feed labels, and
+    those carry url="" with no rss_url. Because `is_active` defaults to True and
+    `scrape_method` defaults to "rss", every one of them was landing in the scrape
+    worker's work list, falling through the method dispatch, and returning early —
+    570 of 688 active sources looked permanently un-attempted, and each run logged
+    570 warnings about it. They are not broken feeds; they are not feeds.
+    """
+    method = (source.scrape_method or "").strip()
+    if method == "rss":
+        return bool((source.rss_url or "").strip())
+    if method in ("bs4", "playwright"):
+        return bool((source.url or "").strip())
+    return False
+
+
+def scrapeable_clause():
+    """The SQL half of is_scrapeable, so the worker never fetches the rows either.
+
+    Deliberately duplicated in two forms: the query keeps unscrapeable rows out of
+    the work list, and the predicate above stops anything that slips through being
+    stamped as a healthy check.
+    """
+    return or_(
+        and_(Source.scrape_method == "rss",
+             Source.rss_url.isnot(None), func.btrim(Source.rss_url) != ""),
+        and_(Source.scrape_method.in_(("bs4", "playwright")),
+             Source.url.isnot(None), func.btrim(Source.url) != ""),
+    )
+
+
 async def scrape_source(source: Source, db: AsyncSession) -> tuple[int, int]:
     """Returns (scraped_count, new_count)."""
-    if source.scrape_method == "rss" and source.rss_url:
+    if not is_scrapeable(source):
+        # Not an error and not a success — there is nothing here to fetch, so it must
+        # NOT be stamped with last_scraped_at as though we had checked it.
+        logger.debug("Source %s has no fetchable target for method %r",
+                     source.name, source.scrape_method)
+        return 0, 0
+
+    if source.scrape_method == "rss":
         raw_articles = await fetch_rss(source.rss_url, source.name)
     elif source.scrape_method == "bs4":
         raw_articles = await scrape_page_links(source.url)
-    elif source.scrape_method == "playwright":
-        raw_articles = await scrape_with_playwright(source.url, source.name)
     else:
-        logger.warning("No valid scrape method for source %s", source.name)
-        return 0, 0
+        raw_articles = await scrape_with_playwright(source.url, source.name)
 
-    if not raw_articles:
+    now = datetime.now(timezone.utc)
+
+    # None means the source could not be READ. [] means it answered with nothing.
+    # Both are attempts and both are recorded; only the first is a failure. Returning
+    # early on `not raw_articles` conflated them, so a dead feed never incremented an
+    # error AND never recorded an attempt — invisible in both directions.
+    if raw_articles is None:
+        source.scrape_error_count = (source.scrape_error_count or 0) + 1
+        source.last_scraped_at = now
+        db.add(source)
+        logger.warning("Source %s failed to fetch (consecutive failures: %d)",
+                       source.name, source.scrape_error_count)
         return 0, 0
 
     hashes = [a["url_hash"] for a in raw_articles]
@@ -57,8 +106,8 @@ async def scrape_source(source: Source, db: AsyncSession) -> tuple[int, int]:
         )
         new_count = result.rowcount
 
-    source.last_scraped_at = datetime.now(timezone.utc)
-    source.scrape_error_count = 0
+    source.last_scraped_at = now
+    source.scrape_error_count = 0    # a successful read clears the failure streak
     db.add(source)
 
     logger.info(
