@@ -34,9 +34,37 @@ import { api } from "../lib/api.js";
 // far more slowly than the signal feed.
 const REFRESH_MS = 600_000; // 10 min
 
+// GET /context/calendar gatherings → the shape officeContext.festivalsNear already
+// consumes (it attaches by proximity, so lat/lng and a date window are all it needs).
+//
+// `routine: true` is the load-bearing field. Wikidata's dated+located set is
+// dominated by scheduled sport, and officeContext.festivalStatus raises an ACTIVE
+// festival to ALERT — calibrated for the curated fixture's "Independence Day, Red
+// Fort", not for a Tuesday-night ballgame. Letting a regular-season fixture mark an
+// office red is precisely the severity inflation this deck exists to beat, so a
+// scheduled crowd we cannot size is capped at watch. It is still on the board, and
+// still drives derived traffic — it just is not an emergency.
+function toGatherings(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((g) => g && Number.isFinite(g.lat) && Number.isFinite(g.lng) && g.date)
+    .map((g) => ({
+      id: `wd-${g.date}-${String(g.name || "").slice(0, 60)}`,
+      name: g.name,
+      place: g.country || null,
+      lat: g.lat,
+      lng: g.lng,
+      startISO: g.date,
+      endISO: g.date,
+      routine: true,
+      source: g.source || "wikidata",
+    }));
+}
+
 export default function useRegister({ fallbackSites = [], fallbackTrips = [], enabled = true } = {}) {
   const [state, setState] = useState({
     sites: [], trips: [], audit: null, holidays: {}, countryCodes: {}, noHolidaySource: [], holidayOmitted: [],
+    gatherings: [], gatheringsChecked: false, calendarChecked: false,
     source: "loading", reason: null, status: null, error: null, fetchedAt: null,
   });
   const alive = useRef(true);
@@ -46,6 +74,7 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
       setState({
         sites: fallbackSites, trips: fallbackTrips, audit: null,
         holidays: {}, countryCodes: {}, noHolidaySource: [], holidayOmitted: [],
+        gatherings: [], gatheringsChecked: false, calendarChecked: false,
         source: "sample", reason: "disabled", status: null, error: null, fetchedAt: new Date(),
       });
       return;
@@ -70,12 +99,13 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
       // deck can attach one to each site. Best-effort for the same reason trips are:
       // Nager.Date being slow must not cost the customer their site board.
       //
-      // 🔴 Holidays only. There is NO keyless source of public gatherings and
-      // festivals, so the live calendar carries none and says so — the sample board's
-      // festivals are fixture data and stay behind the sample label. Curating a
-      // festival list ourselves would be authoring content we cannot keep current,
-      // and a stale gathering on a security calendar is worse than an absent one.
+      // Gatherings ride the same response. The board used to say outright that no
+      // keyless source existed for them; it does (Wikidata, dated + located), so the
+      // layer is real now. `gatheringsChecked` is carried separately and deliberately:
+      // "we asked and found no crowd near you" and "we never asked" render identically
+      // on a calendar, and only one of them is true.
       let holidays = {}, codes = {}, noCoverage = [], omitted = [];
+      let gatherings = [], gatheringsChecked = false, calendarChecked = false;
       // 🔴 Not sliced. This used to send the first 20 countries, which silently cut
       // 23 of the register's 43 the moment it stopped being a demo-sized list — and
       // a country whose holiday layer was cut looks exactly like a country with no
@@ -96,11 +126,17 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
           // Countries the server's cap dropped. Carried for the same reason as
           // noCoverage: a blank layer must always name its cause.
           omitted = cal?.omitted ?? [];
+          gatheringsChecked = cal?.gatherings_checked === true;
+          gatherings = toGatherings(cal?.gatherings);
+          calendarChecked = true;
         } catch {
           holidays = {};
           codes = {};
           noCoverage = [];
           omitted = [];
+          gatherings = [];
+          gatheringsChecked = false;
+          calendarChecked = false;
         }
       }
 
@@ -112,6 +148,9 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
         countryCodes: codes,
         noHolidaySource: noCoverage,
         holidayOmitted: omitted,
+        gatherings,
+        gatheringsChecked,
+        calendarChecked,
         // The audit travels with the register from the server, so the board can never
         // show the numbers without the caveats that qualify them.
         audit: s?.audit ?? null,
@@ -130,6 +169,7 @@ export default function useRegister({ fallbackSites = [], fallbackTrips = [], en
       setState({
         sites: fallbackSites, trips: fallbackTrips, audit: null,
         holidays: {}, countryCodes: {}, noHolidaySource: [], holidayOmitted: [],
+        gatherings: [], gatheringsChecked: false, calendarChecked: false,
         source: "sample", reason, status: st ?? null,
         error: reason === "unauthenticated" ? "Sign in to load your site register"
           : reason === "no-organization" ? "No organization yet — showing the sample register"

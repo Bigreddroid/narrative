@@ -28,7 +28,9 @@ holiday layer was fixed for.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
@@ -129,8 +131,61 @@ _TIMEOUT = 75
 _CACHE: dict[int, tuple[float, list[dict]]] = {}
 
 
+# Requests that are currently refreshing the cache, so a burst of page loads on a
+# cold cache sends ONE query to Wikidata rather than one per viewer.
+_INFLIGHT: set[int] = set()
+# Strong references to background refreshes: asyncio only holds a weak one, and a
+# garbage-collected task cancels the refresh it was doing.
+_TASKS: set = set()
+
+
 def reset_cache() -> None:
     _CACHE.clear()
+    _INFLIGHT.clear()
+
+
+def cached(days: int) -> list[dict] | None:
+    """The fresh cached answer, or None if there is none. Never fetches."""
+    hit = _CACHE.get(days)
+    return hit[1] if hit and time.time() - hit[0] < _TTL else None
+
+
+async def _refresh(days: int, limit: int) -> None:
+    try:
+        await fetch_gatherings(days, limit)
+    finally:
+        _INFLIGHT.discard(days)
+
+
+def gatherings_now(days: int = 60, limit: int = 300) -> list[dict] | None:
+    """Cached gatherings if we have them; otherwise None, and a refresh is started.
+
+    NEVER blocks. The SPARQL subclass walk is allowed 75 seconds (_TIMEOUT) because
+    that is genuinely how long Wikidata can take, but the deck gives the whole
+    calendar request 15 (api.js). Awaiting the fetch inline therefore did not just
+    lose the gatherings layer on a cold cache — it blew the client timeout for the
+    WHOLE response, so the live 43-country holiday layer went blank too, and the
+    strip said "checked, nothing scoring" over both. A slow optional layer must not
+    be able to take a working one down with it.
+
+    Returning None here is the honest answer and the caller already renders it
+    correctly: `gatherings_checked` is False, which reads "not checked yet" rather
+    than "no crowds near you". The deck re-polls every 10 minutes and the warmed
+    cache answers instantly from then on.
+    """
+    hit = cached(days)
+    if hit is not None:
+        return hit
+    if days not in _INFLIGHT:
+        _INFLIGHT.add(days)
+        try:
+            task = asyncio.create_task(_refresh(days, limit))
+        except RuntimeError:  # no running loop (sync caller) — nothing to warm
+            _INFLIGHT.discard(days)
+            return None
+        _TASKS.add(task)
+        task.add_done_callback(_TASKS.discard)
+    return None
 
 
 async def fetch_gatherings(days: int = 60, limit: int = 300) -> list[dict] | None:
@@ -140,13 +195,11 @@ async def fetch_gatherings(days: int = 60, limit: int = 300) -> list[dict] | Non
     say "not checked" instead of rendering a failed fetch as "no gatherings near your
     offices". An empty list is a real answer; None is the absence of one.
     """
-    import time
-
     import httpx
 
-    hit = _CACHE.get(days)
-    if hit and time.time() - hit[0] < _TTL:
-        return hit[1]
+    hit = cached(days)
+    if hit is not None:
+        return hit
 
     query = build_query(days, limit)
     try:

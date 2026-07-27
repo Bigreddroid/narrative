@@ -103,5 +103,55 @@ finally:
 ok("an unreachable source returns None, not an [] that reads as 'none nearby'",
    _res is None)
 
+# -- gatherings_now: never blocks the calendar response -------------------------
+# The regression this guards: fetch_gatherings is allowed 75s (Wikidata's subclass
+# walk really is that slow), but the deck gives the WHOLE calendar request 15s. When
+# the route awaited that fetch inline, a cold cache did not merely lose the gatherings
+# layer -- it blew the client timeout for the entire response, so the live 43-country
+# HOLIDAY layer went blank too, and the all-layers strip called both "checked".
+import time as _time  # noqa: E402
+
+g.reset_cache()
+
+
+async def _cold_read():
+    t0 = _time.monotonic()
+    res = g.gatherings_now(days=30)
+    elapsed = _time.monotonic() - t0
+    for t in list(g._TASKS):
+        t.cancel()
+    return res, elapsed
+
+
+_res, _elapsed = asyncio.run(_cold_read())
+ok("a cold cache returns immediately instead of blocking the whole request",
+   _elapsed < 1.0)
+ok("a cold read is None ('not checked'), never [] ('no crowds near you')",
+   _res is None)
+
+g.reset_cache()
+g._CACHE[30] = (_time.time(), [{"name": "X", "date": "2026-08-01", "lat": 1.0,
+                               "lng": 2.0, "country": None, "source": "wikidata"}])
+ok("a warm cache is served synchronously", g.gatherings_now(days=30) is not None)
+
+g.reset_cache()
+g._CACHE[30] = (_time.time() - (g._TTL + 1), [{"name": "stale"}])
+ok("a cache older than the TTL is not served", g.cached(30) is None)
+
+
+async def _burst():
+    for _ in range(5):
+        g.gatherings_now(days=45)
+    n = len(g._INFLIGHT)
+    for t in list(g._TASKS):
+        t.cancel()
+    return n
+
+
+g.reset_cache()
+ok("a burst of cold reads coalesces into ONE refresh", asyncio.run(_burst()) == 1)
+
+g.reset_cache()
+
 print(f"\ngatherings: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

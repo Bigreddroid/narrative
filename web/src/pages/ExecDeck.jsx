@@ -326,15 +326,16 @@ export default function ExecDeck() {
     // Expired signals never reach a count. A month-old protest sitting on the board
     // is how a feed loses an executive's trust (lib/severity.js).
     const events = activeOnly(feed.events, today);
-    // Live public holidays come with the register (Nager.Date, keyless, real).
-    // 🔴 FESTIVALS DO NOT. There is no keyless source of public gatherings, so the
-    // live board carries none rather than showing invented ones — an absent layer a
-    // customer can see is honest; a curated list we cannot keep current is a stale
-    // gathering on a security calendar, which is worse than nothing. The fixture's
-    // festivals stay behind the sample label, where they belong.
+    // Live public holidays AND live public gatherings both come with the register
+    // (Nager.Date and Wikidata, both keyless, both real). The board used to carry an
+    // empty festival layer on the stated grounds that no keyless gathering source
+    // existed; that was measured and found untrue, so the layer is live rather than
+    // blank. What is NOT asserted is coverage: `reg.gatheringsChecked` travels with
+    // the data, so a layer we could not fetch says so instead of reading as "no
+    // crowds near your offices" (LayerStrip, below).
     const base = registerIsLive
       ? {
-          festivals: [], holidaysByCode: reg.holidays,
+          festivals: reg.gatherings, holidaysByCode: reg.holidays,
           countryCodes: reg.countryCodes, curatedHolidays: {},
           appetite, today,
         }
@@ -683,8 +684,19 @@ export default function ExecDeck() {
 
           <Band label="All eight layers"
             note="Nothing is hidden: every domain we carry, scored 0–5 across the whole estate, with the site driving it. A quiet layer reads 0 because nothing was found — never because it wasn't checked.">
+            {/* The Band's promise above — "never because it wasn't checked" — is only
+                true if the layers that were NOT checked say so. Both of these are
+                live-only: the sample board's fixture is always present by definition. */}
             <LayerStrip contexts={visibleContexts} appetite={appetite}
-              onPick={(id) => { setSelected(id); setView("Sites"); }} />
+              onPick={(id) => { setSelected(id); setView("Sites"); }}
+              unchecked={registerIsLive ? {
+                ...(reg.gatheringsChecked ? {} : {
+                  festivals: "Not checked — the gatherings source did not answer",
+                }),
+                ...(reg.calendarChecked ? {} : {
+                  holidays: "Not checked — the holiday calendar did not answer",
+                }),
+              } : {}} />
           </Band>
 
           <Band label="Needs a decision"
@@ -1226,8 +1238,20 @@ export default function ExecDeck() {
                     limit and were not fetched — blank here means not asked, not clear.
                   </span>
                 )}
-                {" "}Public gatherings and festivals are not covered: there is no
-                keyless source for them, and we will not invent a list we cannot keep current.
+                {reg.gatheringsChecked ? (
+                  <>
+                    {" "}Public gatherings are live from Wikidata — dated and located
+                    events only, so a crowd with no venue on record is not on this grid.
+                    Scheduled sport dominates the set; a fixture we cannot size counts as
+                    context and a watch, never an alert.
+                  </>
+                ) : (
+                  <span style={{ color: "#E0A93C" }}>
+                    {" "}The gatherings source did not answer this cycle, so that layer is
+                    blank here because it was not checked — not because no crowds are
+                    scheduled near your offices.
+                  </span>
+                )}
               </p>
             )}
             <CalendarGrid ahead={ahead} trips={reg.trips} today={today} />
@@ -1263,7 +1287,12 @@ export default function ExecDeck() {
 // weather, holiday, festival and derived road traffic. Weather and hazards are as
 // load-bearing here as unrest: severe weather is what actually closes a campus,
 // and burying it is how a board is surprised by a flood.
-function LayerStrip({ contexts, appetite, onPick }) {
+// `unchecked` names the layers whose SOURCE did not answer this cycle. Without it a
+// layer that was never fetched renders identically to one that was fetched and found
+// nothing — the same failure the holiday layer was fixed for, and the reason the
+// festival tile read "Checked — nothing scoring across the estate" for a layer the
+// live board hardcoded empty.
+function LayerStrip({ contexts, appetite, onPick, unchecked = {} }) {
   const rows = useMemo(() => {
     const acc = LAYER_KEYS.map((k) => ({
       key: k, label: LAYER_LABELS[k], score: 0, alert: 0, watch: 0,
@@ -1322,14 +1351,17 @@ function LayerStrip({ contexts, appetite, onPick }) {
                 ? "organisation-wide"
                 : `${r.alert} alert · ${r.watch} watch of ${contexts.length}`}
             </div>
-            <div className="text-[11px] text-[#5A5A55] mt-1.5 leading-snug min-h-[2.4em]">
+            <div className="text-[11px] mt-1.5 leading-snug min-h-[2.4em]"
+              style={{ color: unchecked[r.key] && !r.evidence && !(r.score > 0) ? "#E0A93C" : "#5A5A55" }}>
               {r.evidence
                 ? r.evidence.title
                 : r.score > 0 && r.driver
                   ? `Highest at ${r.driver.name}`
-                  : r.key === "holidays" && nextHoliday
-                    ? `None today — next is ${nextHoliday.name} in ${nextHoliday.in_days}d`
-                    : "Checked — nothing scoring across the estate"}
+                  : unchecked[r.key]
+                    ? unchecked[r.key]
+                    : r.key === "holidays" && nextHoliday
+                      ? `None today — next is ${nextHoliday.name} in ${nextHoliday.in_days}d`
+                      : "Checked — nothing scoring across the estate"}
             </div>
             {r.driver && r.scope !== "organisation" && (
               <button type="button" onClick={() => onPick(r.driver.id)}

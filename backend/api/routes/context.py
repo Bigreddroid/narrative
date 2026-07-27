@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query
 
 from backend.api.dependencies import UserDep
 from backend.countries import to_iso2
-from backend.feeds.gatherings import fetch_gatherings
+from backend.feeds.gatherings import gatherings_now
 from backend.feeds.holidays import fetch_holidays, upcoming
 
 router = APIRouter(prefix="/context", tags=["context"])
@@ -99,7 +99,11 @@ async def get_calendar(
     # untrue (see backend/feeds/gatherings.py). `gatherings_checked` distinguishes "we
     # asked and there is nothing near you" from "we never asked", because the deck
     # renders those two identically and only one of them is honest.
-    gatherings = await fetch_gatherings(days=days)
+    # Non-blocking: the cached answer if we have one, else None plus a background
+    # warm. Awaiting the fetch here let a 75s Wikidata walk blow the deck's 15s
+    # timeout for the ENTIRE response, taking the working holiday layer down with
+    # the optional gatherings one.
+    gatherings = gatherings_now(days=days)
     return {
         "holidays": out,
         "gatherings": gatherings or [],
