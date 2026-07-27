@@ -48,13 +48,21 @@ async def run_scrape_worker() -> dict:
         not_feeds = skipped_result.scalar() or 0
 
         for source in sources:
+            # A feed that cannot be READ no longer raises — fetch_rss returns None and
+            # scrape_source records the failure on the row. Counting only exceptions
+            # therefore reported errors=0 on a run where 20 of 118 feeds were dead,
+            # which is the same "quiet means healthy" lie the row-level counter was
+            # just fixed for. Watch the row's own counter instead.
+            before = source.scrape_error_count or 0
             try:
                 scraped, new = await scrape_source(source, db)
                 total_scraped += scraped
                 total_new += new
+                if (source.scrape_error_count or 0) > before:
+                    errors += 1
             except Exception as exc:
                 logger.error("Scrape failed for source %s: %s", source.name, exc)
-                source.scrape_error_count += 1
+                source.scrape_error_count = before + 1
                 db.add(source)
                 errors += 1
 
