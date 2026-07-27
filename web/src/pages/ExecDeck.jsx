@@ -470,6 +470,23 @@ export default function ExecDeck() {
     : { label: "Stable", c: "#E0A93C" };
   const sel = selected ? byId.get(selected) : null;
 
+  // Selecting a site was effectively invisible below the `lg` breakpoint: the detail
+  // panel is the second cell of a two-column grid, so on a narrower screen it stacks
+  // BELOW the whole paginated register — a reader clicked a row, nothing appeared to
+  // happen, and the thing they asked for sat a thousand pixels down the page. Same for
+  // arriving with ?site= from the globe, the calendar or the signal drawer, which land
+  // at the top of the board. Scroll it into view, but only when it isn't already on
+  // screen, so a click on a wide layout doesn't yank the page around for no reason.
+  const detailRef = useRef(null);
+  useEffect(() => {
+    if (!sel || view !== "Sites") return;
+    const el = detailRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top >= 0 && r.top < window.innerHeight * 0.8) return;   // already visible
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [sel, view]);
+
   const onToggle = (dim, value) => setFilters((f) => toggleValue(f, dim, value));
   const activeCount = countActive(filters);
 
@@ -1050,7 +1067,7 @@ export default function ExecDeck() {
                 columns={SITE_COLUMNS}
               />
 
-              <div className="bg-[var(--xd-2)] p-6">
+              <div ref={detailRef} className="bg-[var(--xd-2)] p-6 scroll-mt-4">
                 {!sel ? (
                   <p className="text-[12px] text-[var(--xd-18)]">Select a site — or click a dot on the globe — to see all eight layers, its domain scores, and everything held for it.</p>
                 ) : (() => {
@@ -1307,7 +1324,8 @@ export default function ExecDeck() {
                 )}
               </p>
             )}
-            <CalendarGrid ahead={ahead} trips={reg.trips} today={today} />
+            <CalendarGrid ahead={ahead} trips={reg.trips} today={today}
+              onOpenSite={(id) => { setSelected(id); setView("Sites"); }} />
           </Band>
         </motion.div>
       )}
@@ -1431,7 +1449,7 @@ function LayerStrip({ contexts, appetite, onPick, unchecked = {} }) {
 
 // ── Calendar ─────────────────────────────────────────────────────────────────
 // Real month grids built from the same forward() rows plus trip departures.
-function CalendarGrid({ ahead, trips, today }) {
+function CalendarGrid({ ahead, trips, today, onOpenSite }) {
   const months = useMemo(() => {
     const byDay = new Map();
     const push = (iso, item) => {
@@ -1439,8 +1457,15 @@ function CalendarGrid({ ahead, trips, today }) {
       if (!byDay.has(iso)) byDay.set(iso, []);
       byDay.get(iso).push(item);
     };
-    for (const f of ahead) push(f.date, { kind: f.kind, name: f.name, people: f.people, sites: f.sites.length });
-    for (const t of trips) push(t.departISO, { kind: "trip", name: `${t.traveler} → ${t.to}`, people: 1, sites: 0 });
+    // siteId mirrors the "what's coming" list: a scheduled item opens the SITE it
+    // affects, not a signal drawer. Without it a calendar day was a dead end.
+    for (const f of ahead) {
+      push(f.date, {
+        kind: f.kind, name: f.name, people: f.people, sites: f.sites.length,
+        siteId: f.sites?.[0]?.office?.id ?? f.sites?.[0]?.id ?? null,
+      });
+    }
+    for (const t of trips) push(t.departISO, { kind: "trip", name: `${t.traveler} → ${t.to}`, people: 1, sites: 0, siteId: null });
 
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
     return [0, 1, 2].map((m) => {
@@ -1460,32 +1485,100 @@ function CalendarGrid({ ahead, trips, today }) {
   const KIND = { holiday: "#E0A93C", festival: "#FF5C43", trip: "#5FBF74" };
   const todayISO = today.toISOString().slice(0, 10);
 
+  // The detail used to be a native `title` on a 6px dot: ~1s delay, invisible on
+  // touch, unreachable by keyboard, and the items hidden behind "+N" had no title
+  // at all — so the legend's promise was false for anything past the fourth item.
+  // The whole DAY is the target now, and the panel lists every item on it.
+  const [open, setOpen] = useState(null);   // { key, left, top, day, items }
+
+  const openCell = (monthKey, c) => (e) => {
+    if (!c || !c.items.length) return;
+    const el = e.currentTarget;                       // offsetParent = the month grid
+    setOpen({
+      key: `${monthKey}:${c.iso}`,
+      left: el.offsetLeft,
+      top: el.offsetTop + el.offsetHeight,
+      iso: c.iso,
+      items: c.items,
+    });
+  };
+
   return (
     <div className="px-6 lg:px-10 pb-10 pt-3 grid lg:grid-cols-3 gap-6">
       {months.map((m) => (
         <div key={m.label}>
           <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--xd-20)] mb-3">{m.label}</p>
-          <div className="grid grid-cols-7 gap-px bg-[var(--xd-5)]">
+          <div className="grid grid-cols-7 gap-px bg-[var(--xd-5)] relative"
+            onMouseLeave={() => setOpen(null)}>
             {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
               <div key={i} className="bg-[var(--xd-2)] py-1 text-center font-mono text-[9px] text-[var(--xd-16)]">{d}</div>
             ))}
-            {m.cells.map((c, i) => (
-              <div key={i} className="bg-[var(--xd-2)] min-h-[52px] p-1"
-                style={{ outline: c?.iso === todayISO ? "1px solid #FF5C43" : undefined }}>
-                {c && (
-                  <>
-                    <div className="font-mono text-[9px] text-[var(--xd-18)]">{c.d}</div>
-                    <div className="flex flex-wrap gap-0.5 mt-0.5">
-                      {c.items.slice(0, 4).map((it, j) => (
-                        <span key={j} title={`${it.name}${it.people > 1 ? ` · ${it.people.toLocaleString()} people` : ""}`}
-                          className="w-1.5 h-1.5 rounded-full" style={{ background: KIND[it.kind] || "var(--xd-19)" }} />
-                      ))}
-                      {c.items.length > 4 && <span className="font-mono text-[8px] text-[var(--xd-18)]">+{c.items.length - 4}</span>}
-                    </div>
-                  </>
-                )}
+            {m.cells.map((c, i) => {
+              const has = !!c?.items.length;
+              const firstSite = has ? c.items.find((it) => it.siteId)?.siteId : null;
+              return (
+                <div key={i}
+                  className={`bg-[var(--xd-2)] min-h-[52px] p-1 ${has ? "cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--xd-19)]" : ""}`}
+                  style={{ outline: c?.iso === todayISO ? "1px solid #FF5C43" : undefined }}
+                  tabIndex={has ? 0 : undefined}
+                  role={has ? "button" : undefined}
+                  aria-label={has ? `${c.iso} — ${c.items.length} item${c.items.length > 1 ? "s" : ""}: ${c.items.map((it) => it.name).join(", ")}${firstSite ? ". Opens the affected site." : ""}` : undefined}
+                  onMouseEnter={openCell(m.label, c)}
+                  onFocus={openCell(m.label, c)}
+                  onBlur={() => setOpen(null)}
+                  onClick={firstSite ? () => onOpenSite?.(firstSite) : undefined}
+                  onKeyDown={firstSite ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenSite?.(firstSite); }
+                  } : undefined}>
+                  {c && (
+                    <>
+                      <div className="font-mono text-[9px] text-[var(--xd-18)]">{c.d}</div>
+                      <div className="flex flex-wrap gap-0.5 mt-0.5">
+                        {c.items.slice(0, 4).map((it, j) => (
+                          <span key={j} className="w-1.5 h-1.5 rounded-full"
+                            style={{ background: KIND[it.kind] || "var(--xd-19)" }} />
+                        ))}
+                        {c.items.length > 4 && <span className="font-mono text-[8px] text-[var(--xd-18)]">+{c.items.length - 4}</span>}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {open && open.key.startsWith(`${m.label}:`) && (
+              <div className="absolute z-20 bg-[var(--xd-3)] border border-[var(--xd-12)] px-3 py-2 rounded-[2px] shadow-xl w-[230px]"
+                style={{ left: Math.min(open.left, 230), top: open.top + 2 }}>
+                <div className="font-mono text-[10px] tracking-[0.1em] uppercase text-[var(--xd-19)]">
+                  {new Date(`${open.iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}
+                </div>
+                <div className="mt-1.5 space-y-1.5 border-t border-[var(--xd-10)] pt-1.5">
+                  {open.items.map((it, j) => {
+                    const Tag = it.siteId ? "button" : "div";
+                    return (
+                      <Tag key={j}
+                        {...(it.siteId ? {
+                          type: "button",
+                          onClick: (e) => { e.stopPropagation(); onOpenSite?.(it.siteId); },
+                          title: `Open the affected site`,
+                        } : {})}
+                        className={`w-full text-left flex items-start gap-1.5 ${it.siteId ? "group" : ""}`}>
+                        <span className="w-1.5 h-1.5 rounded-full mt-[5px] shrink-0"
+                          style={{ background: KIND[it.kind] || "var(--xd-19)" }} />
+                        <div className="min-w-0">
+                          <div className={`text-[11px] text-[var(--xd-23)] leading-snug ${it.siteId ? "group-hover:underline decoration-dotted" : ""}`}>{it.name}</div>
+                          <div className="font-mono text-[9px] text-[var(--xd-18)]">
+                            {it.kind}
+                            {it.people > 0 && ` · ${it.people.toLocaleString()} people`}
+                            {it.sites > 0 && ` · ${it.sites} site${it.sites > 1 ? "s" : ""}`}
+                          </div>
+                        </div>
+                      </Tag>
+                    );
+                  })}
+                </div>
               </div>
-            ))}
+            )}
           </div>
         </div>
       ))}
@@ -1496,7 +1589,7 @@ function CalendarGrid({ ahead, trips, today }) {
             <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[var(--xd-19)]">{k}</span>
           </span>
         ))}
-        <span className="font-mono text-[10px] text-[var(--xd-16)]">hover a marker for detail</span>
+        <span className="font-mono text-[10px] text-[var(--xd-16)]">hover or tab to a marked day for detail · click to open the affected site</span>
       </div>
     </div>
   );
