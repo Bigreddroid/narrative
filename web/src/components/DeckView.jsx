@@ -15,20 +15,29 @@ import { biasLabel } from "../lib/bias.js";
 // Borrowed UX from TweetDeck: a horizontally scrolling wall of dense, live,
 // independently-scrolling columns — adapted to Narrative's signals + theme.
 
-// Dark "command-center" palette (deck is always dark, like classic TweetDeck).
+// The board used to hardcode its own "command-center" greys, which made it the one
+// surface in the product that ignored the day/night switch and drifted off the
+// palette everything else shares. It now reads the same --xd-* ramp as the exec
+// deck, so a single scale governs both themes and the deck follows the switch.
+// Requires an ancestor carrying the `.exec-deck` class, which is where the ramp is
+// defined (see index.css) — SignalBoard and the analyst dashboard both provide it.
+//
+// Crimson stays a literal on purpose: status hues encode severity and must mean the
+// same thing in both themes. A red that drifts lighter in day mode stops meaning
+// "alert".
 const C = {
-  board:   "#0B0E13",
-  column:  "#141922",
-  header:  "#11151D",
-  card:    "#161C26",
-  cardHov: "#1B2230",
-  border:  "rgba(240,237,232,0.07)",
-  border2: "rgba(240,237,232,0.12)",
-  fg:      "#E8E4DC",
-  fg80:    "rgba(232,228,220,0.80)",
-  fg50:    "rgba(232,228,220,0.50)",
-  fg35:    "rgba(232,228,220,0.35)",
-  fg20:    "rgba(232,228,220,0.20)",
+  board:   "var(--xd-0)",
+  column:  "var(--xd-2)",
+  header:  "var(--xd-1)",
+  card:    "var(--xd-3)",
+  cardHov: "var(--xd-5)",
+  border:  "var(--xd-8)",
+  border2: "var(--xd-11)",
+  fg:      "var(--xd-23)",
+  fg80:    "var(--xd-21)",
+  fg50:    "var(--xd-19)",
+  fg35:    "var(--xd-17)",
+  fg20:    "var(--xd-14)",
   crimson: "#C80028",
 };
 
@@ -312,10 +321,15 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
     if (col.kind === "lens") {
       return rankByLens(events.filter(e => eventRelevance(e, profile).score > 0), profile);
     }
+    // Case-folded on purpose. The events table carries both "developing" and
+    // "Developing" (and both casings of "escalating"); an exact-match filter simply
+    // dropped those rows on the floor, with no way for a reader to tell that a
+    // column was under-reporting.
+    const eq = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
     let list = events;
-    if (col.kind === "category") list = events.filter(e => e.category === col.value);
-    else if (col.kind === "discipline") list = events.filter(e => e.int_discipline === col.value);
-    else if (col.kind === "status") list = events.filter(e => e.current_status === col.value);
+    if (col.kind === "category") list = events.filter(e => eq(e.category, col.value));
+    else if (col.kind === "discipline") list = events.filter(e => eq(e.int_discipline, col.value));
+    else if (col.kind === "status") list = events.filter(e => eq(e.current_status, col.value));
     return [...list].sort((a, b) => (b.importance_score || 0) - (a.importance_score || 0));
   }, [events, profile]);
 
