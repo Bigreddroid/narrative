@@ -9,6 +9,16 @@ import { getDisciplineColor } from "../lib/colors.js";
 import { haversineKm as _havKm } from "../lib/geoAssoc.js";
 import { officeContext, topSignal, LAYER_KEYS, LAYER_LABELS, levelColor, extentKm } from "../lib/officeContext.js";
 import { useTheme } from "../hooks/useTheme.js";
+import SurfaceNav from "../components/layout/SurfaceNav.jsx";
+
+// Sibling surfaces over the same estate. Kept beside the component rather than
+// in the tenant config: these are product surfaces, not per-customer branding.
+const DECK_SIBLINGS = [
+  { to: "/wipro/exec", label: "Executive deck" },
+  { to: "/world",      label: "Feed" },
+  { to: "/deck",       label: "Signal deck" },
+  { to: "/benchmark",  label: "Benchmark" },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CustomerDeck — a config-driven customer dashboard over the SAME live Narrative
@@ -986,6 +996,12 @@ export default function CustomerDeck({ config }) {
 
   return (
     <div className="min-h-screen bg-paper flex flex-col">
+      {/* The analyst altitude and the executive altitude are the same estate read
+          two ways — the whole product thesis — yet neither could see the other.
+          This deck already had a theme switch of its own in the masthead below, so
+          the bar carries navigation only. */}
+      <SurfaceNav links={DECK_SIBLINGS} fallback="/world" tone="ink" showTheme={false} />
+
       <header style={{ backgroundColor: "#111111" }} className="sticky top-0 z-40">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-2.5 flex items-center justify-between">
           <div>

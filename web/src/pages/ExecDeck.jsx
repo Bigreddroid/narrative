@@ -27,10 +27,9 @@
 //  auditAdapter · domainScore · severity · deckFilters). Capabilities we cannot
 //  compute (mass-comms delivery) are absent rather than faked.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
-import { Link, useSearchParams, useNavigate, useLocation } from "react-router-dom";
+import { useMemo, useState, useEffect, useRef } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useTheme } from "../hooks/useTheme.js";
 import { officeContext, topSignal, LAYER_KEYS, LAYER_LABELS } from "../lib/officeContext.js";
 import { haversineKm as _havKm } from "../lib/geoAssoc.js";
 import {
@@ -54,6 +53,16 @@ import FilterBar from "../components/exec/FilterBar.jsx";
 import DataTable from "../components/exec/DataTable.jsx";
 import SignalDrawer from "../components/exec/SignalDrawer.jsx";
 import * as SAMPLE from "../data/customers/wipro.exec.sample.js";
+import SurfaceNav from "../components/layout/SurfaceNav.jsx";
+
+// The surfaces this deck sits beside: the analyst altitude over the same estate,
+// the neutral wire, the operator board, and the published accuracy record.
+const DECK_LINKS = [
+  { to: "/wipro",     label: "Analyst board" },
+  { to: "/world",     label: "Feed" },
+  { to: "/deck",      label: "Signal deck" },
+  { to: "/benchmark", label: "Benchmark" },
+];
 
 const haversineKm = (lat1, lng1, lat2, lng2) => _havKm(lng1, lat1, lng2, lat2);
 const n = (x) => (x ?? 0).toLocaleString("en-US");
@@ -64,80 +73,6 @@ const rise = (i = 0) => ({
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.45, delay: 0.04 * i, ease: [0.22, 1, 0.36, 1] },
 });
-
-// ── Deck navigation ──────────────────────────────────────────────────────────
-// The board used to be a cul-de-sac: you could reach /wipro/exec and then only
-// leave it by editing the address bar. Every other surface in the product is one
-// click from every other, and an executive who cannot get back to the analyst
-// board stops trusting that the two are the same system.
-//
-// Back is history-aware on purpose. The deck writes its own state to the query
-// string with replace:true, so history holds the page the reader ARRIVED from —
-// going back returns them there rather than to a hardcoded parent they may never
-// have visited. With no history to pop (a deep link opened cold) it falls through
-// to the analyst board, which is the deck's real parent.
-const SURFACES = [
-  { to: "/wipro", label: "Analyst board" },
-  { to: "/world", label: "Feed" },
-  { to: "/deck",  label: "Signal deck" },
-  { to: "/benchmark", label: "Benchmark" },
-];
-
-function DeckNav({ onBack, isDark, onToggleTheme }) {
-  const { pathname } = useLocation();
-  return (
-    <nav className="no-print border-b border-[var(--xd-8)] bg-[var(--xd-1)] px-6 lg:px-10 py-2
-                    flex flex-wrap items-center gap-x-5 gap-y-2 sticky top-0 z-40">
-      <button type="button" onClick={onBack}
-        className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.14em] uppercase
-                   text-[var(--xd-20)] hover:text-[var(--xd-23)] transition-colors">
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor"
-          strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M7.5 2L3.5 6l4 4" />
-        </svg>
-        Back
-      </button>
-
-      <span className="w-px h-3 bg-[var(--xd-11)]" aria-hidden="true" />
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        {SURFACES.map((s) => (
-          <Link key={s.to} to={s.to}
-            aria-current={pathname === s.to ? "page" : undefined}
-            className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-19)]
-                       hover:text-[var(--xd-23)] transition-colors">
-            {s.label}
-          </Link>
-        ))}
-      </div>
-
-      {/* Day/night. The deck is dark by default and most at home there, but it is
-          read in daylit boardrooms and printed from; the switch is the same
-          ThemeContext the rest of the app uses, so the choice follows the reader
-          across surfaces instead of resetting here. */}
-      <button type="button" onClick={onToggleTheme}
-        aria-pressed={!isDark}
-        title={isDark ? "Switch to day mode" : "Switch to night mode"}
-        className="ml-auto flex items-center gap-1.5 font-mono text-[10px] tracking-[0.14em] uppercase
-                   text-[var(--xd-19)] hover:text-[var(--xd-23)] border border-[var(--xd-11)]
-                   hover:border-[var(--xd-15)] px-2.5 py-1 rounded-[2px] transition-colors">
-        {isDark ? (
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-            strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
-            <circle cx="7" cy="7" r="2.5" />
-            <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.93 2.93l1.06 1.06M10.01 10.01l1.06 1.06M11.07 2.93l-1.06 1.06M3.99 10.01l-1.06 1.06" />
-          </svg>
-        ) : (
-          <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor"
-            strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
-            <path d="M11 8.5A5.5 5.5 0 1 1 4.5 2a4 4 0 0 0 6.5 6.5z" />
-          </svg>
-        )}
-        {isDark ? "Day" : "Night"}
-      </button>
-    </nav>
-  );
-}
 
 function Band({ label, note, children, right, id }) {
   return (
@@ -301,14 +236,6 @@ export default function ExecDeck() {
   // with replace:true, because a history entry per filter chip would bury the page the
   // reader arrived from under fifty of its own states.
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { isDark, toggle: toggleTheme } = useTheme();
-  // See DeckNav: pop history when there is somewhere to pop to, else fall through
-  // to the analyst board. `idx` is null for the first entry in a history session.
-  const goBack = useCallback(() => {
-    if (window.history.state?.idx > 0) navigate(-1);
-    else navigate("/wipro");
-  }, [navigate]);
   const [view, setView] = useState(() => {
     const v = searchParams.get("v");
     return VIEWS.includes(v) ? v : "Overview";   // validated: a junk param must not blank the board
@@ -554,7 +481,7 @@ export default function ExecDeck() {
   if (reg.source === "loading") {
     return (
       <div className="exec-deck min-h-screen bg-[var(--xd-0)] text-[var(--xd-23)]">
-        <DeckNav onBack={goBack} isDark={isDark} onToggleTheme={toggleTheme} />
+        <SurfaceNav links={DECK_LINKS} fallback="/wipro" tone="var" />
         <div className="flex items-center justify-center" style={{ minHeight: "70vh" }}>
           <p className="font-mono text-[11px] tracking-[0.2em] uppercase text-[var(--xd-19)]">
             Reading the site register…
@@ -571,7 +498,7 @@ export default function ExecDeck() {
   if (registerIsLive && reg.sites.length === 0) {
     return (
       <div className="exec-deck min-h-screen bg-[var(--xd-0)] text-[var(--xd-23)]">
-        <DeckNav onBack={goBack} isDark={isDark} onToggleTheme={toggleTheme} />
+        <SurfaceNav links={DECK_LINKS} fallback="/wipro" tone="var" />
         <div className="px-6 lg:px-10 py-16">
         <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-[var(--xd-19)]">
           Wipro · Global Security
@@ -599,7 +526,7 @@ export default function ExecDeck() {
     <div className="exec-deck min-h-screen bg-[var(--xd-0)] text-[var(--xd-23)] pb-20 md:pb-0">
       <style>{`@media print{.no-print{display:none!important}body{background:#fff}}`}</style>
 
-      <DeckNav onBack={goBack} isDark={isDark} onToggleTheme={toggleTheme} />
+      <SurfaceNav links={DECK_LINKS} fallback="/wipro" tone="var" />
 
       {/* ── Provenance bar ───────────────────────────────────────────────────
           The split is the honest part: the SIGNALS are live off the engine, the
