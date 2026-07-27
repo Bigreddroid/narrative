@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEventFeed } from "../hooks/useEventFeed.js";
+import { useColumnFeeds, columnKey } from "../hooks/useColumnFeeds.js";
 import { useFollowing } from "../hooks/useFollowing.js";
 import { useMediaQuery } from "../hooks/useMediaQuery.js";
 import { useProfile } from "../hooks/useProfile.js";
@@ -153,7 +154,7 @@ function DeckCard({ event, isSelected, onClick, following, onFollow }) {
 }
 
 // ─── Column ───────────────────────────────────────────────────────────────────
-function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowing, onFollow }) {
+function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowing, onFollow, loading = false, error = null }) {
   const accent = column.kind === "category" ? getCategoryColor(column.value)
     : column.kind === "discipline" ? getDisciplineColor(column.value)
     : column.kind === "status" ? C.crimson
@@ -203,8 +204,14 @@ function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowi
       <div className="flex-1 overflow-y-auto deck-scroll pb-20 md:pb-0">
         {events.length === 0 ? (
           <div className="flex items-center justify-center h-32 px-4">
-            <p className="text-[10px] font-mono uppercase tracking-widest text-center" style={{ color: C.fg20 }}>
-              No signals in this column
+            {/* "0" has to mean something. Loading and a failed query are NOT the same
+                answer as "nothing matches", and rendering all three identically is how
+                an empty column reads as a fact about the world. */}
+            <p className="text-[10px] font-mono uppercase tracking-widest text-center"
+               style={{ color: error ? "#E0A93C" : C.fg20 }}>
+              {loading ? "Loading…"
+                : error ? "Could not load this column — not the same as 'none'"
+                : "No signals in this column"}
             </p>
           </div>
         ) : (
@@ -315,24 +322,6 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
   const profile = useProfile();
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
 
-  const filterFor = useCallback((col) => {
-    // The lens column ranks the SAME events by how hard they hit your profile, and
-    // drops the ones that don't touch it at all — the deck's "for you" wall.
-    if (col.kind === "lens") {
-      return rankByLens(events.filter(e => eventRelevance(e, profile).score > 0), profile);
-    }
-    // Case-folded on purpose. The events table carries both "developing" and
-    // "Developing" (and both casings of "escalating"); an exact-match filter simply
-    // dropped those rows on the floor, with no way for a reader to tell that a
-    // column was under-reporting.
-    const eq = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
-    let list = events;
-    if (col.kind === "category") list = events.filter(e => eq(e.category, col.value));
-    else if (col.kind === "discipline") list = events.filter(e => eq(e.int_discipline, col.value));
-    else if (col.kind === "status") list = events.filter(e => eq(e.current_status, col.value));
-    return [...list].sort((a, b) => (b.importance_score || 0) - (a.importance_score || 0));
-  }, [events, profile]);
-
   // Prepend a live "Your Lens" column when a lens is set — it isn't a stored column
   // (no remove button); it always tracks the current profile.
   const effectiveColumns = useMemo(
@@ -340,9 +329,32 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
     [profile.active, columns],
   );
 
+  // One server-side query per filtered column, ranked over the WHOLE table.
+  const columnFeeds = useColumnFeeds(effectiveColumns, { limit: 100 });
+
+  const filterFor = useCallback((col) => {
+    // The lens column ranks the SAME events by how hard they hit your profile, and
+    // drops the ones that don't touch it at all — the deck's "for you" wall.
+    if (col.kind === "lens") {
+      return rankByLens(events.filter(e => eventRelevance(e, profile).score > 0), profile);
+    }
+    // Filtered columns come from the SERVER now (see useColumnFeeds): filtering the
+    // shared top-100 window in the browser made "Escalating" a duplicate of "All
+    // Signals" and left "Developing" empty over 30,255 developing rows.
+    const key = columnKey(col);
+    if (key) return columnFeeds[key]?.events ?? [];
+    return [...events].sort((a, b) => (b.importance_score || 0) - (a.importance_score || 0));
+  }, [events, profile, columnFeeds]);
+
   const columnData = useMemo(
-    () => effectiveColumns.map(col => ({ col, list: filterFor(col) })),
-    [effectiveColumns, filterFor]
+    () => effectiveColumns.map(col => ({
+      col,
+      list: filterFor(col),
+      // A column still loading must not render its empty list as a real zero.
+      loading: columnKey(col) ? (columnFeeds[columnKey(col)]?.loading ?? true) : loading,
+      error: columnKey(col) ? columnFeeds[columnKey(col)]?.error : null,
+    })),
+    [effectiveColumns, filterFor, columnFeeds, loading]
   );
 
   const addColumn    = useCallback((col) => setColumns(c => [...c, col]), []);
@@ -368,7 +380,7 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
           <InitializingScreen dark title="Initializing Deck" />
         ) : (
           <>
-            {columnData.map(({ col, list }) => (
+            {columnData.map(({ col, list, loading: colLoading, error: colError }) => (
               <Column
                 key={col.id}
                 column={col}
@@ -378,6 +390,8 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
                 onRemove={removeColumn}
                 isFollowing={isFollowing}
                 onFollow={{ follow, unfollow }}
+                loading={colLoading}
+                error={colError}
               />
             ))}
             <AddColumn onAdd={addColumn} />

@@ -73,7 +73,7 @@ async def list_events(
         query = query.limit(limit).offset(offset)
 
     if category:
-        query = query.where(NarrativeEvent.category == category)
+        query = query.where(func.lower(NarrativeEvent.category) == category.lower())
     elif not (discipline or source_prefix):
         # Cyber CVEs are niche/high-volume — keep them out of the headline feed
         # (still reachable via ?category=cyber, ?discipline=CYBINT, and surfaced as
@@ -81,10 +81,14 @@ async def list_events(
         # view, or the demo scenario slice) wants them, so skip this exclusion
         # whenever discipline= or source_prefix= is requested.
         query = query.where(NarrativeEvent.category != "cyber")
+    # Case-folded. narrative_events carries both "developing" and "Developing" (and
+    # both casings of "escalating") because the ingest paths never normalised on write.
+    # An exact match silently dropped those rows, so a status filter under-reported
+    # with nothing to show a reader that it had.
     if status:
-        query = query.where(NarrativeEvent.current_status == status)
+        query = query.where(func.lower(NarrativeEvent.current_status) == status.lower())
     if discipline:
-        query = query.where(NarrativeEvent.int_discipline == discipline)
+        query = query.where(func.lower(NarrativeEvent.int_discipline) == discipline.lower())
     if source_type == "osint":
         query = query.where(NarrativeEvent.source.like("osint_%"))
     if source_prefix:
