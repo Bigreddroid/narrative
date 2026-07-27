@@ -232,7 +232,7 @@ LAUNCH_SOURCES = [
     {"name": "Balkan Insight", "url": "https://balkaninsight.com", "rss_url": "https://balkaninsight.com/feed/", "country": "RS", "category": "conflict", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "RTÉ News", "url": "https://www.rte.ie/news", "rss_url": "https://www.rte.ie/news/rss/news-headlines.xml", "country": "IE", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "The Moscow Times", "url": "https://www.themoscowtimes.com", "rss_url": "https://www.themoscowtimes.com/rss/news", "country": "RU", "category": "geopolitics", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
-    {"name": "Kyiv Independent", "url": "https://kyivindependent.com", "rss_url": "https://kyivindependent.com/feed/", "country": "UA", "category": "conflict", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "Kyiv Independent", "url": "https://kyivindependent.com", "rss_url": "https://kyivindependent.com/feed/rss/", "country": "UA", "category": "conflict", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     # Middle East
     {"name": "The Times of Israel", "url": "https://www.timesofisrael.com", "rss_url": "https://www.timesofisrael.com/feed/", "country": "IL", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "The Jerusalem Post", "url": "https://www.jpost.com", "rss_url": "https://www.jpost.com/rss/rssfeedsheadlines.aspx", "country": "IL", "category": "general", "bias_rating": "center-right", "bias_source": "mbfc", "scrape_method": "rss"},
@@ -257,7 +257,7 @@ LAUNCH_SOURCES = [
     {"name": "RNZ — World", "url": "https://www.rnz.co.nz", "rss_url": "https://www.rnz.co.nz/rss/world.xml", "country": "NZ", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     # Africa & Latin America
     {"name": "AllAfrica", "url": "https://allafrica.com", "rss_url": "https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf", "country": "MU", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
-    {"name": "Mail & Guardian", "url": "https://mg.co.za", "rss_url": "https://mg.co.za/feed/", "country": "ZA", "category": "general", "bias_rating": "center-left", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "Mail & Guardian", "url": "https://mg.co.za", "rss_url": "https://mg.co.za/rss/", "country": "ZA", "category": "general", "bias_rating": "center-left", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "News24 — World", "url": "https://www.news24.com", "rss_url": "https://feeds.news24.com/articles/news24/World/rss", "country": "ZA", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "Premium Times", "url": "https://www.premiumtimesng.com", "rss_url": "https://www.premiumtimesng.com/feed", "country": "NG", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "MercoPress", "url": "https://en.mercopress.com", "rss_url": "https://en.mercopress.com/rss/", "country": "UY", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
@@ -315,7 +315,7 @@ LAUNCH_SOURCES = [
     {"name": "South China Morning Post", "url": "https://www.scmp.com", "rss_url": "https://www.scmp.com/rss/91/feed", "country": "HK", "category": "general", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "Caixin Global", "url": "https://www.caixinglobal.com", "rss_url": "https://www.caixinglobal.com/rss/report.xml", "country": "CN", "category": "economy", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     # Maritime & trade (chokepoint/shipping consequence)
-    {"name": "The Maritime Executive", "url": "https://maritime-executive.com", "rss_url": "https://maritime-executive.com/rss", "country": "US", "category": "commodities", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
+    {"name": "The Maritime Executive", "url": "https://maritime-executive.com", "rss_url": "https://maritime-executive.com/articles.rss", "country": "US", "category": "commodities", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     {"name": "The Loadstar", "url": "https://theloadstar.com", "rss_url": "https://theloadstar.com/feed/", "country": "UK", "category": "commodities", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
     # Cyber & threat intelligence
     {"name": "BleepingComputer", "url": "https://www.bleepingcomputer.com", "rss_url": "https://www.bleepingcomputer.com/feed/", "country": "US", "category": "technology", "bias_rating": "center", "bias_source": "mbfc", "scrape_method": "rss"},
