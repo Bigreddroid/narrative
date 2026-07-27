@@ -376,7 +376,13 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
 
       {/* Columns row */}
       <div className="flex overflow-x-auto deck-scroll" style={{ height: "calc(100% - 37px)" }}>
-        {loading || events.length === 0 ? (
+        {/* Gated on LOADING, not on emptiness. `events` is only the shared unfiltered
+            feed; filtered columns now fetch their own. Treating an empty shared feed
+            as "initializing" hid fully-loaded columns behind a spinner that never
+            resolves, and said "initializing" about a pipeline that had already
+            answered — the same conflation of loading, failure and a real zero that
+            each Column now states for itself. */}
+        {loading && events.length === 0 ? (
           <InitializingScreen dark title="Initializing Deck" />
         ) : (
           <>
