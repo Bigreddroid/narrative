@@ -110,6 +110,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       APP_ENV: development
       OLLAMA_BASE_URL: http://ollama:11434
+      # The api embeds too — /chat (the Analyst) calls embed_texts on the user's
+      # question to rank events by pgvector similarity. Without this the api used
+      # the library default (an ephemeral tmp dir), so the FIRST analyst question
+      # after every api restart re-downloaded the 1.3 GB bge-large model and the
+      # request just hung for 5+ minutes. Same volume as the scheduler, so the
+      # already-warm cache is shared rather than fetched twice.
+      FASTEMBED_CACHE_DIR: /app/.fastembed_cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,6 +128,10 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      # MUST accompany FASTEMBED_CACHE_DIR above: `.:/app` bind-mounts the repo,
+      # so without this named volume on top the ONNX blob would download straight
+      # into the (OneDrive-synced) working tree.
+      - fastembed_cache:/app/.fastembed_cache
     command: >
       sh -c "cd /app &&
       alembic -c backend/alembic.ini upgrade head &&
