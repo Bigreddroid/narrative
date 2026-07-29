@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import or_, select
 
 from backend.api.dependencies import DbDep, UserDep
+from backend.consequence_engine import evidence as ev
 from backend.models.narrative_event import NarrativeEvent
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -20,6 +21,13 @@ async def search_events(
     result = await db.execute(
         select(NarrativeEvent)
         .where(NarrativeEvent.is_mapped == True)
+        # Search served the raw table: no evidence gate and no merge gate, while
+        # /events applied both. Searching for a story you had just read in the feed
+        # could therefore return a severed copy of it, a duplicate of it, or both —
+        # and search results carry no "sources" field to hint at it. Measured on the
+        # live corpus, 35.5% of the rows behind this predicate were one or the other.
+        .where(NarrativeEvent.merged_into_id.is_(None))
+        .where(ev.evidenced())
         .where(
             or_(
                 NarrativeEvent.canonical_title.ilike(pat),

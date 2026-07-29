@@ -13,6 +13,7 @@
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import * as d3 from "d3";
 import * as topojson from "topojson-client";
+import { useTheme } from "../../hooks/useTheme.js";
 
 const WORLD_TOPO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
@@ -26,12 +27,32 @@ export const SEV = {
 
 // Landmass shading from the same three-tone treatment WorldMap uses, so the two
 // surfaces read as one product.
-const SHADES = ["#171B22", "#1B2029", "#14181E"];
-const OCEAN = "#0A1018";
+//
+// These are SVG presentation attributes (fill=, stroke=), which do NOT resolve
+// CSS custom properties — so unlike the rest of the deck the globe cannot ride
+// the --xd-* variables and needs its palette picked in JS. Day mode is a paper
+// map: cream land on a pale-blue ocean. The severity hues are shared by both and
+// live in SEV above, unchanged, because a band must not shift meaning with theme.
+const GLOBE = {
+  dark: {
+    shades: ["#171B22", "#1B2029", "#14181E"],
+    ocean: "#0A1018", oceanEdge: "#05070C",
+    sphere: "#252A33", graticule: "#1A2029", coast: "#232A34",
+    halo: "#F0EDE8", pinEdge: "#05070C",
+  },
+  light: {
+    shades: ["#EDE7DA", "#E5DED0", "#F3EEE4"],
+    ocean: "#DCE8F2", oceanEdge: "#C2D6E8",
+    sphere: "#A9B6C2", graticule: "#CBDAE6", coast: "#C3B9A6",
+    halo: "#1A1A1A", pinEdge: "#FFFFFF",
+  },
+};
 
 export default function ExecGlobe({
   contexts, topSignalOf, selectedId, onSelect, filter = null, height = 520,
 }) {
+  const { isDark } = useTheme();
+  const g = isDark ? GLOBE.dark : GLOBE.light;
   const [world, setWorld] = useState(null);
   const [rotation, setRotation] = useState([-20, -12]);
   const [scale, setScale] = useState(1);
@@ -112,7 +133,7 @@ export default function ExecGlobe({
   if (world === "error") {
     return (
       <div style={{ height }} className="flex items-center justify-center">
-        <p className="font-mono text-[10px] text-[#4A4845] max-w-xs text-center leading-relaxed">
+        <p className="font-mono text-[10px] text-[var(--xd-16)] max-w-xs text-center leading-relaxed">
           World geometry unavailable — the figures alongside carry the same picture.
         </p>
       </div>
@@ -128,8 +149,8 @@ export default function ExecGlobe({
         onPointerUp={endDrag} onPointerLeave={() => { endDrag(); setHover(null); }}>
         <defs>
           <radialGradient id="exec-ocean" cx="42%" cy="38%" r="72%">
-            <stop offset="0%" stopColor={OCEAN} stopOpacity="1" />
-            <stop offset="100%" stopColor="#05070C" stopOpacity="1" />
+            <stop offset="0%" stopColor={g.ocean} stopOpacity="1" />
+            <stop offset="100%" stopColor={g.oceanEdge} stopOpacity="1" />
           </radialGradient>
           <filter id="exec-glow" x="-70%" y="-70%" width="240%" height="240%">
             <feGaussianBlur stdDeviation="3.2" result="b" />
@@ -137,10 +158,10 @@ export default function ExecGlobe({
           </filter>
         </defs>
 
-        <path d={path({ type: "Sphere" })} fill="url(#exec-ocean)" stroke="#252A33" strokeWidth={0.6} />
-        <path d={path(graticule)} fill="none" stroke="#1A2029" strokeWidth={0.3} />
+        <path d={path({ type: "Sphere" })} fill="url(#exec-ocean)" stroke={g.sphere} strokeWidth={0.6} />
+        <path d={path(graticule)} fill="none" stroke={g.graticule} strokeWidth={0.3} />
         {world && world.features.map((f, i) => (
-          <path key={i} d={path(f)} fill={SHADES[(+f.id || i) % 3]} stroke="#232A34" strokeWidth={0.3} />
+          <path key={i} d={path(f)} fill={g.shades[(+f.id || i) % 3]} stroke={g.coast} strokeWidth={0.3} />
         ))}
 
         {dots.map((d) => {
@@ -154,11 +175,11 @@ export default function ExecGlobe({
               )}
               {isSel && (
                 <circle cx={d.x} cy={d.y} r={d.r + 7} fill="none"
-                  stroke="#F0EDE8" strokeWidth={1} opacity={0.85} />
+                  stroke={g.halo} strokeWidth={1} opacity={0.85} />
               )}
               <circle cx={d.x} cy={d.y} r={d.r} fill={SEV[d.level].c}
                 opacity={d.level === "clear" ? 0.6 : 1}
-                stroke="#05070C" strokeWidth={0.7}
+                stroke={g.pinEdge} strokeWidth={0.7}
                 filter={d.level === "alert" ? "url(#exec-glow)" : undefined} />
               {/* Hit target larger than the mark. */}
               <circle cx={d.x} cy={d.y} r={Math.max(d.r + 6, 11)} fill="transparent" />
@@ -168,13 +189,13 @@ export default function ExecGlobe({
       </svg>
 
       {hover && (
-        <div className="absolute pointer-events-none bg-[#0E0E0E] border border-[#2A2A2A] px-3 py-2 rounded-[2px] shadow-xl max-w-[260px] z-10"
+        <div className="absolute pointer-events-none bg-[var(--xd-3)] border border-[var(--xd-12)] px-3 py-2 rounded-[2px] shadow-xl max-w-[260px] z-10"
           style={{
             left: `${Math.min((hover.x / W) * 100, 62)}%`,
             top: `${Math.max((hover.y / H) * 100 - 4, 2)}%`,
           }}>
-          <div className="text-[12px] text-[#F0EDE8]">{hover.ctx.office.name}</div>
-          <div className="font-mono text-[10px] text-[#6A6A64] mt-0.5">
+          <div className="text-[12px] text-[var(--xd-23)]">{hover.ctx.office.name}</div>
+          <div className="font-mono text-[10px] text-[var(--xd-19)] mt-0.5">
             {hover.ctx.office.city} · {hover.ctx.office.country} · {(hover.ctx.office.headcount || 0).toLocaleString()} people
           </div>
           <div className="flex items-center gap-1.5 mt-1.5">
@@ -184,15 +205,15 @@ export default function ExecGlobe({
             </span>
           </div>
           {hoveredSignal && (
-            <div className="text-[11px] text-[#8A8A82] mt-1.5 leading-snug border-t border-[#222] pt-1.5">
+            <div className="text-[11px] text-[var(--xd-20)] mt-1.5 leading-snug border-t border-[var(--xd-10)] pt-1.5">
               {hoveredSignal.event.canonical_title}
-              <span className="font-mono text-[10px] text-[#5A5A55]"> · {Math.round(hoveredSignal.km)} km</span>
+              <span className="font-mono text-[10px] text-[var(--xd-18)]"> · {Math.round(hoveredSignal.km)} km</span>
             </div>
           )}
         </div>
       )}
 
-      <div className="absolute bottom-2 right-3 font-mono text-[9px] text-[#3A3A38] tracking-[0.1em] uppercase">
+      <div className="absolute bottom-2 right-3 font-mono text-[9px] text-[var(--xd-14)] tracking-[0.1em] uppercase">
         drag to rotate · scroll to zoom
       </div>
     </div>

@@ -84,6 +84,24 @@ ok("active festival ⇒ festival layer alert", withFest.layers.festivals.level =
 ok("active festival raises derived traffic off clear", withFest.layers.traffic.level !== "clear");
 ok("worst rolls up to the festival alert", withFest.worst === "alert");
 
+// A gathering we cannot size must not mark an office red. The live Wikidata feed is
+// mostly scheduled sport, and alert-on-active was calibrated for a Red Fort lockdown,
+// not a Tuesday ballgame — every US office near a stadium would have gone red on game
+// day, which is the severity inflation this deck exists to beat.
+const withRoutine = officeContext(OFFICE, {
+  events: [], appetite: 50, today: new Date("2026-09-16T00:00:00Z"),
+  festivals: [{ id: "wd-1", name: "Braves at Mets", routine: true,
+                startISO: "2026-09-16", endISO: "2026-09-16", lat: 19.07, lng: 72.87 }],
+});
+ok("a routine scheduled gathering is a watch, never an alert",
+   withRoutine.layers.festivals.level === "watch");
+ok("a routine gathering still counts — it is on the board, not discarded",
+   withRoutine.festivals.length === 1);
+ok("a routine gathering still feeds derived traffic",
+   withRoutine.layers.traffic.level !== "clear" || withRoutine.layers.traffic.pct > 0);
+ok("a curated gathering with no `routine` flag still escalates as before",
+   withFest.layers.festivals.level === "alert");
+
 // ── per-event spatial extent ──────────────────────────────────────────────────
 // One radius per LAYER made a CBD protest "reach" offices 290 km away. Extent is now
 // a property of the event, so a local disorder signal stays local.

@@ -21,6 +21,15 @@
 *.yml  text eol=lf
 *.yaml text eol=lf
 
+# The benchmark anchors are WRITTEN by a worker (publish_ledger.write_manifest_file,
+# "\n".join) and READ by a human recomputing the root. Under core.autocrlf the
+# checked-out copy became CRLF while every worker run rewrote it as LF, so each cycle
+# reported the file modified with no change of content -- which trained us to
+# `git checkout --` them, which is how seven days of anchors never got committed.
+# Pinning LF makes the worker's output byte-identical to the checkout. Safe for
+# verification: root_hash is sha256 over the concatenated hash strings, not the file.
+docs/benchmark/manifest-*.txt text eol=lf
+
 # Windows launchers must keep CRLF so cmd.exe/PowerShell parse them correctly.
 *.bat  text eol=crlf
 *.cmd  text eol=crlf

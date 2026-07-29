@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEventFeed } from "../hooks/useEventFeed.js";
+import { useColumnFeeds, columnKey } from "../hooks/useColumnFeeds.js";
 import { useFollowing } from "../hooks/useFollowing.js";
 import { useMediaQuery } from "../hooks/useMediaQuery.js";
 import { useProfile } from "../hooks/useProfile.js";
@@ -15,20 +16,29 @@ import { biasLabel } from "../lib/bias.js";
 // Borrowed UX from TweetDeck: a horizontally scrolling wall of dense, live,
 // independently-scrolling columns — adapted to Narrative's signals + theme.
 
-// Dark "command-center" palette (deck is always dark, like classic TweetDeck).
+// The board used to hardcode its own "command-center" greys, which made it the one
+// surface in the product that ignored the day/night switch and drifted off the
+// palette everything else shares. It now reads the same --xd-* ramp as the exec
+// deck, so a single scale governs both themes and the deck follows the switch.
+// Requires an ancestor carrying the `.exec-deck` class, which is where the ramp is
+// defined (see index.css) — SignalBoard and the analyst dashboard both provide it.
+//
+// Crimson stays a literal on purpose: status hues encode severity and must mean the
+// same thing in both themes. A red that drifts lighter in day mode stops meaning
+// "alert".
 const C = {
-  board:   "#0B0E13",
-  column:  "#141922",
-  header:  "#11151D",
-  card:    "#161C26",
-  cardHov: "#1B2230",
-  border:  "rgba(240,237,232,0.07)",
-  border2: "rgba(240,237,232,0.12)",
-  fg:      "#E8E4DC",
-  fg80:    "rgba(232,228,220,0.80)",
-  fg50:    "rgba(232,228,220,0.50)",
-  fg35:    "rgba(232,228,220,0.35)",
-  fg20:    "rgba(232,228,220,0.20)",
+  board:   "var(--xd-0)",
+  column:  "var(--xd-2)",
+  header:  "var(--xd-1)",
+  card:    "var(--xd-3)",
+  cardHov: "var(--xd-5)",
+  border:  "var(--xd-8)",
+  border2: "var(--xd-11)",
+  fg:      "var(--xd-23)",
+  fg80:    "var(--xd-21)",
+  fg50:    "var(--xd-19)",
+  fg35:    "var(--xd-17)",
+  fg20:    "var(--xd-14)",
   crimson: "#C80028",
 };
 
@@ -144,7 +154,7 @@ function DeckCard({ event, isSelected, onClick, following, onFollow }) {
 }
 
 // ─── Column ───────────────────────────────────────────────────────────────────
-function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowing, onFollow }) {
+function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowing, onFollow, loading = false, error = null }) {
   const accent = column.kind === "category" ? getCategoryColor(column.value)
     : column.kind === "discipline" ? getDisciplineColor(column.value)
     : column.kind === "status" ? C.crimson
@@ -168,9 +178,13 @@ function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowi
         <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: C.fg80 }}>
           {column.title}
         </span>
+        {/* A count is a claim. While the column is still loading, or after its query
+            failed, we do not KNOW the count — printing "0" there states a fact about
+            the world that we have not established. */}
         <span className="text-[9px] font-mono tabular-nums px-1.5 py-px rounded-sm"
-          style={{ color: C.fg50, backgroundColor: "rgba(240,237,232,0.06)" }}>
-          {events.length}
+          style={{ color: error ? "#E0A93C" : C.fg50, backgroundColor: "rgba(240,237,232,0.06)" }}
+          title={loading ? "Still loading" : error ? "This column could not be loaded" : undefined}>
+          {loading ? "…" : error ? "—" : events.length}
         </span>
         {column.pinned ? (
           <span className="ml-auto text-[8px] font-mono uppercase tracking-widest" style={{ color: C.crimson }}>◆ You</span>
@@ -194,8 +208,14 @@ function Column({ column, events, selectedEventId, onSelect, onRemove, isFollowi
       <div className="flex-1 overflow-y-auto deck-scroll pb-20 md:pb-0">
         {events.length === 0 ? (
           <div className="flex items-center justify-center h-32 px-4">
-            <p className="text-[10px] font-mono uppercase tracking-widest text-center" style={{ color: C.fg20 }}>
-              No signals in this column
+            {/* "0" has to mean something. Loading and a failed query are NOT the same
+                answer as "nothing matches", and rendering all three identically is how
+                an empty column reads as a fact about the world. */}
+            <p className="text-[10px] font-mono uppercase tracking-widest text-center"
+               style={{ color: error ? "#E0A93C" : C.fg20 }}>
+              {loading ? "Loading…"
+                : error ? "Could not load this column — not the same as 'none'"
+                : "No signals in this column"}
             </p>
           </div>
         ) : (
@@ -306,19 +326,6 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
   const profile = useProfile();
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
 
-  const filterFor = useCallback((col) => {
-    // The lens column ranks the SAME events by how hard they hit your profile, and
-    // drops the ones that don't touch it at all — the deck's "for you" wall.
-    if (col.kind === "lens") {
-      return rankByLens(events.filter(e => eventRelevance(e, profile).score > 0), profile);
-    }
-    let list = events;
-    if (col.kind === "category") list = events.filter(e => e.category === col.value);
-    else if (col.kind === "discipline") list = events.filter(e => e.int_discipline === col.value);
-    else if (col.kind === "status") list = events.filter(e => e.current_status === col.value);
-    return [...list].sort((a, b) => (b.importance_score || 0) - (a.importance_score || 0));
-  }, [events, profile]);
-
   // Prepend a live "Your Lens" column when a lens is set — it isn't a stored column
   // (no remove button); it always tracks the current profile.
   const effectiveColumns = useMemo(
@@ -326,9 +333,32 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
     [profile.active, columns],
   );
 
+  // One server-side query per filtered column, ranked over the WHOLE table.
+  const columnFeeds = useColumnFeeds(effectiveColumns, { limit: 100 });
+
+  const filterFor = useCallback((col) => {
+    // The lens column ranks the SAME events by how hard they hit your profile, and
+    // drops the ones that don't touch it at all — the deck's "for you" wall.
+    if (col.kind === "lens") {
+      return rankByLens(events.filter(e => eventRelevance(e, profile).score > 0), profile);
+    }
+    // Filtered columns come from the SERVER now (see useColumnFeeds): filtering the
+    // shared top-100 window in the browser made "Escalating" a duplicate of "All
+    // Signals" and left "Developing" empty over 30,255 developing rows.
+    const key = columnKey(col);
+    if (key) return columnFeeds[key]?.events ?? [];
+    return [...events].sort((a, b) => (b.importance_score || 0) - (a.importance_score || 0));
+  }, [events, profile, columnFeeds]);
+
   const columnData = useMemo(
-    () => effectiveColumns.map(col => ({ col, list: filterFor(col) })),
-    [effectiveColumns, filterFor]
+    () => effectiveColumns.map(col => ({
+      col,
+      list: filterFor(col),
+      // A column still loading must not render its empty list as a real zero.
+      loading: columnKey(col) ? (columnFeeds[columnKey(col)]?.loading ?? true) : loading,
+      error: columnKey(col) ? columnFeeds[columnKey(col)]?.error : null,
+    })),
+    [effectiveColumns, filterFor, columnFeeds, loading]
   );
 
   const addColumn    = useCallback((col) => setColumns(c => [...c, col]), []);
@@ -350,11 +380,17 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
 
       {/* Columns row */}
       <div className="flex overflow-x-auto deck-scroll" style={{ height: "calc(100% - 37px)" }}>
-        {loading || events.length === 0 ? (
+        {/* Gated on LOADING, not on emptiness. `events` is only the shared unfiltered
+            feed; filtered columns now fetch their own. Treating an empty shared feed
+            as "initializing" hid fully-loaded columns behind a spinner that never
+            resolves, and said "initializing" about a pipeline that had already
+            answered — the same conflation of loading, failure and a real zero that
+            each Column now states for itself. */}
+        {loading && events.length === 0 ? (
           <InitializingScreen dark title="Initializing Deck" />
         ) : (
           <>
-            {columnData.map(({ col, list }) => (
+            {columnData.map(({ col, list, loading: colLoading, error: colError }) => (
               <Column
                 key={col.id}
                 column={col}
@@ -364,6 +400,8 @@ export default function DeckView({ selectedEventId, onEventSelect, onEventClose 
                 onRemove={removeColumn}
                 isFollowing={isFollowing}
                 onFollow={{ follow, unfollow }}
+                loading={colLoading}
+                error={colError}
               />
             ))}
             <AddColumn onAdd={addColumn} />

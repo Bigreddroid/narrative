@@ -61,5 +61,33 @@ ok("external_id stable per point+day", a == b == "openmeteo-mumbai-2026-07-20")
 # 6. missing daily arrays degrade quietly
 ok("empty daily ⇒ no crash, no signal", W.parse_openmeteo([{"daily": {}}], PTS[:1]) == [])
 
+# ── coverage: the seed list was 13 cities against a 134-site register ────────
+# Measured before this was fixed: 92 of 134 registered sites (69%) had NO monitored
+# point within the 150 km storm radius, the farthest 9,116 km away, while the deck
+# reported weather as "of 121" — claiming to have checked all of them.
+_rows = [
+    ("Bengaluru", 12.95, 77.66),
+    ("Bengaluru", 12.97, 77.64),      # same metro -> one point
+    ("Istanbul", 41.01, 28.98),
+    ("Warsaw", 52.23, 21.01),
+    ("nowhere", None, 10.0),          # unusable -> dropped, not placed at null island
+    ("bad", "x", "y"),
+]
+_pts = W.collapse_points(_rows)
+ok("campuses in one metro collapse to a single weather point",
+   sum(1 for p in _pts if p["name"] == "Bengaluru") == 1)
+ok("distinct cities stay distinct", len(_pts) == 3)
+ok("a site with no coordinate is dropped rather than watched at 0,0",
+   all(p["lat"] is not None and p["lng"] is not None for p in _pts)
+   and all(p["name"] not in ("nowhere", "bad") for p in _pts))
+ok("registered cities the seed list never covered are now watched",
+   {"Istanbul", "Warsaw"} <= {p["name"] for p in _pts})
+
+import asyncio as _asyncio  # noqa: E402
+
+_fell_back = _asyncio.run(W.monitored_points())
+ok("an unreadable register falls back to the seed points, never to []",
+   isinstance(_fell_back, list) and len(_fell_back) > 0)
+
 print(f"\nweather_global: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -171,9 +171,15 @@ async def _upsert(signal: dict, db, require_geo: bool = True) -> bool:
         # PUBLISHERS. Falls back to the transport slug only when the feed gave us no
         # label — never invented.
         outlet = (signal.get("outlet") or "").strip() or (sid or "unknown")
+        # sources.name has NO unique constraint, and duplicates exist (a concurrent
+        # ingest can create the same outlet twice). scalar_one_or_none() RAISES on two
+        # rows, and that exception propagates out of _upsert to be swallowed as "upsert
+        # failed" — so a duplicated outlet name silently severed the evidence chain for
+        # every future article from that outlet, which is the exact failure this branch
+        # exists to stop. Tolerate duplicates; order for a deterministic pick.
         source_row = (await db.execute(
-            select(Source).where(Source.name == outlet)
-        )).scalar_one_or_none()
+            select(Source).where(Source.name == outlet).order_by(Source.id).limit(1)
+        )).scalars().first()
         if source_row is None:
             source_row = Source(id=uuid.uuid4(), name=outlet, url="", is_active=True)
             db.add(source_row)

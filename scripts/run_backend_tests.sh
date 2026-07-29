@@ -12,6 +12,7 @@ MODULES=(
   backend.api.rate_limit_test
   backend.api.benchmark_route_test
   backend.api.imint_route_test
+  backend.api.calendar_route_test
   backend.api.spine_live_test
   backend.services.analyst_test
   backend.services.llm_test
@@ -29,6 +30,7 @@ MODULES=(
   backend.consequence_engine.calibration_test
   backend.consequence_engine.cluster_logic_test
   backend.api.events_evidence_test
+  backend.api.read_paths_evidence_test
   backend.consequence_engine.corroboration_test
   backend.consequence_engine.title_dedup_test
   backend.consequence_engine.evolution_logic_test
@@ -38,7 +40,11 @@ MODULES=(
   backend.workers.benchmark_worker_test
   backend.workers.digest_worker_test
   backend.workers.external_resolution_worker_test
+  backend.taxonomy_test
+  backend.scrapers.engine_test
   backend.feeds.feeds_test
+  backend.feeds.gnews_resolve_test
+  backend.feeds.gatherings_test
   backend.feeds.mastodon_osint_test
   backend.feeds.weather_global_test
   backend.feeds.holidays_test
@@ -48,6 +54,7 @@ MODULES=(
   scripts.benchmark_score_test
   scripts.external_benchmark_test
   scripts.publish_external_forecasts_test
+  scripts.published_register_test
   scripts.test_registration_test
 )
 

@@ -96,12 +96,16 @@ async def map_event(event: NarrativeEvent, db: AsyncSession, forced_depth: str |
 
     event.canonical_title       = result.get("canonical_title", event.canonical_title)
     event.canonical_summary     = result.get("canonical_summary")
-    event.category              = result.get("category")
+    # Normalised, not trusted: the model does not reliably honour the enum it is given
+    # (live rows carried "Economy" and "Geopolitics|Economy"), and an off-vocabulary
+    # value makes the event invisible to every category filter with nothing to show it
+    # was dropped. Keep the previous category if the new one cannot be salvaged.
+    event.category              = taxonomy.normalize_category(result.get("category")) or event.category
     # Multi-INT: tag discipline deterministically from (source, category). Article
     # clusters usually have source=None, so the LLM category decides the discipline.
     event.int_discipline        = taxonomy.discipline_for(event.source, event.category)
     event.global_importance_score = float(result.get("global_importance_score", event.global_importance_score))
-    event.current_status        = result.get("current_status", "developing")
+    event.current_status        = taxonomy.normalize_status(result.get("current_status"))
     event.affected_sectors      = _coerce_str_list(result.get("affected_sectors"))
     event.affected_professions  = _coerce_str_list(result.get("affected_professions"))
     event.geographic_relevance  = _coerce_str_list(result.get("geographic_relevance"))

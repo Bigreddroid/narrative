@@ -39,7 +39,16 @@ def _extract_content(entry: Any) -> str:
     return ""
 
 
-async def fetch_rss(rss_url: str, source_name: str) -> list[dict]:
+async def fetch_rss(rss_url: str, source_name: str) -> list[dict] | None:
+    """Articles from a feed, or None when the feed could not be READ at all.
+
+    None and [] are different answers and the caller depends on the difference:
+    None is "we could not check this feed" (DNS failure, 404, 403, timeout), [] is
+    "the feed answered and had nothing in it". This used to return [] for both,
+    which meant a permanently dead feed was indistinguishable from a quiet one —
+    it never recorded an error, so scrape_error_count sat at 0 across every source
+    in production while feeds were 404ing. Same idiom as backend/feeds/gatherings.py.
+    """
     try:
         async with httpx.AsyncClient(timeout=30, headers=HEADERS, follow_redirects=True) as client:
             resp = await client.get(rss_url)
@@ -47,7 +56,7 @@ async def fetch_rss(rss_url: str, source_name: str) -> list[dict]:
             raw = resp.text
     except Exception as exc:
         logger.warning("RSS fetch failed for %s (%s): %s", source_name, rss_url, exc)
-        return []
+        return None
 
     feed = feedparser.parse(raw)
     articles = []

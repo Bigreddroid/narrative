@@ -48,22 +48,22 @@ export default function DataTable({
   };
 
   return (
-    <div className="bg-[#0A0A0A]">
+    <div className="bg-[var(--xd-2)]">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b border-[#1A1A1A]">
-        <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#6A6A64] tabular-nums">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b border-[var(--xd-7)]">
+        <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-19)] tabular-nums">
           {view.total
-            ? <>{view.from}–{view.to} of <span className="text-[#B8B5AE]">{view.total.toLocaleString()}</span></>
+            ? <>{view.from}–{view.to} of <span className="text-[var(--xd-21)]">{view.total.toLocaleString()}</span></>
             : "0 rows"}
         </span>
-        {caption && <span className="text-[11px] text-[#4A4845] flex-1 min-w-[160px]">{caption}</span>}
+        {caption && <span className="text-[11px] text-[var(--xd-16)] flex-1 min-w-[160px]">{caption}</span>}
 
         <label className="flex items-center gap-1.5 ml-auto">
-          <span className="font-mono text-[9px] tracking-[0.14em] uppercase text-[#5A5A55]">Rows</span>
+          <span className="font-mono text-[9px] tracking-[0.14em] uppercase text-[var(--xd-18)]">Rows</span>
           <select
             value={pageSize}
             onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-            className="bg-[#0E0E0E] border border-[#242424] rounded-[2px] px-1.5 py-0.5 font-mono text-[10px] text-[#B8B5AE] focus:outline-none focus:border-[#3A3A3A]"
+            className="bg-[var(--xd-3)] border border-[var(--xd-11)] rounded-[2px] px-1.5 py-0.5 font-mono text-[10px] text-[var(--xd-21)] focus:outline-none focus:border-[var(--xd-15)]"
           >
             {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -74,7 +74,7 @@ export default function DataTable({
           onClick={() => downloadCSV(sorted, columns, filename)}
           disabled={!view.total}
           title={`Download all ${view.total} rows as shown, in the current sort order`}
-          className="font-mono text-[10px] tracking-[0.14em] uppercase border border-[#242424] px-2.5 py-1 rounded-[2px] text-[#8A8A82] hover:text-[#F0EDE8] hover:border-[#3A3A3A] disabled:text-[#3A3A38] disabled:hover:border-[#242424]"
+          className="font-mono text-[10px] tracking-[0.14em] uppercase border border-[var(--xd-11)] px-2.5 py-1 rounded-[2px] text-[var(--xd-20)] hover:text-[var(--xd-23)] hover:border-[var(--xd-15)] disabled:text-[var(--xd-14)] disabled:hover:border-[var(--xd-11)]"
         >
           Download CSV
         </button>
@@ -84,7 +84,7 @@ export default function DataTable({
       <div className="overflow-x-auto">
         <table className="w-full border-collapse min-w-[560px]">
           <thead>
-            <tr className="border-b border-[#1A1A1A]">
+            <tr className="border-b border-[var(--xd-7)]">
               {columns.map((c) => {
                 const active = sort?.key === c.key;
                 return (
@@ -93,10 +93,10 @@ export default function DataTable({
                     aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
                     className="px-3 py-2 font-mono text-[9px] tracking-[0.16em] uppercase font-normal">
                     {c.sortable === false ? (
-                      <span className="text-[#5A5A55]">{c.label}</span>
+                      <span className="text-[var(--xd-18)]">{c.label}</span>
                     ) : (
                       <button type="button" onClick={() => clickHeader(c.key)}
-                        className={active ? "text-[#F0EDE8]" : "text-[#5A5A55] hover:text-[#B8B5AE]"}>
+                        className={active ? "text-[var(--xd-23)]" : "text-[var(--xd-18)] hover:text-[var(--xd-21)]"}>
                         {c.label}{active && <Arrow dir={sort.dir} />}
                       </button>
                     )}
@@ -113,9 +113,9 @@ export default function DataTable({
                 <tr key={k}
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
                   className={[
-                    "border-b border-[#141414]",
-                    onRowClick ? "cursor-pointer hover:bg-[#111]" : "",
-                    isSel ? "bg-[#141414]" : "",
+                    "border-b border-[var(--xd-5)]",
+                    onRowClick ? "cursor-pointer hover:bg-[var(--xd-4)]" : "",
+                    isSel ? "bg-[var(--xd-5)]" : "",
                   ].join(" ")}>
                   {columns.map((c) => (
                     <td key={c.key} style={{ textAlign: c.align || "left" }}
@@ -127,7 +127,7 @@ export default function DataTable({
               );
             })}
             {!view.total && (
-              <tr><td colSpan={columns.length} className="px-4 py-8 text-[12px] text-[#5A5A55] text-center">{empty}</td></tr>
+              <tr><td colSpan={columns.length} className="px-4 py-8 text-[12px] text-[var(--xd-18)] text-center">{empty}</td></tr>
             )}
           </tbody>
         </table>
@@ -135,16 +135,16 @@ export default function DataTable({
 
       {/* Pager */}
       {view.pages > 1 && (
-        <div className="flex items-center justify-between gap-3 px-4 py-2 border-t border-[#1A1A1A]">
+        <div className="flex items-center justify-between gap-3 px-4 py-2 border-t border-[var(--xd-7)]">
           <button type="button" disabled={view.page <= 1} onClick={() => setPage(view.page - 1)}
-            className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82] disabled:text-[#2E2E2C] hover:text-[#F0EDE8]">
+            className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)] disabled:text-[var(--xd-13)] hover:text-[var(--xd-23)]">
             ← Prev
           </button>
-          <span className="font-mono text-[10px] text-[#5A5A55] tabular-nums">
+          <span className="font-mono text-[10px] text-[var(--xd-18)] tabular-nums">
             Page {view.page} of {view.pages}
           </span>
           <button type="button" disabled={view.page >= view.pages} onClick={() => setPage(view.page + 1)}
-            className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8A82] disabled:text-[#2E2E2C] hover:text-[#F0EDE8]">
+            className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--xd-20)] disabled:text-[var(--xd-13)] hover:text-[var(--xd-23)]">
             Next →
           </button>
         </div>

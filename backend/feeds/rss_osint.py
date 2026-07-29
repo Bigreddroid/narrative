@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree as ET
 
+from backend.feeds import gnews_resolve
+
 logger = logging.getLogger(__name__)
 
 SOURCE = "osint_rss"
@@ -45,6 +47,56 @@ _GOOGLE_NEWS_ECON_Q = (
     "tariff OR embargo OR semiconductor OR chip OR pipeline OR "
     '"supply chain" OR default OR devaluation OR shortage'
 )
+# ── Local coverage for cities the global feeds never reach ────────────────────
+# Measured against the 121-office register: 28 sites and 7 whole countries had ZERO
+# events within 150 km, so their deck layers read "clear" because nothing covered
+# them — the one thing the deck's "a quiet layer reads 0 because nothing was found,
+# never because it wasn't checked" line promises cannot happen.
+#
+# Google News' own geo-targeting does NOT fix this: `gl=AT&ceid=AT:en` was measured
+# returning the identical global result set as `gl=US` for 8 of 10 countries (same
+# top story, same 77 outlets). Adding those feeds would have added several hundred
+# duplicate posts per cycle and left every dark country exactly as dark. What does
+# work is scoping the QUERY to the city, which surfaces genuinely local outlets
+# (RTL Today on a Luxembourg outage, Kenyans.co.ke on an aviation strike).
+#
+# The city is paired with its country because bare city names collide across the
+# world — an unqualified "Vienna" returned Vienna, Baltimore and Vienna, Illinois.
+_LOCAL_TERMS = ('protest OR strike OR riot OR flood OR wildfire OR storm OR '
+                'earthquake OR explosion OR "power outage" OR "road closed" OR '
+                'curfew OR evacuation OR shooting OR "airport closed"')
+
+# country -> cities we actually have offices in (from the register).
+_LOCAL_WATCH: dict[str, list[str]] = {
+    "Austria": ["Vienna"],
+    "Finland": ["Espoo"],
+    "Hungary": ["Budapest"],
+    "Kenya": ["Nairobi"],
+    "Luxembourg": ["Luxembourg"],
+    "Norway": ["Oslo"],
+    "Turkey": ["Istanbul"],
+    "Poland": ["Warsaw", "Gdansk"],
+    "Brazil": ["Barueri", "Curitiba", "Fortaleza", "Natal"],
+}
+
+# Triage is an LLM call PER POST and a cycle already runs 24-34 minutes against a
+# 5-minute cadence, so these feeds are capped hard. Ten locally-relevant items per
+# country is coverage; a hundred is a denial of service against our own pipeline.
+LOCAL_FEED_CAP = 10
+
+
+def _local_feeds() -> list[tuple[str, str]]:
+    from urllib.parse import quote
+
+    out = []
+    for country, cities in _LOCAL_WATCH.items():
+        place = " OR ".join(f'("{c}" AND "{country}")' for c in cities)
+        q = quote(f"({place}) AND ({_LOCAL_TERMS})")
+        out.append((f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en",
+                    f"gnews/{country.lower()}"))
+    return out
+
+
 DEFAULT_FEEDS: list[tuple[str, str]] = [
     (f"https://news.google.com/rss/search?q={_GOOGLE_NEWS_Q}&hl=en-US&gl=US&ceid=US:en",
      "news.google.com"),
@@ -53,7 +105,7 @@ DEFAULT_FEEDS: list[tuple[str, str]] = [
     ("https://www.reddit.com/r/worldnews/.rss", "reddit/worldnews"),
     ("https://www.reddit.com/r/CredibleDefense/.rss", "reddit/CredibleDefense"),
     ("https://www.reddit.com/r/geopolitics/.rss", "reddit/geopolitics"),
-]
+] + _local_feeds()
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
 # Strip HTML tags out of feed summaries so the triage LLM sees clean text.
@@ -104,6 +156,36 @@ def _atom_link(entry) -> str:
     return best
 
 
+def _publisher(item, title: str, fallback: str) -> tuple[str, str]:
+    """(outlet, title) for one RSS item, preferring the item's own <source> element.
+
+    RSS 2.0's <source> names the feed an item was syndicated FROM. Aggregators fill
+    it with the real publisher — Google News emits
+    ``<source url="https://www.reuters.com">Reuters</source>`` — which is the only
+    place the publisher survives, because the <link> is an opaque Google redirect we
+    cannot resolve without following it.
+
+    It also strips the publisher suffix Google appends to every headline
+    ("Foo happened - Reuters"), which otherwise renders twice on a card and pollutes
+    title-similarity clustering with the outlet name.
+
+    Returns the fallback label untouched when the feed has no <source>, which is the
+    normal case for a publisher's own feed — there the label already IS the outlet.
+    """
+    src = item.find("source")
+    if src is None:
+        return fallback, title
+    name = (src.text or "").strip()
+    if not name:
+        return fallback, title
+    # Only the exact " - <publisher>" tail, and only at the end: a headline that
+    # legitimately contains a dash keeps it.
+    suffix = f" - {name}"
+    if title.endswith(suffix) and len(title) > len(suffix):
+        title = title[: -len(suffix)].strip()
+    return name, title
+
+
 def parse_rss(xml_text: str, source_label: str = "rss") -> list[dict]:
     """RSS 2.0 or Atom XML → list of raw post-candidate dicts (NOT yet Signals).
 
@@ -144,11 +226,21 @@ def parse_rss(xml_text: str, source_label: str = "rss") -> list[dict]:
         if not title or not link or link in seen:
             continue
         seen.add(link)
+
+        # 🔴 An aggregator is not an outlet. Google News hands us its own redirect
+        # (news.google.com/rss/articles/CBMi…) with the real publisher only in
+        # <source>, so without this every one of those items was attributed to
+        # "news.google.com" — the deck showed NEWS.GOOGLE.COM as the outlet and the
+        # provenance read as unrecognised, which mislabels the reliability of a
+        # perfectly recognisable publisher. RSS 2.0 defines <source> for exactly
+        # this; feeds that are their own publisher simply omit it and keep the label.
+        outlet, title = _publisher(it, title, source_label) if not is_atom else (source_label, title)
         pid = hashlib.sha1(link.encode("utf-8")).hexdigest()[:16]
         out.append({
             "external_id": f"rss-{pid}",
-            # Source context shown to the triage LLM (where Reddit puts the subreddit).
-            "subreddit": source_label,
+            # Source context shown to the triage LLM (where Reddit puts the subreddit),
+            # and what the deck renders as the outlet. The PUBLISHER, not the aggregator.
+            "subreddit": outlet,
             "title": title,
             "selftext": summary[:2000],
             "url": link,
@@ -162,7 +254,10 @@ def parse_rss(xml_text: str, source_label: str = "rss") -> list[dict]:
 async def _fetch_one(client, url: str, label: str) -> list[dict]:
     resp = await client.get(url)
     resp.raise_for_status()
-    return parse_rss(resp.text, label)
+    items = parse_rss(resp.text, label)
+    # Per-city local feeds are capped: see LOCAL_FEED_CAP. Applied here rather than
+    # inside parse_rss so the parser stays a pure function of the feed document.
+    return items[:LOCAL_FEED_CAP] if label.startswith("gnews/") else items
 
 
 async def fetch_rss_osint(feeds: list[tuple[str, str]] | None = None) -> list[dict]:
@@ -188,6 +283,20 @@ async def fetch_rss_osint(feeds: list[tuple[str, str]] | None = None) -> list[di
             logger.warning("RSS OSINT fetch failed for %s: %s", url, res)
             continue
         out.extend(res)
+
+    # An aggregator's interstitial is not a source document. Google News gives us
+    # news.google.com/rss/articles/CBMi…, which serves 200 and stays on Google, so the
+    # drawer's "source document" link never reached the article an analyst is trying to
+    # verify. Resolve to the publisher's URL HERE, inside the fetch, so there is no way
+    # to obtain candidates whose evidence link goes nowhere. Best-effort by design:
+    # anything unresolved keeps the redirect, which is no worse than before.
+    try:
+        resolved = await gnews_resolve.resolve_urls([i["url"] for i in out])
+        rewritten = gnews_resolve.apply_resolutions(out, resolved)
+        if rewritten:
+            logger.info("RSS OSINT: %d Google News links rewritten to the publisher", rewritten)
+    except Exception as exc:  # noqa: BLE001 — a better link must never sink ingest
+        logger.warning("RSS OSINT: Google News link resolution skipped: %s", exc)
     return out
 
 

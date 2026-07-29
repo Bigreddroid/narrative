@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from sqlalchemy import select
 
 from backend.api.dependencies import DbDep, UserDep
+from backend.consequence_engine import evidence as ev
 from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.narrative_event import NarrativeEvent
 from backend.models.segment_feed_cache import SegmentFeedCache
@@ -32,25 +33,41 @@ async def get_feed(
     )
     cache = cache_result.scalar_one_or_none()
 
+    limit = 10 if user.tier == "free" else 50
+
+    # Both branches now carry the same two gates /events has always applied:
+    # an event we cannot back up, and a duplicate folded into a canonical event,
+    # are not feed items. Measured on the live corpus, 35.5% of the rows behind
+    # this route's predicate were one or the other.
     if not cache or not cache.event_ids:
         # Fall back to global importance-ranked feed
         events_result = await db.execute(
             select(NarrativeEvent)
             .where(NarrativeEvent.is_mapped == True)
+            .where(NarrativeEvent.merged_into_id.is_(None))
+            .where(ev.evidenced())
             .order_by(NarrativeEvent.global_importance_score.desc())
-            .limit(10 if user.tier == "free" else 50)
+            .limit(limit)
         )
         events = events_result.scalars().all()
     else:
-        limit = 10 if user.tier == "free" else 50
-        event_ids = cache.event_ids[:limit]
+        # The segment cache was BUILT from the unfiltered table, so its id list
+        # still contains severed and merged rows — a personalised feed was the one
+        # place the contamination survived every other fix. Gate the whole cached
+        # list and slice AFTER, not before: slicing first and then filtering would
+        # silently shrink a 50-item feed to whatever happened to survive in the
+        # first 50 ids, so a reader's feed would get shorter the more duplicates
+        # their segment collected.
         events_result = await db.execute(
-            select(NarrativeEvent).where(NarrativeEvent.id.in_(event_ids))
+            select(NarrativeEvent)
+            .where(NarrativeEvent.id.in_(cache.event_ids))
+            .where(NarrativeEvent.merged_into_id.is_(None))
+            .where(ev.evidenced())
         )
-        events = events_result.scalars().all()
-        # Restore ranking order
-        id_order = {eid: i for i, eid in enumerate(event_ids)}
-        events = sorted(events, key=lambda e: id_order.get(e.id, 999))
+        # Restore ranking order, then take the tier's slice.
+        id_order = {eid: i for i, eid in enumerate(cache.event_ids)}
+        events = sorted(events_result.scalars().all(),
+                        key=lambda e: id_order.get(e.id, 10**9))[:limit]
 
     feed_items = []
     for event in events:

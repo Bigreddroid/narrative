@@ -106,8 +106,15 @@ export default function MobileNav() {
   // tab unless the feature flag re-enables it. Route-level guard lives in App.jsx.
   const tabs = TABS.filter((t) => t.id !== "locate" || FEATURES.geolocate);
 
+  // Surfaces this bar does not represent — the customer decks, the operator board,
+  // the public scoreboard, a single event. They used to fall through to the final
+  // `: "feed"`, so standing on the executive deck lit up "Feed": the bar reported a
+  // location the reader was not at. No tab is the honest answer when none applies.
+  const OFF_BAR = /^\/(wipro|deck|benchmark|event)(\/|$)/;
+
   const activeId =
-    location.pathname === "/int" ? "fusion"
+    OFF_BAR.test(location.pathname) ? null
+    : location.pathname === "/int" ? "fusion"
     : location.pathname === "/analyst" ? "analyst"
     : location.pathname === "/geolocate" ? "locate"
     : location.pathname === "/following" ? "tracked"

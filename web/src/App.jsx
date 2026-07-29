@@ -60,7 +60,10 @@ function AppShell({ children }) {
   const location = useLocation();
   const { user } = useUser();
   const isAdmin = location.pathname.startsWith("/admin");
-  const noNav = ["/", "/auth", "/onboarding"].includes(location.pathname);
+  // /wipro/exec carries its own navigation (back, cross-surface links, day/night).
+  // Stacking the app's bottom bar under it gave the deck two competing navs on the
+  // same screen — one of them highlighting a tab the reader wasn't on.
+  const noNav = ["/", "/auth", "/onboarding", "/wipro/exec"].includes(location.pathname);
   const showNav = user && !noNav && !isAdmin;
   return (
     <>

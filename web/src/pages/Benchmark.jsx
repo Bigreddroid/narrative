@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import SurfaceNav from "../components/layout/SurfaceNav.jsx";
 import { api } from "../lib/api.js";
 import { useUser } from "../hooks/useUser.js";
 
@@ -104,6 +105,11 @@ export default function Benchmark() {
 
   return (
     <div className="min-h-screen bg-paper text-ink font-sans selection:bg-crimson selection:text-paper">
+      {/* The scoreboard is public, but it is also the destination of "See the
+          benchmark →" on the executive deck. Arriving from there and finding no
+          way back is what made the deck's own evidence link feel like an exit. */}
+      <SurfaceNav fallback="/" tone="ink" />
+
       {/* Nav */}
       <nav className="border-b border-ink/8 px-8 md:px-14 py-4 flex justify-between items-center">
         <button onClick={() => navigate("/")} className="flex items-center gap-3">

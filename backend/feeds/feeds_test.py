@@ -417,6 +417,32 @@ ok("rss source label → subreddit context field", rss[0]["subreddit"] == "news.
 ok("rss strips HTML from summary", "<b>" not in rss[0]["selftext"] and "airstrike" in rss[0]["selftext"])
 ok("rss pubDate → epoch seconds", isinstance(rss[0]["created_utc"], float))
 
+# ── aggregator items are attributed to the PUBLISHER, not the aggregator ──────
+# Google News gives an opaque redirect as the <link> and the only trace of the real
+# outlet is <source>. Without reading it, 423 live articles were attributed to
+# "news.google.com" and their provenance read as unrecognised.
+_GNEWS_XML = """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Google News</title>
+  <item><title>EU targets Russian banks - Reuters</title>
+    <link>https://news.google.com/rss/articles/CBMiXYZ?oc=5</link>
+    <description>Sanctions package</description>
+    <source url="https://www.reuters.com">Reuters</source></item>
+  <item><title>Empty source element</title>
+    <link>https://news.google.com/rss/articles/CBMiABC?oc=5</link>
+    <source url="https://x.com"></source></item>
+  <item><title>Talks resume - and then stall</title>
+    <link>https://news.google.com/rss/articles/CBMiDEF?oc=5</link>
+    <source url="https://www.bbc.co.uk">BBC</source></item>
+</channel></rss>"""
+gn = rss_osint.parse_rss(_GNEWS_XML, "news.google.com")
+ok("aggregator item is attributed to the publisher", gn[0]["subreddit"] == "Reuters")
+ok("publisher suffix stripped from the headline", gn[0]["title"] == "EU targets Russian banks")
+ok("empty <source> falls back to the feed label", gn[1]["subreddit"] == "news.google.com")
+ok("a dash that is not the publisher suffix survives",
+   gn[2]["title"] == "Talks resume - and then stall" and gn[2]["subreddit"] == "BBC")
+ok("the aggregator link is kept as-is — it is the only URL we have",
+   gn[0]["url"].startswith("https://news.google.com/rss/articles/"))
+
 _ATOM_XML = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry><title>Earthquake M6 strikes coast</title>
@@ -472,3 +498,31 @@ ok("every discipline_for result is a valid discipline",
 
 print(f"\nfeeds: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
+
+# ── Local coverage feeds ──────────────────────────────────────────────────────
+# 7 countries in the register had ZERO events within 150 km of any office. Google's
+# own geo-targeting was measured NOT to fix that (gl=AT returned the same global set
+# as gl=US), so these scope the QUERY to the city instead.
+from backend.feeds.rss_osint import (  # noqa: E402
+    _LOCAL_WATCH, _local_feeds, LOCAL_FEED_CAP)
+
+_local = _local_feeds()
+_DARK = ["Austria", "Finland", "Hungary", "Kenya", "Luxembourg", "Norway", "Turkey"]
+
+ok("every country that was dark now has a local feed",
+   all(any(f"gnews/{c.lower()}" == lbl for _u, lbl in _local) for c in _DARK))
+
+ok("a local feed exists for every watched country",
+   len(_local) == len(_LOCAL_WATCH))
+
+ok("every local feed is labelled distinctly (labels become the outlet fallback)",
+   len({lbl for _u, lbl in _local}) == len(_local))
+
+ok("every city is qualified by its country, so 'Vienna' cannot match Vienna, Illinois",
+   all("%22Austria%22" in u for u, lbl in _local if lbl == "gnews/austria"))
+
+ok("local feeds are capped: triage is an LLM call per post",
+   0 < LOCAL_FEED_CAP <= 25)
+
+ok("local queries carry local-consequence terms, not world-news terms",
+   all("protest" in u and "curfew" in u for u, _l in _local))

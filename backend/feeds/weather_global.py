@@ -11,13 +11,22 @@ heavy rain / monsoon, extreme heat, or damaging wind gusts. Pure parser
 (`parse_openmeteo`) → Signal dicts (category "storm"), same shape as `weather.py`.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
 DAILY = "precipitation_sum,temperature_2m_max,wind_gusts_10m_max"
 
-# Monitored points — seeded from the real office coordinates the deck watches. One per
-# city (campuses in the same metro collapse to a single weather point). Extend this list
-# as customer assets are added; a point here just means "emit weather events near here".
-MONITORED_POINTS = [
+# SEED points only — the fallback used when the register cannot be read. This list was
+# the entire weather footprint until it was measured against the live register: 92 of
+# 134 registered sites (69%) had NO monitored point within the 150 km storm-association
+# radius, the farthest being 9,116 km from one, while the deck's all-layers strip
+# reported weather as "of 121" — i.e. claimed to have checked every site. That is the
+# same lie the FESTIVAL tile was fixed for. monitored_points() below derives the real
+# list from the sites table; this remains only so a DB-less run still watches something
+# rather than silently watching nothing.
+SEED_POINTS = [
     {"name": "Bengaluru", "lat": 12.95, "lng": 77.66},
     {"name": "Hyderabad", "lat": 17.44, "lng": 78.35},
     {"name": "Pune", "lat": 18.59, "lng": 73.74},
@@ -53,7 +62,7 @@ def _worst(value, tiers):
 def parse_openmeteo(payload, points: list[dict]) -> list[dict]:
     """Map Open-Meteo daily forecast(s) → Signal dicts, one per point that crosses a
     disruptive threshold. `payload` is a single forecast object (one point) or a list
-    (multi-coordinate response); `points` is the parallel MONITORED_POINTS slice."""
+    (multi-coordinate response); `points` is the parallel slice of monitored points."""
     blocks = payload if isinstance(payload, list) else [payload]
     out = []
     for i, block in enumerate(blocks):
@@ -98,17 +107,77 @@ def parse_openmeteo(payload, points: list[dict]) -> list[dict]:
     return out
 
 
+def collapse_points(rows, precision: float = 0.5) -> list[dict]:
+    """Site coordinates -> one weather point per metro.
+
+    Campuses in the same city share weather, so querying each of them separately buys
+    nothing and multiplies the request. Rounding to `precision` degrees (~55 km at the
+    equator) folds a metro into a single point while keeping distinct cities apart.
+    """
+    seen: dict[tuple[float, float], dict] = {}
+    for name, lat, lng in rows:
+        if lat is None or lng is None:
+            continue
+        try:
+            lat, lng = float(lat), float(lng)
+        except (TypeError, ValueError):
+            continue
+        key = (round(lat / precision) * precision, round(lng / precision) * precision)
+        seen.setdefault(key, {"name": name or "site", "lat": round(lat, 3), "lng": round(lng, 3)})
+    return list(seen.values())
+
+
+async def monitored_points() -> list[dict]:
+    """The points to watch: the live register, collapsed to metros.
+
+    Falls back to SEED_POINTS only when the register cannot be read at all — never to
+    an empty list, because "no points" would render as "no severe weather anywhere"
+    rather than as "we did not check".
+    """
+    try:
+        from sqlalchemy import text
+
+        from backend.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(text(
+                "SELECT city, lat, lng FROM sites "
+                "WHERE lat IS NOT NULL AND lng IS NOT NULL AND is_active"
+            ))).all()
+        pts = collapse_points([(r[0], r[1], r[2]) for r in rows])
+        if pts:
+            return pts
+        logger.warning("weather_global: register held no usable coordinates; using seed points")
+    except Exception as exc:  # noqa: BLE001 — the feed must still run without a DB
+        logger.warning("weather_global: could not read the register (%s: %s); using seed points",
+                       type(exc).__name__, exc)
+    return SEED_POINTS
+
+
+# Open-Meteo takes many coordinates per call, but not unboundedly — chunk so a large
+# register does not produce one enormous URL that the API rejects wholesale.
+_CHUNK = 50
+
+
 async def fetch_weather_global() -> list[dict]:
     import httpx  # lazy — keeps the parser importable without the dep
-    lats = ",".join(f"{p['lat']}" for p in MONITORED_POINTS)
-    lngs = ",".join(f"{p['lng']}" for p in MONITORED_POINTS)
-    params = {"latitude": lats, "longitude": lngs, "daily": DAILY,
-              "forecast_days": 1, "timezone": "auto"}
+
+    points = await monitored_points()
+    out: list[dict] = []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(OPEN_METEO, params=params)
-            if r.status_code == 200:
-                return parse_openmeteo(r.json(), MONITORED_POINTS)
-    except Exception:  # noqa: BLE001 — one bad feed must not sink the ingest run
-        pass
-    return []
+            for i in range(0, len(points), _CHUNK):
+                batch = points[i:i + _CHUNK]
+                params = {
+                    "latitude": ",".join(f"{p['lat']}" for p in batch),
+                    "longitude": ",".join(f"{p['lng']}" for p in batch),
+                    "daily": DAILY, "forecast_days": 1, "timezone": "auto",
+                }
+                r = await client.get(OPEN_METEO, params=params)
+                if r.status_code == 200:
+                    out.extend(parse_openmeteo(r.json(), batch))
+                else:
+                    logger.warning("weather_global: Open-Meteo returned %s for %d points",
+                                   r.status_code, len(batch))
+    except Exception as exc:  # noqa: BLE001 — one bad feed must not sink the ingest run
+        logger.warning("weather_global: fetch failed (%s: %s)", type(exc).__name__, exc)
+    return out

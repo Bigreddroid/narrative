@@ -20,6 +20,8 @@ vocabularies so the tag is correct whichever path created the event.
 $0/local doctrine: this is pure data + a pure function. No I/O, no LLM.
 """
 
+import re
+
 # ── Event category vocabularies (pre-existing; do not reorder casually) ──────────
 
 # Canonical feed/OSINT event-type categories — kept in lockstep with
@@ -106,3 +108,45 @@ def discipline_for(source: str | None, category: str | None) -> str:
         if d:
             return d
     return DEFAULT_DISCIPLINE
+
+
+# ── Normalising what the LLM actually returns ───────────────────────────────────
+# The mapper writes the model's answer straight onto the row, and the model does not
+# reliably honour the enum it was given. Live data carried "Developing" and
+# "Escalating" alongside the lower-case forms, and categories like "Economy",
+# "Geopolitics|Economy" and "Geopolitics/Economy" that are in NO vocabulary — so those
+# events were invisible to every category filter and every status column, with nothing
+# to indicate they had been dropped. Read paths were made case-insensitive as a
+# stopgap; this is the actual fix, applied where the value is written.
+
+STATUSES: tuple[str, ...] = ("developing", "escalating", "stable", "resolved")
+DEFAULT_STATUS = "developing"
+
+_ALL_CATEGORIES = frozenset(CATEGORIES) | frozenset(LLM_CATEGORIES)
+
+
+def normalize_status(value: str | None) -> str:
+    """LLM status -> one of STATUSES. Anything unrecognised becomes the default."""
+    v = (value or "").strip().lower()
+    return v if v in STATUSES else DEFAULT_STATUS
+
+
+def normalize_category(value: str | None) -> str | None:
+    """LLM category -> a known category, or None when it cannot be salvaged.
+
+    Handles the two shapes actually observed: wrong case, and two categories joined
+    by a separator ("Geopolitics|Economy") when the model refused to pick one. The
+    first recognised part wins. None is returned rather than a guess — an event with
+    no category is honestly uncategorised, which a caller can see, whereas one filed
+    under an invented category is silently wrong.
+    """
+    raw = (value or "").strip().lower()
+    if not raw:
+        return None
+    if raw in _ALL_CATEGORIES:
+        return raw
+    for part in re.split(r"[|/,;>+]| and ", raw):
+        part = part.strip()
+        if part in _ALL_CATEGORIES:
+            return part
+    return None

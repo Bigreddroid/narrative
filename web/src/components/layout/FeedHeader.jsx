@@ -8,7 +8,29 @@ import { clearToken } from "../../lib/api.js";
 import { TIERS } from "../../lib/tiers.js";
 import LensSwitcher from "../LensSwitcher.jsx";
 
-const CATEGORIES = ["All", "Geopolitics", "Conflict", "Economics", "Climate", "Technology", "Health", "Policy", "Security"];
+// These MUST be the categories the engine actually writes. The previous list
+// (Geopolitics · Economics · Climate · Technology · Health · Policy · Security)
+// was a taxonomy nobody produced: the classifier emits wildfire/disaster/conflict/
+// storm/sanction/market/unrest/cyber, and GET /events/ filters on `category ==`,
+// so seven of the nine tabs matched zero rows every time and the feed rendered its
+// "still initializing" screen — a dead tab that blamed the pipeline for it.
+//
+// Label and value are carried separately because they legitimately differ
+// (Sanctions → `sanction`); never derive one from the other with toLowerCase().
+// Ordered by real volume. `cyber` is excluded from the unfiltered feed by the
+// backend and only reachable via ?category=cyber, which is exactly what this tab
+// sends — so the tab is the only way to see it.
+const CATEGORIES = [
+  { label: "All",       value: null },
+  { label: "Conflict",  value: "conflict" },
+  { label: "Unrest",    value: "unrest" },
+  { label: "Market",    value: "market" },
+  { label: "Sanctions", value: "sanction" },
+  { label: "Cyber",     value: "cyber" },
+  { label: "Wildfire",  value: "wildfire" },
+  { label: "Storm",     value: "storm" },
+  { label: "Disaster",  value: "disaster" },
+];
 
 function SunIcon() {
   return (
@@ -201,16 +223,22 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
         <nav className="max-w-[1400px] mx-auto px-4 md:px-6 overflow-x-auto border-b border-ink/8">
           <ul className="flex gap-4 md:gap-6 py-2 text-[11px] md:text-[12px] font-semibold uppercase tracking-wider text-ink/40 whitespace-nowrap">
             {CATEGORIES.map(cat => {
-              const active = activeCategory === (cat === "All" ? null : cat.toLowerCase());
+              const active = activeCategory === cat.value;
               return (
-                <li
-                  key={cat}
-                  onClick={() => onCategoryChange(cat === "All" ? null : cat.toLowerCase())}
-                  className={`cursor-pointer py-1 transition-colors border-b-2 ${
-                    active ? "border-crimson text-crimson" : "border-transparent hover:text-crimson"
-                  }`}
-                >
-                  {cat}
+                <li key={cat.label}>
+                  {/* Was a bare <li onClick> — not focusable, not keyboard-operable
+                      and announced as plain text. It filters the feed, so it is a
+                      button. */}
+                  <button
+                    type="button"
+                    onClick={() => onCategoryChange(cat.value)}
+                    aria-pressed={active}
+                    className={`cursor-pointer py-1 transition-colors border-b-2 uppercase tracking-wider ${
+                      active ? "border-crimson text-crimson" : "border-transparent hover:text-crimson"
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
                 </li>
               );
             })}

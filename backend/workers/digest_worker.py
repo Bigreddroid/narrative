@@ -45,6 +45,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from backend.config import get_settings
+from backend.consequence_engine import evidence
 from backend.database import AsyncSessionLocal
 from backend.models.article import Article
 from backend.models.delivery import (
@@ -228,14 +229,16 @@ async def _assemble(db, org_id, sub: AlertSubscription, since: datetime):
 
     # Corroboration by DISTINCT OUTLET, in one query — five wire copies of one Reuters
     # story are one source, not five (the events route makes the same point at :99).
+    # Keyed by PUBLISHER, not feed label: the two-source escalation gate below is
+    # exactly the bar one newsroom under two feed names could otherwise clear alone.
     outlets: dict = {}
     rows = (await db.execute(
-        select(Article.narrative_event_id, Source.name)
+        select(Article.narrative_event_id, Source.name, Article.url)
         .outerjoin(Source, Article.source_id == Source.id)
         .where(Article.narrative_event_id.in_([e.id for e in events]))
     )).all()
-    for eid, name in rows:
-        outlets.setdefault(eid, set()).add(name or "Unknown")
+    for eid, name, url in rows:
+        outlets.setdefault(eid, {})[evidence.outlet_key(url, name)] = name or "Unknown"
 
     escalated, held = [], []
     for e in events:

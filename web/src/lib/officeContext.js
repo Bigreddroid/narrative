@@ -265,10 +265,18 @@ function holidayStatus(hols) {
   const soon = hols.find((h) => h.in_days > 0 && h.in_days <= 3);
   return { level: now ? "watch" : "clear", next: hols[0] || null, today: now || null, soon: soon || null };
 }
+// A gathering we cannot size is capped at "watch". The live Wikidata set is mostly
+// scheduled sport, and this function's alert-on-active rule was calibrated against the
+// curated fixture ("Independence Day gatherings, Red Fort" — a genuine central-Delhi
+// lockdown). Applying that rule to a regular-season fixture would mark every office
+// near a stadium red on game day, which is the severity inflation this deck exists to
+// beat. `routine` is set by whoever supplies the gathering (useRegister.toGatherings
+// for the live feed); a curated entry that omits it still escalates as before.
 function festivalStatus(fests) {
   const active = fests.find((f) => f.active);
   const soon = fests.find((f) => f.soon);
-  return { level: active ? "alert" : soon ? "watch" : "clear", active: active || null, soon: soon || null, all: fests };
+  const level = active ? (active.routine ? "watch" : "alert") : soon ? "watch" : "clear";
+  return { level, active: active || null, soon: soon || null, all: fests };
 }
 
 // The full per-site rollup. `ctx` bundles the shared deck data so every office is

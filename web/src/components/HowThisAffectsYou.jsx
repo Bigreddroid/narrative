@@ -67,7 +67,14 @@ export default function HowThisAffectsYou({ profileActive, profileLabel, onSetLe
     let alive = true;
     setData(null);
     setErr(false);
-    api.get("/exposure/me")
+    // /exposure/me scores the whole live graph against this profile: measured at
+    // ~2.3s idle, and it loads on the World tab alongside the map's own graph and
+    // vessel fetches. api.js fail-fast aborts at 3.5s by default, so under that
+    // contention this panel lost the race and rendered "Couldn't load your
+    // exposure" over a perfectly healthy 200. The consequence strip claiming it
+    // cannot see your exposure, when it can, is the one failure this panel must
+    // not have.
+    api.get("/exposure/me", { timeoutMs: 15000 })
       .then((r) => { if (alive) setData(r); })
       .catch(() => { if (alive) setErr(true); });
     return () => { alive = false; };

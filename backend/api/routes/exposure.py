@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from backend.api.dependencies import DbDep, UserDep
 from backend.api.routes.market import latest_market_rows
 from backend.api.routes.vessels import cached_vessels
-from backend.consequence_engine import corroboration, propagation
+from backend.consequence_engine import corroboration, evidence, propagation
 from backend.services import source_reliability
 from backend.feeds import chokepoints, spaceweather
 from backend.feeds.market import sector_stress
@@ -43,7 +43,18 @@ async def _load_graph(db, limit: int, event_ids: list | None = None) -> tuple[li
     exposure for the analyst chat) instead of the global top-importance slice —
     so the readout differs per question rather than being the same global list.
     """
-    stmt = select(NarrativeEvent).where(NarrativeEvent.is_mapped == True)  # noqa: E712
+    # Exposure is the one number on this deck a buyer reads and acts on, so it must
+    # be computed only from events we can back up. Measured before this filter:
+    # 190 of the top 200 by importance (95%) were SEVERED — article-derived events
+    # whose articles were lost in the cluster_worker outage — and 87 were merged
+    # near-duplicates counted twice. The list feed was quarantined first; this is
+    # the path that actually feeds the score.
+    stmt = (
+        select(NarrativeEvent)
+        .where(NarrativeEvent.is_mapped == True)  # noqa: E712
+        .where(NarrativeEvent.merged_into_id.is_(None))  # a duplicate is not extra exposure
+        .where(evidence.evidenced())
+    )
     if event_ids:
         ids = [UUID(x) if isinstance(x, str) else x for x in event_ids]
         stmt = stmt.where(NarrativeEvent.id.in_(ids)).limit(len(ids))
