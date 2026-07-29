@@ -14,9 +14,9 @@
 // never have visited. With nothing to pop (a link opened cold in a new tab) it
 // falls through to `fallback`, which each surface sets to its real parent.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useCallback } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useTheme } from "../../hooks/useTheme.js";
+import { useGoBack } from "../../hooks/useGoBack.js";
 
 function SunIcon() {
   return (
@@ -48,15 +48,9 @@ function MoonIcon() {
 export default function SurfaceNav({
   links = [], fallback = "/world", showTheme = true, tone = "ink", className = "",
 }) {
-  const navigate = useNavigate();
   const { pathname } = useLocation();
   const { isDark, toggle } = useTheme();
-
-  const goBack = useCallback(() => {
-    // `idx` is null for the first entry of a history session — nothing to pop.
-    if (window.history.state?.idx > 0) navigate(-1);
-    else navigate(fallback);
-  }, [navigate, fallback]);
+  const goBack = useGoBack(fallback);
 
   // Every entry is a COMPLETE literal class string, including the hover: variants.
   // Tailwind's JIT scans source text for class names, so a composed `hover:${x}`

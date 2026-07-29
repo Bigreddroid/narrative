@@ -42,7 +42,34 @@ const C = {
   crimson: "#C80028",
 };
 
-const CATEGORY_OPTIONS = ["Geopolitics", "Conflict", "Economics", "Climate", "Technology", "Health", "Policy", "Security"];
+// These MUST be categories the engine actually writes — backend/taxonomy.py holds
+// the two canonical vocabularies (CATEGORIES, the 13 feed/OSINT types; and
+// LLM_CATEGORIES, the 7 the cluster-mapper emits). This list was
+// Geopolitics · Conflict · Economics · Climate · Technology · Health · Policy · Security,
+// derived with `cat.toLowerCase()` — and neither `economics` nor `security` exists in
+// either vocabulary, so both columns matched zero rows forever. "Economics" was a
+// DEFAULT column, which is why the deck shipped with a column permanently reading 0.
+//
+// FeedHeader fixed exactly this list for the feed's category tabs and left a comment
+// saying label and value differ legitimately (Sanctions → `sanction`) and must never
+// be derived from one another. The deck kept the dead copy. Pairs, not toLowerCase().
+const CATEGORY_OPTIONS = [
+  { label: "Conflict",   value: "conflict"   },
+  { label: "Unrest",     value: "unrest"     },
+  { label: "Market",     value: "market"     },
+  { label: "Sanctions",  value: "sanction"   },
+  { label: "Cyber",      value: "cyber"      },
+  { label: "Wildfire",   value: "wildfire"   },
+  { label: "Storm",      value: "storm"      },
+  { label: "Flood",      value: "flood"      },
+  { label: "Disaster",   value: "disaster"   },
+  { label: "Geopolitics", value: "geopolitics" },
+  { label: "Economy",    value: "economy"    },
+  { label: "Climate",    value: "climate"    },
+  { label: "Health",     value: "health"     },
+  { label: "Technology", value: "technology" },
+  { label: "Policy",     value: "policy"     },
+];
 
 let _uid = 0;
 const nextId = () => `col-${++_uid}`;
@@ -51,7 +78,10 @@ const DEFAULT_COLUMNS = [
   { id: nextId(), title: "All Signals", kind: "all" },
   { id: nextId(), title: "Escalating",  kind: "status",   value: "escalating" },
   { id: nextId(), title: "Conflict",    kind: "category", value: "conflict" },
-  { id: nextId(), title: "Economics",   kind: "category", value: "economics" },
+  // Was "Economics"/`economics` — a category the engine has never written, so this
+  // default column rendered 0 on every load. `market` is the vocabulary's real
+  // economic bucket and carries the volume (528 events at the time of the fix).
+  { id: nextId(), title: "Market",      kind: "category", value: "market" },
   { id: nextId(), title: "Geopolitics", kind: "category", value: "geopolitics" },
   { id: nextId(), title: "Climate",     kind: "category", value: "climate" },
 ];
@@ -282,8 +312,7 @@ function AddColumn({ onAdd }) {
           ))}
 
           <p className="px-3 pt-3 pb-1.5 text-[9px] font-mono uppercase tracking-[0.3em]" style={{ color: C.fg35 }}>Category</p>
-          {CATEGORY_OPTIONS.map(cat => {
-            const v = cat.toLowerCase();
+          {CATEGORY_OPTIONS.map(({ label: cat, value: v }) => {
             return (
               <button key={v} onClick={() => add({ title: cat, kind: "category", value: v })}
                 className="w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 transition-colors"
