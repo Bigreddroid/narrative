@@ -197,6 +197,15 @@ class Settings(BaseSettings):
     # Free feed keys (optional — most sources need none)
     firms_map_key: str = ""        # NASA FIRMS wildfires
     openweather_api_key: str = ""  # global weather (optional; NWS/NHC need none)
+    # India Meteorological Department, reached through the Indian government's open
+    # data platform (https://api.data.gov.in — free key from https://data.gov.in).
+    # 🔴 IMD's OWN api (mausam.imd.gov.in/api/*) is NOT key-gated, it is IP-whitelist
+    # gated — measured: it answers "401 IP <addr> needs to be whitelisted" to any
+    # request, with or without a key. data.gov.in is therefore the only credential
+    # route, and this is that credential.
+    # Empty ⇒ the IMD layer reports "not checked" and India stays on Open-Meteo. It
+    # must never report "clear" on the strength of a source that was never queried.
+    data_gov_in_api_key: str = ""
     # Benchmark external-dataset keys (Phase 4). Manifold + the file adapter are
     # keyless; Metaculus is opt-in. Empty token => the metaculus dataset honestly
     # refuses rather than fabricating (mirrors the harness's no-LLM/no-data skips).

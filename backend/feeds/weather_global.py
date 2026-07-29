@@ -138,10 +138,21 @@ async def monitored_points() -> list[dict]:
         from sqlalchemy import text
 
         from backend.database import AsyncSessionLocal
+
+        # India is served by IMD's ISSUED warnings instead of this model forecast —
+        # but only while IMD is actually answering (imd.covers_india_now()). If that
+        # feed is down, India stays on Open-Meteo rather than going dark: a degraded
+        # forecast is honest, an unwatched site reported as part of "121 checked" is not.
+        from backend.feeds import imd
+        india_served = imd.covers_india_now()
+        where_india = "AND lower(country) <> 'india' " if india_served else ""
+        if india_served:
+            logger.info("weather_global: India excluded — IMD is covering it")
+
         async with AsyncSessionLocal() as db:
             rows = (await db.execute(text(
                 "SELECT city, lat, lng FROM sites "
-                "WHERE lat IS NOT NULL AND lng IS NOT NULL AND is_active"
+                "WHERE lat IS NOT NULL AND lng IS NOT NULL AND is_active " + where_india
             ))).all()
         pts = collapse_points([(r[0], r[1], r[2]) for r in rows])
         if pts:
