@@ -1,6 +1,6 @@
 import math
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -46,6 +46,27 @@ async def list_events(
     # corroboration join is one grouped query regardless of page size.
     limit: int = Query(20, le=500),
     offset: int = Query(0),
+    # 🔴 A board with no window is not a live board. The ranking below blends
+    # importance with a recency bonus capped at +15, which sounds fresh until you
+    # measure the spread it has to overcome: a 15-day-old "Turkish Coup Attempt"
+    # scores 80 while events ingested today average 16. +15 cannot close a 64-point
+    # gap, so the top-100 converged on a fixed set of old high scorers and STAYED
+    # there — measured on the live corpus, the operator deck's top 100 contained
+    # NOTHING from the previous three days, and 31 of 100 were 15 days old.
+    #
+    # Worse, mid-July's set is full of anniversary retrospectives ("How the 2016
+    # coup attempt changed Turkey for good"), which the pipeline scored as live
+    # signals. An operator board led by a decade-old coup is not stale-looking, it
+    # is wrong, and a GSOC would act on it.
+    #
+    # Opt-in rather than a new default: callers that legitimately want the all-time
+    # ranking (exposure scoring, the benchmark) are unchanged, and any surface that
+    # claims to be live asks for a window and says which one it is showing.
+    max_age_days: int | None = Query(
+        None, ge=1, le=365,
+        description="Only events first detected (or updated) within this many days. "
+                    "Omit for the all-time ranking.",
+    ),
     include_unevidenced: bool = Query(
         False,
         description="Include article-derived events whose source articles are missing. Off by default: "
@@ -93,6 +114,25 @@ async def list_events(
         query = query.where(NarrativeEvent.source.like("osint_%"))
     if source_prefix:
         query = query.where(NarrativeEvent.source.like(source_prefix + "%"))
+    if max_age_days:
+        # 🔴 first_detected_at, NOT coalesce(last_updated_at, ...). Measured on the
+        # live corpus, the two windows are not close:
+        #   coalesce 7d      -> newest 3 days old, OLDEST 15 DAYS
+        #   first_detected 7d-> newest today,      oldest 7 days
+        # _upsert refreshes last_updated_at every time a feed re-emits a story, so a
+        # coalesce window lets a fortnight-old event back onto a "live" board simply
+        # because something touched it — which is the behaviour being fixed, not a
+        # window at all. "When did this first appear" is the question an operator
+        # board answers.
+        #
+        # The cost is deliberate and accepted: a long-running story stops appearing
+        # here once it ages past the window, even if still developing. That is right
+        # for a what-is-new board; /world and the exec deck keep the all-time ranking
+        # and are where an ongoing situation stays visible.
+        query = query.where(
+            NarrativeEvent.first_detected_at
+            > datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        )
 
     # Freshness-blended ranking: importance + up to +15 recency boost that decays
     # over ~a day, so just-ingested live feeds (quakes, floods, storms) interleave

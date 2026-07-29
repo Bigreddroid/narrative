@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useNavigate } from "react-router-dom";
 import DeckView from "../components/DeckView.jsx";
+import { DECK_WINDOW_DAYS } from "../hooks/useColumnFeeds.js";
 import SurfaceNav from "../components/layout/SurfaceNav.jsx";
 
 // This board used to stay dark in both themes and hide the day/night switch. The
@@ -41,6 +42,8 @@ export default function SignalBoard() {
         <p className="text-[11px] text-[var(--xd-19)] flex-1 min-w-[240px]">
           The live event graph as an operator board — columns by status, category and discipline.
           Add or drop columns; click any signal to open it.
+          {" "}<strong className="text-[var(--xd-23)]">Last {DECK_WINDOW_DAYS} days only</strong> — the
+          board is a window on what is happening now, not a ranking of everything ever collected.
         </p>
       </header>
       <div className="flex-1 min-h-0">

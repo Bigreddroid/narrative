@@ -26,7 +26,21 @@ const PARAM = { status: "status", category: "category", discipline: "discipline"
 export const columnKey = (col) =>
   PARAM[col?.kind] ? `${col.kind}:${String(col.value ?? "").toLowerCase()}` : null;
 
-export function useColumnFeeds(columns, { limit = 100 } = {}) {
+// 🔴 The board calls itself "the live event graph", so it must be bounded in time.
+// Ranking is importance blended with a recency bonus capped at +15, which cannot
+// close the gap between a 15-day-old story scoring 80 and today's events averaging
+// 16 — measured on the live corpus, the top 100 held NOTHING from the previous
+// three days and 31 of 100 were 15 days old, led by anniversary retrospectives of
+// Turkey's 2016 coup that the pipeline had scored as live signals.
+//
+// 7 days, not 24 hours: a slower-burning story (a strike ballot, a cyclone forming)
+// legitimately stays relevant for a week, and a tighter window would empty columns
+// during an ingest gap — which reads as "nothing is happening" rather than "nothing
+// was collected". DeckView prints the window so the count is never mistaken for
+// "everything we hold".
+export const DECK_WINDOW_DAYS = 7;
+
+export function useColumnFeeds(columns, { limit = 100, maxAgeDays = DECK_WINDOW_DAYS } = {}) {
   const [byKey, setByKey] = useState({});      // key -> { events, loading, error }
   const inFlight = useRef(new Set());
 
@@ -42,7 +56,9 @@ export function useColumnFeeds(columns, { limit = 100 } = {}) {
       inFlight.current.add(key);
       setByKey((m) => (m[key] ? m : { ...m, [key]: { events: [], loading: true, error: null } }));
 
-      const q = new URLSearchParams({ [PARAM[kind]]: value, limit: String(limit) });
+      const q = new URLSearchParams({
+        [PARAM[kind]]: value, limit: String(limit), max_age_days: String(maxAgeDays),
+      });
       // Same headroom as the main feed: a cold DB query can exceed the 3.5s
       // api.js default and abort into an empty column, which would read as
       // "nothing matches" — the exact lie this hook exists to remove.

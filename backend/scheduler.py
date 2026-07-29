@@ -140,8 +140,20 @@ async def main():
 
 
 if __name__ == "__main__":
+    # force=True because backend/main.py calls basicConfig at IMPORT time, and this
+    # module reaches it transitively through the worker imports in main(). Without
+    # force, basicConfig is a silent NO-OP once the root logger has a handler, so
+    # this scheduler's own config never applied: every "Worker start/done" line from
+    # __main__ was swallowed while backend.workers.* and sqlalchemy lines kept
+    # printing (under the OTHER config, which is why each line appeared twice).
+    #
+    # 🔴 That is not cosmetic. It hid the fact that hazard_ingest_worker had not
+    # completed a cycle since 2026-07-27 — the whole free-feed hazard layer, dead
+    # for two days, with no start line, no error, and nothing in the logs to see.
+    # A scheduler you cannot watch is a scheduler you cannot trust.
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        force=True,
     )
     asyncio.run(main())

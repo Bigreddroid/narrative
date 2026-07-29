@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEventFeed } from "../hooks/useEventFeed.js";
-import { useColumnFeeds, columnKey } from "../hooks/useColumnFeeds.js";
+import { useColumnFeeds, columnKey, DECK_WINDOW_DAYS } from "../hooks/useColumnFeeds.js";
 import { useFollowing } from "../hooks/useFollowing.js";
 import { useMediaQuery } from "../hooks/useMediaQuery.js";
 import { useProfile } from "../hooks/useProfile.js";
@@ -350,7 +350,7 @@ function AddColumn({ onAdd }) {
 
 // ─── Deck root ────────────────────────────────────────────────────────────────
 export default function DeckView({ selectedEventId, onEventSelect, onEventClose }) {
-  const { events, loading } = useEventFeed({ limit: 100 });
+  const { events, loading } = useEventFeed({ limit: 100, maxAgeDays: DECK_WINDOW_DAYS });
   const { follow, unfollow, isFollowing } = useFollowing();
   const profile = useProfile();
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
