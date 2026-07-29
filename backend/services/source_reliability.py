@@ -59,12 +59,21 @@ _CANNOT_JUDGE_LETTER = 5  # index of "F"
 # hit wins. Index maps into RELIABILITY_CODES (0 = A … 5 = F). Anything unmatched is
 # treated as unknown provenance (see grade()), which — absent a track record — is F.
 _PROVENANCE_PRIOR: tuple[tuple[tuple[str, ...], int], ...] = (
-    # A — primary instruments / authoritative sensor feeds (direct measurement)
-    (("usgs", "gdacs", "noaa", "nasa", "eonet", "opensky", "aisstream", "ais_", "gdelt_quake"), 0),
+    # A — primary instruments / authoritative sensor feeds (direct measurement), and
+    # national meteorological agencies issuing warnings under their own authority.
+    # 🔴 "nws"/"nhc"/"imd" are listed explicitly because matching is by SUBSTRING and
+    # none of them contain "noaa": every NWS alert and NHC hurricane was grading F6
+    # ("cannot be judged") for as long as weather.py has existed — measured, not
+    # inferred. An agency that ISSUES a warning is a different instrument from a model
+    # that computes a forecast, which is why open-meteo sits two tiers below.
+    (("usgs", "gdacs", "noaa", "nws", "nhc", "imd", "nasa", "eonet",
+      "opensky", "aisstream", "ais_", "gdelt_quake"), 0),
     # B — official agencies & established wires (curated, accountable)
     (("cisa", "nvd", "cve", "reuters", "apnews", "bbc", "gov", "official", "launch"), 1),
-    # C — open aggregators / broad OSINT collectors (wide net, mixed quality)
-    (("gdelt", "osint_gdelt", "market", "equit", "vix"), 2),
+    # C — open aggregators / broad OSINT collectors (wide net, mixed quality).
+    # open-meteo aggregates national weather MODELS: reputable, but it forecasts rather
+    # than warns and answers to no public authority, so it is not graded as one.
+    (("gdelt", "osint_gdelt", "open-meteo", "openmeteo", "market", "equit", "vix"), 2),
     # D — syndicated RSS / uncurated open feeds (highly variable)
     (("osint_rss", "rss", "blog", "telegram", "social"), 3),
 )

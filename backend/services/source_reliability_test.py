@@ -44,6 +44,19 @@ ok("wire (reuters) is B", letter("reuters") == "B")
 ok("open aggregator (osint_gdelt) is C", letter("osint_gdelt") == "C")
 ok("uncurated rss (osint_rss) is D", letter("osint_rss") == "D")
 
+# ── The weather layer was entirely ungraded ───────────────────────────────────
+# Measured before this was fixed: nws, nhc AND open-meteo every one graded F6,
+# "cannot be judged". Matching is by substring and none of those strings contain
+# "noaa", so the whole layer fell through the prior to unknown-source. These
+# assertions exist so a future edit to the needle list cannot silently undo it.
+ok("NWS alerts grade as an agency, not as unknown", letter("nws") == "A")
+ok("NHC hurricanes grade as an agency, not as unknown", letter("nhc") == "A")
+ok("IMD is a national met agency issuing warnings → A", letter("imd") == "A")
+# A model forecast is NOT an issued warning, and must not borrow an agency's letter.
+ok("open-meteo is a model aggregator, graded C not A", letter("open-meteo") == "C")
+ok("an issued warning outranks a computed forecast",
+   SR.RELIABILITY_CODES.index(letter("imd")) < SR.RELIABILITY_CODES.index(letter("open-meteo")))
+
 g = SR.grade("who_is_this", 0)
 ok("unknown source, no history → F (cannot be judged)", g["reliability"]["code"] == "F")
 ok("unknown source, no corroboration → digit 6", g["credibility"]["code"] == 6)
