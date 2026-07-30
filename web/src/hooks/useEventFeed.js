@@ -15,7 +15,10 @@ function normalizeEvent(e) {
 // open tab surfaces new events on its own instead of needing a manual reload.
 const POLL_MS = 90000;
 
-export function useEventFeed({ category = null, status = null, limit = 50 } = {}) {
+// maxAgeDays is opt-in and defaults to null (the all-time ranking) so /world and
+// every existing caller behave exactly as before. Only surfaces that claim to be
+// live pass a window — see useColumnFeeds.DECK_WINDOW_DAYS for why the deck does.
+export function useEventFeed({ category = null, status = null, limit = 50, maxAgeDays = null } = {}) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -29,6 +32,7 @@ export function useEventFeed({ category = null, status = null, limit = 50 } = {}
       const q = new URLSearchParams();
       if (category) q.set("category", category);
       if (status)   q.set("status", status);
+      if (maxAgeDays) q.set("max_age_days", String(maxAgeDays));
       q.set("limit", limit);
 
       if (!background) setLoading(true);
@@ -65,7 +69,7 @@ export function useEventFeed({ category = null, status = null, limit = 50 } = {}
     fetchEvents(false);
     const id = setInterval(() => fetchEvents(true), POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, [category, status, limit]);
+  }, [category, status, limit, maxAgeDays]);
 
   return { events, loading, error };
 }

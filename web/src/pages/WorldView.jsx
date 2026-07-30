@@ -306,6 +306,10 @@ function FeedView({ selectedEventId, onEventSelect, onEventClose, category, onCa
         {/* Status filter strip — hidden during search */}
         {!isSearching && (
           <div className="border-b border-ink/10 px-4 md:px-6 flex items-center gap-4 md:gap-6 overflow-x-auto">
+            {/* Named for the same reason the category row above it is: two filter
+                strips, both opening with "ALL", stacked with nothing distinguishing
+                which axis each one filtered. */}
+            <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink/25">Status</span>
             {STATUSES.map(s => {
               const val = s === "All" ? null : s.toLowerCase();
               const active = status === val;

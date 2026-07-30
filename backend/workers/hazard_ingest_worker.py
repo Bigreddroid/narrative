@@ -19,7 +19,7 @@ from backend import taxonomy
 from backend.consequence_engine import title_dedup
 from backend.consequence_engine.embedder import embed_texts
 from backend.database import AsyncSessionLocal
-from backend.feeds import cyber, gdacs, launches, synthesize, usgs, weather, weather_global
+from backend.feeds import cyber, gdacs, imd, launches, synthesize, usgs, weather, weather_global
 from backend.models.article import Article
 from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.narrative_event import NarrativeEvent
@@ -36,8 +36,12 @@ logger = logging.getLogger(__name__)
 # NOTE: gdelt.fetch_gdelt is intentionally NOT wired — the GDELT GEO 2.0 endpoint
 # returns 404 from our hosts (the DOC API works but has no per-point coords).
 # The module + tests remain; re-add once a working geocoded endpoint is confirmed.
-SOURCES = [usgs.fetch_earthquakes, weather.fetch_weather, weather_global.fetch_weather_global,
-           gdacs.fetch_gdacs, launches.fetch_launches]
+#
+# imd runs BEFORE weather_global on purpose: it sets the "India is covered" flag
+# that weather_global reads to decide whether to drop Indian metros from the model
+# forecast. Ordered, not coincidental — reversing them costs India a cycle of cover.
+SOURCES = [usgs.fetch_earthquakes, weather.fetch_weather, imd.fetch_imd,
+           weather_global.fetch_weather_global, gdacs.fetch_gdacs, launches.fetch_launches]
 
 # Non-geo sources (lat/lng=None): ingested without coordinates. Filtered to
 # high-signal items only (NONGEO_MIN_IMPORTANCE) to keep the feed clean — e.g.

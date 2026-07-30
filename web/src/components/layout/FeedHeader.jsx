@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useGoBack } from "../../hooks/useGoBack.js";
 import { useTheme } from "../../hooks/useTheme.js";
 import { useUser } from "../../hooks/useUser.js";
 import { setStoredUser } from "../../hooks/useUser.js";
@@ -63,9 +64,41 @@ function greeting() {
   return "Good evening";
 }
 
+// Sibling SURFACES — places to go. Deliberately kept apart from the view tabs
+// below, which only change what THIS page shows. The two were one undifferentiated
+// row of seven: four in-page views mixed with three route jumps, so "Deck" (a 600px
+// box inside the feed) sat beside "Analyst" (a different page) with nothing to tell
+// them apart, and the feed offered no route to the two surfaces this buyer actually
+// works from — the executive deck and the analyst board.
+//
+// `/following` moves here rather than being deleted: docs/SURFACE-AUDIT.md files a
+// personal follow-feed as surplus for a GSOC buyer who works from assets and regions,
+// but the "Track signal" buttons on every card write to it, so removing the only way
+// to read that list would strand what those buttons produce. Hide ≠ delete.
+const SURFACES = [
+  { to: "/wipro/exec", label: "Executive deck" },
+  { to: "/wipro",      label: "Analyst board" },
+  { to: "/deck",       label: "Signal deck"   },
+  { to: "/analyst",    label: "Analyst"       },
+  { to: "/int",        label: "INT fusion"    },
+];
+
+// VIEWS — what this page renders, no navigation. The in-page "Deck" tab is gone from
+// here: it rendered the same DeckView that /deck now gives a full viewport, so the
+// product carried two decks of different sizes under near-identical names. `?tab=deck`
+// still resolves in WorldView, so existing links do not dead-end.
+const VIEWS = [
+  { id: "feed",     label: "Intelligence Feed" },
+  { id: "world",    label: "World View"        },
+  { id: "exposure", label: "Exposure"          },
+];
+
 export default function FeedHeader({ activeCategory, onCategoryChange, activeTab, onTabChange, searchValue, onSearchChange }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const navigate = useNavigate();
+  // The feed is a top-level surface, so a cold-loaded tab has nothing to pop; the
+  // executive deck is this buyer's home, not the marketing landing page.
+  const goBack = useGoBack("/wipro/exec");
   const { isDark, toggle } = useTheme();
   const { user, tier }     = useUser();
   const tierMeta           = TIERS[tier] || TIERS.free;
@@ -87,9 +120,29 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
 
       {/* ── Desktop utility bar — hidden on mobile ── */}
       <div className="hidden md:flex max-w-[1400px] mx-auto px-6 justify-between items-center py-1.5 border-b border-ink/8 text-[11px] text-ink/45 tracking-wide">
-        <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
-          <span>Intelligence Live</span>
+        <div className="flex items-center gap-4">
+          {/* The feed was the one surface with no way back — every other surface got
+              one in the nav pass, but the feed sits inside the app shell and was
+              assumed to be a root. It is reached by link from the decks constantly. */}
+          <button type="button" onClick={goBack}
+            className="flex items-center gap-1 hover:text-crimson transition-colors cursor-pointer">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+              strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M7.5 2L3.5 6l4 4" />
+            </svg>
+            Back
+          </button>
+          <span className="w-px h-3 bg-ink/15" aria-hidden="true" />
+          <span className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse" />
+            <span>Intelligence Live</span>
+          </span>
+          <span className="w-px h-3 bg-ink/15" aria-hidden="true" />
+          {SURFACES.map(s => (
+            <Link key={s.to} to={s.to} className="hover:text-crimson transition-colors">
+              {s.label}
+            </Link>
+          ))}
         </div>
         <div className="flex items-center gap-5">
           <AnimatePresence>
@@ -114,6 +167,9 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
             {isDark ? <SunIcon /> : <MoonIcon />}
           </button>
           <LensSwitcher />
+          <Link to="/following" className="hover:text-crimson transition-colors">
+            Watched
+          </Link>
           <button onClick={() => navigate("/settings")} className="hover:text-crimson transition-colors cursor-pointer">
             Settings
           </button>
@@ -194,15 +250,7 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
 
         {/* ── Tab switcher — desktop only, mobile uses bottom nav ── */}
         <div className="hidden md:flex max-w-[1400px] mx-auto px-6" style={{ borderTop: "1px solid rgba(240,237,232,0.08)" }}>
-          {[
-            { id: "feed",      label: "Intelligence Feed" },
-            { id: "deck",      label: "Deck"              },
-            { id: "world",     label: "World View"        },
-            { id: "exposure",  label: "Exposure"          },
-            { id: "fusion",    label: "INT Fusion"        },
-            { id: "following", label: "Watched"           },
-            { id: "analyst",   label: "Analyst"           },
-          ].map(tab => (
+          {VIEWS.map(tab => (
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
@@ -221,7 +269,11 @@ export default function FeedHeader({ activeCategory, onCategoryChange, activeTab
       {/* ── Category nav ── */}
       {activeTab === "feed" && (
         <nav className="max-w-[1400px] mx-auto px-4 md:px-6 overflow-x-auto border-b border-ink/8">
-          <ul className="flex gap-4 md:gap-6 py-2 text-[11px] md:text-[12px] font-semibold uppercase tracking-wider text-ink/40 whitespace-nowrap">
+          <ul className="flex items-center gap-4 md:gap-6 py-2 text-[11px] md:text-[12px] font-semibold uppercase tracking-wider text-ink/40 whitespace-nowrap">
+            {/* This row and the status row directly beneath it BOTH used to open with
+                a bare "ALL", stacked a few pixels apart, with nothing saying what
+                either filtered. Naming the axis is the whole fix. */}
+            <li className="text-[9px] tracking-[0.18em] text-ink/25 pr-1">Category</li>
             {CATEGORIES.map(cat => {
               const active = activeCategory === cat.value;
               return (
