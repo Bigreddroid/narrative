@@ -211,5 +211,59 @@ asyncio.run(_run(s, [_article()]))
 ok("one good read clears the streak, releasing the feed from quarantine",
    s.scrape_error_count == 0 and e.is_quarantined(s, NOW) is False)
 
+# ── yield health: "answered" and "delivered" are different facts ─────────────
+# Measured live: Brookings and The Defense Post return HTTP 200 with ZERO items and
+# have produced 0 articles ever; Straits Times and Crisis Group return 10 items but
+# nothing new since Jul 13. All four reported scrape_error_count=0 and a
+# last_scraped_at of minutes ago — identical to a healthy feed. An empty answer is
+# correctly a success (the feed responded), which is exactly why success alone cannot
+# carry this signal.
+
+s = _source()
+asyncio.run(_run(s, [_article()]))
+ok("a real yield stamps last_article_at", s.last_article_at is not None)
+
+s = _source(last_article_at=None)
+asyncio.run(_run(s, []))
+ok("an EMPTY answer does not stamp last_article_at, though it is still a success",
+   s.last_article_at is None and s.scrape_error_count == 0
+   and s.last_scraped_at is not None)
+
+# The regression that matters: an empty answer must not look like delivery.
+s = _source(last_article_at=NOW - timedelta(days=30))
+asyncio.run(_run(s, []))
+ok("an empty answer leaves an OLD yield timestamp untouched (no false freshness)",
+   s.last_article_at == NOW - timedelta(days=30))
+
+ok("a feed reading and delivering is ok",
+   e.feed_health(_source(last_article_at=NOW - timedelta(hours=2)), NOW) == "ok")
+
+ok("a feed that answers but has NEVER delivered is never_yielded — the Brookings case",
+   e.feed_health(_source(last_article_at=None), NOW) == "never_yielded")
+
+ok("a feed delivering nothing for longer than the bar is stalled — the Straits Times case",
+   e.feed_health(_source(last_article_at=NOW - timedelta(days=e.STALE_AFTER_DAYS + 1)),
+                 NOW) == "stalled")
+
+ok("a feed just inside the bar is still ok, so a quiet weekend is not an alarm",
+   e.feed_health(_source(last_article_at=NOW - timedelta(days=e.STALE_AFTER_DAYS - 1)),
+                 NOW) == "ok")
+
+ok("an unreadable feed reports failing, not stalled — the cause is not guessed",
+   e.feed_health(_source(scrape_error_count=1, last_article_at=None), NOW) == "failing")
+
+ok("past the failure bar it reports quarantined",
+   e.feed_health(_source(scrape_error_count=e.QUARANTINE_AFTER), NOW) == "quarantined")
+
+ok("a publisher-attribution row is not_a_feed, not a dead one",
+   e.feed_health(_source(url="", rss_url=None), NOW) == "not_a_feed")
+
+ok("a hand-disabled source is disabled, not failing",
+   e.feed_health(_source(is_active=False), NOW) == "disabled")
+
+ok("a naive stored yield timestamp does not raise against an aware now",
+   e.feed_health(_source(last_article_at=(NOW - timedelta(days=30)).replace(tzinfo=None)),
+                 NOW) == "stalled")
+
 print(f"\nscraper engine: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -23,6 +23,10 @@ class Source(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_scraped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     scrape_error_count: Mapped[int] = mapped_column(Integer, default=0)
+    # When this feed last actually DELIVERED a new article, as distinct from when we
+    # last managed to read it. A feed answering 200-with-nothing keeps last_scraped_at
+    # fresh and scrape_error_count at 0 forever; only this column shows the rot.
+    last_article_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     articles: Mapped[list["Article"]] = relationship("Article", back_populates="source")

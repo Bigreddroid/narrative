@@ -58,6 +58,11 @@ Thumbs.db
 INSTALL_GUIDE.html
 INSTALL_GUIDE.pdf
 
+# fastembed's bge-large ONNX blob (~1.3 GB). Compose keeps it in a named volume,
+# but the repo is bind-mounted at /app, so a misconfigured FASTEMBED_CACHE_DIR
+# would drop it straight into the working tree. Belt and braces.
+.fastembed_cache/
+
 # Claude Code local tooling state (per-developer: allowlist, worktrees, plugins)
 .claude/
 

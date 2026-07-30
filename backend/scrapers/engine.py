@@ -64,6 +64,50 @@ def is_quarantined(source, now: datetime | None = None) -> bool:
     return (now - last) < timedelta(hours=QUARANTINE_RETRY_HOURS)
 
 
+# A feed that has not produced a single new article in this long is reported as
+# stalled. It is a REPORTING threshold only — nothing is skipped or retired on it,
+# because a genuinely quiet publisher and a frozen feed look identical from here and
+# only a human can tell them apart. Set above the longest plausible quiet spell for a
+# low-volume think-tank feed so the list stays worth reading.
+STALE_AFTER_DAYS = 7
+
+
+def feed_health(source, now: datetime | None = None) -> str:
+    """One word for what this feed is actually doing. Never guesses in its own favour.
+
+    The states scrape_error_count alone could not distinguish, in priority order:
+
+      not_a_feed    — a publisher-attribution row, nothing to fetch (see is_scrapeable)
+      disabled      — deactivated by hand
+      quarantined   — the read-failure streak reached QUARANTINE_AFTER
+      failing       — could not be READ, but still under the quarantine bar
+      never_yielded — reads fine, has never delivered a single article
+      stalled       — reads fine, delivered nothing new in STALE_AFTER_DAYS
+      ok            — read and delivering
+
+    `never_yielded` and `stalled` are the two that previously rendered as perfect
+    health, which is the whole point of this function.
+    """
+    if not is_scrapeable(source):
+        return "not_a_feed"
+    if not source.is_active:
+        return "disabled"
+    if (source.scrape_error_count or 0) >= QUARANTINE_AFTER:
+        return "quarantined"
+    if (source.scrape_error_count or 0) > 0:
+        return "failing"
+
+    last = source.last_article_at
+    if last is None:
+        return "never_yielded"
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    if (now - last) > timedelta(days=STALE_AFTER_DAYS):
+        return "stalled"
+    return "ok"
+
+
 def scrapeable_clause():
     """The SQL half of is_scrapeable, so the worker never fetches the rows either.
 
@@ -138,6 +182,11 @@ async def scrape_source(source: Source, db: AsyncSession) -> tuple[int, int]:
 
     source.last_scraped_at = now
     source.scrape_error_count = 0    # a successful read clears the failure streak
+    if new_count:
+        # Stamped ONLY on a real yield. An empty answer is still a success above (the
+        # feed responded), so without this a permanently-empty feed would keep
+        # resetting its own error streak and read as healthy forever.
+        source.last_article_at = now
     db.add(source)
 
     logger.info(
