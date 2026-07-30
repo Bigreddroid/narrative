@@ -5,6 +5,7 @@ Every action logged to admin_logs.
 """
 
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
@@ -19,6 +20,7 @@ from backend.models.event_consequence_map import EventConsequenceMap
 from backend.models.pipeline_metrics import PipelineMetric
 from backend.models.source import Source
 from backend.models.user import User
+from backend.scrapers.engine import feed_health
 from backend.services import llm, runtime_config
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -179,9 +181,17 @@ async def list_sources(db: DbDep, admin: AdminDep) -> dict:
                 "is_active": s.is_active,
                 "last_scraped_at": s.last_scraped_at.isoformat() if s.last_scraped_at else None,
                 "scrape_error_count": s.scrape_error_count,
+                # "when did we last READ it" and "when did it last GIVE us anything"
+                # are different questions; a feed answering 200-with-nothing keeps the
+                # first fresh forever. See feed_health for the states this separates.
+                "last_article_at": s.last_article_at.isoformat() if s.last_article_at else None,
+                "health": feed_health(s),
             }
             for s in sources
-        ]
+        ],
+        # Rot is only visible if something counts it. Without this the caller has to
+        # notice an absence across 788 rows, which is exactly what nobody did.
+        "health_counts": dict(Counter(feed_health(s) for s in sources)),
     }
 
 
