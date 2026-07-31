@@ -55,7 +55,12 @@ async def fetch_holidays(country_code: str, year: int) -> list[dict]:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.get(f"{NAGER}/{year}/{country_code}")
             # Nager sends 204 (no content) for countries it doesn't cover — e.g.
-            # India and the GCC — which fall to the config's curated supplement.
+            # India and the GCC. There is NO fallback source: this returns [] and the
+            # caller lists the country in `no_source_coverage` so the deck can say "no
+            # holiday source for India" rather than "no holidays in India". Measured
+            # 2026-07-30: IN really does come back empty while US/DE/GB/JP/BR do not.
+            # (An earlier version of this comment claimed these countries "fall to the
+            # config's curated supplement". No such supplement exists, or ever did.)
             # Decode the raw bytes as UTF-8 ourselves: httpx's .json() can mangle
             # non-ASCII names (e.g. "Mariä") when the server omits a charset.
             if r.status_code == 200 and r.content:
